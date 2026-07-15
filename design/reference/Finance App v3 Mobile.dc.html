@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <link rel="stylesheet" href="_ds/nocturne-80774067-3846-4761-b0ea-a821a0ac7860/styles.css">
+  <script src="_ds/nocturne-80774067-3846-4761-b0ea-a821a0ac7860/_ds_bundle.js"></script>
+  <style>
+    html, body { height: 100%; }
+    body { margin: 0; background: var(--color-bg); }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    a { color: var(--color-accent-300); }
+    a:hover { color: var(--color-accent-200); }
+  </style>
+</helmet>
+
+<div style="display:flex;flex-direction:column;height:100%;min-height:100%;background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);position:relative;overflow:hidden">
+
+  <sc-if value="{{ isSplash }}" hint-placeholder-val="{{ true }}">
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:0 32px;text-align:center">
+      <svg width="56" height="56" viewBox="0 0 56 56" fill="none" aria-hidden="true">
+        <rect x="10" y="26" width="36" height="24" rx="6" fill="var(--color-accent)"></rect>
+        <path d="M18 26v-8a10 10 0 0 1 20 0v8" stroke="var(--color-accent)" stroke-width="4.5" fill="none" stroke-linecap="round"></path>
+        <circle cx="28" cy="38" r="3.5" fill="var(--color-bg)"></circle>
+      </svg>
+      <div style="font-family:var(--font-heading);font-weight:600;font-size:26px;letter-spacing:-.01em">Vault Finance</div>
+      <div style="font-size:14px;color:var(--color-neutral-500);line-height:1.5">Your Finances, Your AI, Your Server</div>
+      <button class="btn btn-primary" style="margin-top:12px;padding:11px 28px;font-size:14px" onClick="{{ enter }}">Get started</button>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ showApp }}" hint-placeholder-val="{{ false }}">
+
+  <header style="flex:none;display:flex;align-items:center;gap:8px;padding:54px 14px 12px;background:var(--color-bg)">
+    <sc-if value="{{ showBack }}" hint-placeholder-val="{{ false }}">
+      <button onClick="{{ goBack }}" aria-label="Back" style="border:0;background:transparent;color:var(--color-neutral-500);font-size:15px;cursor:pointer;padding:0;font-family:var(--font-body);font-weight:600">‹ More</button>
+    </sc-if>
+    <span style="flex:1;font-family:var(--font-heading);font-weight:600;font-size:19px;letter-spacing:-.01em">{{ pageTitle }}</span>
+    <button aria-label="Account" style="width:28px;height:28px;border-radius:50%;border:1px solid var(--color-divider);cursor:pointer;background:var(--color-accent-800);color:var(--color-accent-100);font-weight:600;font-size:12px;font-family:var(--font-body);flex:none">M</button>
+  </header>
+
+  <div style="flex:1;overflow:auto;min-height:0" onTouchStart="{{ onSwipeStart }}" onTouchEnd="{{ onSwipeEnd }}">
+
+    <sc-if value="{{ isDashboard }}" hint-placeholder-val="{{ true }}">
+      <div style="padding:14px;display:flex;flex-direction:column;gap:12px;animation:fadeUp .3s both">
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ stats }}" as="st" hint-placeholder-count="3">
+            <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow-sm)">
+              <div style="font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--color-neutral-500);font-weight:600">{{ st.label }}</div>
+              <div style="font-family:var(--font-heading);font-weight:600;font-size:22px;letter-spacing:-.02em;margin-top:2px">{{ st.value }}</div>
+              <div style="font-size:12px;color:{{ st.deltaColor }}">{{ st.delta }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;box-shadow:var(--shadow-sm)">
+          <div style="padding:12px 14px 8px;font-family:var(--font-heading);font-weight:600;font-size:13.5px">Budgets</div>
+          <div style="padding:0 14px 12px;display:flex;flex-direction:column;gap:12px">
+            <sc-for list="{{ budgets }}" as="b" hint-placeholder-count="3">
+              <div>
+                <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px">
+                  <span>{{ b.name }}</span>
+                  <span style="color:{{ b.metaColor }}">{{ b.meta }}</span>
+                </div>
+                <div style="height:6px;border-radius:99px;background:var(--color-neutral-900);overflow:hidden">
+                  <div style="height:100%;border-radius:99px;width:{{ b.pct }};background:{{ b.bar }}"></div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;box-shadow:var(--shadow-sm)">
+          <div style="padding:12px 14px 8px;font-family:var(--font-heading);font-weight:600;font-size:13.5px">✦ AI insight</div>
+          <div style="padding:0 14px 14px;font-size:12.5px;color:var(--color-neutral-500);line-height:1.5">Groceries hit $980 against your $900 budget — three Costco runs drove the overage.</div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isAccounts }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:14px;display:flex;flex-direction:column;gap:12px;animation:fadeUp .3s both">
+        <div style="display:flex;gap:10px">
+          <sc-for list="{{ acctStats }}" as="st" hint-placeholder-count="2">
+            <div style="flex:1;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow-sm)">
+              <div style="font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:var(--color-neutral-500);font-weight:600">{{ st.label }}</div>
+              <div style="font-family:var(--font-heading);font-weight:600;font-size:18px;margin-top:2px">{{ st.value }}</div>
+            </div>
+          </sc-for>
+        </div>
+        <sc-for list="{{ acctGroups }}" as="grp" hint-placeholder-count="3">
+          <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;box-shadow:var(--shadow-sm)">
+            <div style="padding:12px 14px 6px;font-family:var(--font-heading);font-weight:600;font-size:13.5px">{{ grp.title }}</div>
+            <div style="padding:0 14px 8px">
+              <sc-for list="{{ grp.rows }}" as="a" hint-placeholder-count="2">
+                <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid color-mix(in srgb, var(--color-text) 7%, transparent)">
+                  <span style="width:30px;height:30px;border-radius:8px;background:{{ a.tint }};display:flex;align-items:center;justify-content:center;font-size:13px;flex:none">{{ a.icon }}</span>
+                  <div style="flex:1;min-width:0">
+                    <div style="font-weight:500;font-size:12.5px">{{ a.name }}</div>
+                    <div style="font-size:11px;color:var(--color-neutral-500)">{{ a.sub }}</div>
+                  </div>
+                  <div style="font-weight:600;font-size:13px;color:{{ a.color }}">{{ a.balance }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isTransactions }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:10px;animation:fadeUp .3s both">
+        <div style="padding:14px 14px 0">
+          <input class="input" style="width:100%;box-sizing:border-box;border-radius:8px" placeholder="Search merchants…" value="{{ search }}" onChange="{{ onSearch }}">
+        </div>
+        <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;margin:0 14px;box-shadow:var(--shadow-sm);overflow:hidden">
+          <sc-for list="{{ txns }}" as="t" hint-placeholder-count="10">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid color-mix(in srgb, var(--color-text) 7%, transparent)">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:500;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.merchant }}</div>
+                <div style="font-size:11px;color:var(--color-neutral-500)">{{ t.date }} · {{ t.catLabel }}</div>
+              </div>
+              <div style="font-weight:600;font-size:13px;white-space:nowrap;color:{{ t.amtColor }}">{{ t.amt }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isBudgets }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:14px;display:flex;flex-direction:column;gap:12px;animation:fadeUp .3s both">
+        <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;box-shadow:var(--shadow-sm)">
+          <div>
+            <div style="font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--color-neutral-500);font-weight:600">June total</div>
+            <div style="font-family:var(--font-heading);font-weight:600;font-size:22px;margin-top:2px">$6,478 <span style="font-size:13px;color:var(--color-neutral-500);font-weight:500">/ $6,600</span></div>
+          </div>
+          <span class="tag tag-accent">98% used</span>
+        </div>
+        <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;box-shadow:var(--shadow-sm)">
+          <div style="padding:12px 14px 4px;font-family:var(--font-heading);font-weight:600;font-size:13.5px">Flexible spending</div>
+          <div style="padding:4px 14px 14px;display:flex;flex-direction:column;gap:12px">
+            <sc-for list="{{ budgets }}" as="b" hint-placeholder-count="3">
+              <div>
+                <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px">
+                  <span>{{ b.name }}</span>
+                  <span style="color:{{ b.metaColor }}">{{ b.meta }}</span>
+                </div>
+                <div style="height:6px;border-radius:99px;background:var(--color-neutral-900);overflow:hidden">
+                  <div style="height:100%;border-radius:99px;width:{{ b.pct }};background:{{ b.bar }}"></div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;box-shadow:var(--shadow-sm)">
+          <div style="padding:12px 14px 6px;font-family:var(--font-heading);font-weight:600;font-size:13.5px">Fixed commitments</div>
+          <div style="padding:0 14px 10px">
+            <sc-for list="{{ fixedRows }}" as="f" hint-placeholder-count="3">
+              <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid color-mix(in srgb, var(--color-text) 7%, transparent);font-size:12.5px">
+                <span>{{ f.name }}</span>
+                <span style="font-weight:600">{{ f.amt }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isCashflow }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:14px;display:flex;flex-direction:column;gap:12px;animation:fadeUp .3s both">
+        <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;box-shadow:var(--shadow-sm);padding:14px 10px">
+          <div style="padding:0 6px 10px;font-family:var(--font-heading);font-weight:600;font-size:13px">Where June's money went</div>
+          {{ sankeySvg }}
+        </div>
+        <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;box-shadow:var(--shadow-sm)">
+          <div style="padding:12px 14px 4px;display:flex;justify-content:space-between;align-items:baseline">
+            <div style="font-family:var(--font-heading);font-weight:600;font-size:13px">Income vs. spending</div>
+            <div style="display:flex;gap:10px;font-size:11px;color:var(--color-neutral-500)">
+              <span style="display:flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:2px;background:#3ecf8e"></span>In</span>
+              <span style="display:flex;align-items:center;gap:4px"><span style="width:7px;height:7px;border-radius:2px;background:#9184d9"></span>Out</span>
+            </div>
+          </div>
+          <div style="padding:14px;display:flex;gap:8px;align-items:flex-end;height:150px">
+            <sc-for list="{{ months }}" as="m" hint-placeholder-count="6">
+              <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:5px;height:100%">
+                <div style="display:flex;gap:3px;align-items:flex-end;width:100%;justify-content:center;flex:1">
+                  <div style="width:34%;height:{{ m.incH }};border-radius:4px 4px 2px 2px;background:linear-gradient(180deg,#3ecf8e,#2a9a69)"></div>
+                  <div style="width:34%;height:{{ m.outH }};border-radius:4px 4px 2px 2px;background:linear-gradient(180deg,#9184d9,#6a5fb0)"></div>
+                </div>
+                <div style="font-size:10px;color:var(--color-neutral-500)">{{ m.name }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <sc-for list="{{ cfStats }}" as="st" hint-placeholder-count="3">
+            <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;padding:12px 16px;box-shadow:var(--shadow-sm);display:flex;justify-content:space-between;align-items:center">
+              <div style="font-size:12.5px;color:var(--color-neutral-500)">{{ st.label }}</div>
+              <div style="font-family:var(--font-heading);font-weight:600;font-size:16px">{{ st.value }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isInvestments }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:14px;display:flex;flex-direction:column;gap:12px;animation:fadeUp .3s both">
+        <sc-for list="{{ invStats }}" as="st" hint-placeholder-count="3">
+          <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow-sm)">
+            <div style="font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--color-neutral-500);font-weight:600">{{ st.label }}</div>
+            <div style="font-family:var(--font-heading);font-weight:600;font-size:20px;margin-top:2px">{{ st.value }}</div>
+            <div style="font-size:11.5px;color:{{ st.subColor }}">{{ st.sub }}</div>
+          </div>
+        </sc-for>
+        <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;box-shadow:var(--shadow-sm)">
+          <div style="padding:12px 14px 8px;font-family:var(--font-heading);font-weight:600;font-size:13.5px">Allocation</div>
+          <div style="padding:0 14px 6px">
+            <div style="display:flex;height:12px;border-radius:99px;overflow:hidden;gap:2px">
+              <sc-for list="{{ alloc }}" as="al" hint-placeholder-count="5">
+                <div style="width:{{ al.pct }};background:{{ al.color }}"></div>
+              </sc-for>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:10px;padding:10px 0 12px">
+              <sc-for list="{{ alloc }}" as="al" hint-placeholder-count="5">
+                <span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--color-neutral-400)"><span style="width:7px;height:7px;border-radius:2px;background:{{ al.color }}"></span>{{ al.name }} · {{ al.pct }}</span>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+        <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;box-shadow:var(--shadow-sm)">
+          <div style="padding:12px 14px 6px;font-family:var(--font-heading);font-weight:600;font-size:13.5px">Accounts</div>
+          <div style="padding:0 14px 10px">
+            <sc-for list="{{ invAccts }}" as="ia" hint-placeholder-count="3">
+              <div style="display:flex;align-items:baseline;gap:10px;padding:9px 0;border-top:1px solid color-mix(in srgb, var(--color-text) 7%, transparent);font-size:12.5px">
+                <div style="flex:1;min-width:0">
+                  <div style="font-weight:500;font-size:12.5px">{{ ia.name }}</div>
+                  <div style="font-size:11px;color:var(--color-neutral-500)">{{ ia.ytd }}</div>
+                </div>
+                <span style="font-weight:600;font-size:13px">{{ ia.value }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isGoals }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:14px;display:flex;flex-direction:column;gap:12px;animation:fadeUp .3s both">
+        <sc-for list="{{ goals }}" as="g" hint-placeholder-count="3">
+          <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;padding:16px;box-shadow:var(--shadow-sm)">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+              <div style="font-family:var(--font-heading);font-weight:600;font-size:14px">{{ g.name }}</div>
+              <span style="font-size:11.5px;color:var(--color-neutral-500)">{{ g.eta }}</span>
+            </div>
+            <div style="font-family:var(--font-heading);font-weight:600;font-size:22px;letter-spacing:-.02em;margin:8px 0 2px">{{ g.saved }}</div>
+            <div style="font-size:12px;color:var(--color-neutral-500)">of {{ g.target }} · {{ g.pct }} funded</div>
+            <div style="height:7px;border-radius:99px;background:var(--color-neutral-900);overflow:hidden;margin:10px 0 8px">
+              <div style="height:100%;border-radius:99px;width:{{ g.pct }};background:{{ g.color }}"></div>
+            </div>
+            <div style="font-size:12px;color:var(--color-neutral-500);line-height:1.5">{{ g.note }}</div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isReports }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:14px;display:flex;flex-direction:column;gap:12px;animation:fadeUp .3s both">
+        <div style="background:linear-gradient(160deg, var(--color-surface) 0%, color-mix(in srgb, var(--color-section) 45%, var(--color-surface)) 140%);border:1px solid var(--color-divider);border-radius:12px;padding:16px;box-shadow:var(--shadow-sm)">
+          <div style="font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--color-neutral-400);font-weight:600">2026 year to date</div>
+          <div style="display:flex;flex-wrap:wrap;gap:18px;margin-top:8px">
+            <sc-for list="{{ ytd }}" as="y" hint-placeholder-count="4">
+              <div>
+                <div style="font-family:var(--font-heading);font-weight:600;font-size:18px">{{ y.value }}</div>
+                <div style="font-size:11px;color:var(--color-neutral-500)">{{ y.label }}</div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;box-shadow:var(--shadow-sm)">
+          <div style="padding:12px 14px 6px;font-family:var(--font-heading);font-weight:600;font-size:13.5px">Monthly reports</div>
+          <div style="padding:0 14px 8px">
+            <sc-for list="{{ reportRows }}" as="r" hint-placeholder-count="6">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-top:1px solid color-mix(in srgb, var(--color-text) 7%, transparent);font-size:12.5px">
+                <span style="font-weight:500">{{ r.month }}</span>
+                <span style="color:#3ecf8e;font-weight:600">{{ r.saved }} <span style="color:var(--color-neutral-400);font-weight:500">· {{ r.rate }}</span></span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isAssistant }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:14px;display:flex;flex-direction:column;gap:12px;min-height:100%;animation:fadeUp .3s both">
+        <sc-for list="{{ chat }}" as="m" hint-placeholder-count="2">
+          <sc-if value="{{ m.isUser }}" hint-placeholder-val="{{ false }}">
+            <div style="align-self:flex-end;max-width:82%;background:var(--color-accent-800);color:var(--color-accent-100);border-radius:12px 12px 2px 12px;padding:9px 13px;font-size:13px">{{ m.text }}</div>
+          </sc-if>
+          <sc-if value="{{ m.isAssistant }}" hint-placeholder-val="{{ true }}">
+            <div style="align-self:flex-start;max-width:88%;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px 12px 12px 2px;padding:9px 13px;font-size:13px;white-space:pre-line;line-height:1.5">{{ m.text }}</div>
+          </sc-if>
+        </sc-for>
+        <div style="flex:1"></div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <sc-for list="{{ prompts }}" as="p" hint-placeholder-count="3">
+            <button class="btn btn-secondary" style="font-size:11.5px;padding:6px 10px" onClick="{{ p.onClick }}">{{ p.label }}</button>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:8px">
+          <input class="input" placeholder="Ask about your money…" style="flex:1;font-size:13px;padding:10px 12px;border-radius:10px;border:1px solid var(--color-divider);background:var(--color-surface);color:var(--color-text)" readonly="{{ true }}" />
+          <button class="btn btn-primary" style="padding:0 14px" aria-label="Send">↑</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:14px;display:flex;flex-direction:column;gap:12px;animation:fadeUp .3s both">
+        <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;box-shadow:var(--shadow-sm)">
+          <div style="padding:12px 14px 6px;font-family:var(--font-heading);font-weight:600;font-size:13.5px">Profile & security</div>
+          <div style="padding:4px 14px 14px;display:flex;flex-direction:column;gap:8px">
+            <input class="input" style="border-radius:9px" defaultValue="{{ userName }}" aria-label="Display name">
+            <input class="input" style="border-radius:9px" defaultValue="{{ userEmail }}" aria-label="Email">
+            <button class="btn btn-secondary" style="font-size:12.5px">Change password</button>
+          </div>
+        </div>
+        <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;box-shadow:var(--shadow-sm)">
+          <div style="padding:12px 14px 6px;font-family:var(--font-heading);font-weight:600;font-size:13.5px">Household</div>
+          <div style="padding:0 14px 12px">
+            <sc-for list="{{ members }}" as="mm" hint-placeholder-count="2">
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid color-mix(in srgb, var(--color-text) 7%, transparent)">
+                <span style="width:28px;height:28px;border-radius:50%;background:{{ mm.tint }};display:flex;align-items:center;justify-content:center;font-weight:600;font-size:12px;color:var(--color-accent-100);flex:none">{{ mm.initial }}</span>
+                <div style="flex:1"><div style="font-weight:500;font-size:12.5px">{{ mm.name }} {{ mm.you }}</div><div style="font-size:11px;color:var(--color-neutral-500)">{{ mm.role }}</div></div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;box-shadow:var(--shadow-sm)">
+          <div style="padding:12px 14px 8px;font-family:var(--font-heading);font-weight:600;font-size:13.5px">Categories</div>
+          <div style="padding:0 14px 14px;display:flex;flex-wrap:wrap;gap:7px">
+            <sc-for list="{{ catChips }}" as="cc" hint-placeholder-count="8">
+              <span style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;padding:4px 10px;border-radius:99px;background:{{ cc.bg }};color:var(--color-neutral-200)"><span style="width:6px;height:6px;border-radius:50%;background:{{ cc.dot }}"></span>{{ cc.label }}</span>
+            </sc-for>
+          </div>
+        </div>
+        <div style="background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;box-shadow:var(--shadow-sm)">
+          <div style="padding:12px 14px 6px;font-family:var(--font-heading);font-weight:600;font-size:13.5px">Data</div>
+          <div style="padding:6px 14px 14px;display:flex;flex-wrap:wrap;gap:8px">
+            <button class="btn btn-secondary" style="font-size:12.5px">Export CSV</button>
+            <button class="btn btn-ghost" style="font-size:12.5px;color:#e25c5c">Erase all data…</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isMore }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:14px;display:flex;flex-direction:column;gap:8px;animation:fadeUp .3s both">
+        <sc-for list="{{ moreLinks }}" as="ml" hint-placeholder-count="6">
+          <button onClick="{{ ml.onClick }}" style="display:flex;align-items:center;justify-content:space-between;background:var(--color-surface);border:1px solid var(--color-divider);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow-sm);cursor:pointer;font-family:var(--font-body);color:var(--color-text);font-size:14px;font-weight:500;text-align:left">
+            {{ ml.label }}
+            <span style="color:var(--color-neutral-500)">›</span>
+          </button>
+        </sc-for>
+      </div>
+    </sc-if>
+
+  </div>
+
+  <nav style="flex:none;display:flex;border-top:1px solid var(--color-divider);background:var(--color-surface)">
+    <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="5">
+      <button onClick="{{ t.onClick }}" style="flex:1;min-height:56px;border:0;cursor:pointer;font-family:var(--font-body);font-weight:600;font-size:10.5px;background:transparent;color:{{ t.color }};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px">
+        <span style="width:6px;height:6px;border-radius:50%;background:{{ t.color }};opacity:{{ t.dotOpacity }}"></span>
+        {{ t.label }}
+      </button>
+    </sc-for>
+  </nav>
+
+  <sc-if value="{{ sheet }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeSheet }}" style="position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:70;animation:fadeUp .2s both"></div>
+    <div style="position:absolute;left:0;right:0;bottom:0;z-index:71;background:var(--color-surface);border-top:1px solid var(--color-divider);border-radius:18px 18px 0 0;padding:20px 20px 28px;box-shadow:var(--shadow-lg);animation:fadeUp .25s both">
+      <div style="width:36px;height:4px;border-radius:99px;background:var(--color-divider);margin:0 auto 16px"></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <span style="width:10px;height:10px;border-radius:3px;background:{{ sheet.color }};flex:none"></span>
+        <span style="font-family:var(--font-heading);font-weight:600;font-size:16px">{{ sheet.label }}</span>
+      </div>
+      <div style="font-family:var(--font-heading);font-weight:600;font-size:24px;letter-spacing:-.02em;margin-bottom:8px">${{ sheet.valueFmt }}</div>
+      <div style="font-size:13px;color:var(--color-neutral-500);line-height:1.5">{{ sheet.note }}</div>
+    </div>
+  </sc-if>
+
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 390, &quot;height&quot;: 844}}">
+class Component extends DCLogic {
+  state = { page: 'splash', chat: null };
+
+  go(page) { this.setState({ page }); }
+  enter = () => this.setState({ page: 'dashboard' });
+
+  TAB_ORDER = ['dashboard', 'cashflow', 'budgets', 'goals', 'more'];
+  SUBPAGES = ['accounts', 'transactions', 'investments', 'reports', 'assistant', 'settings'];
+
+  onSwipeStart = (e) => { this._touchX = e.touches[0].clientX; };
+  onSwipeEnd = (e) => {
+    if (this._touchX == null) return;
+    const dx = e.changedTouches[0].clientX - this._touchX;
+    this._touchX = null;
+    if (Math.abs(dx) < 50) return;
+    if (this.SUBPAGES.includes(this.state.page)) { if (dx > 0) this.go('more'); return; }
+    const i = this.TAB_ORDER.indexOf(this.state.page);
+    const next = dx < 0 ? Math.min(i + 1, this.TAB_ORDER.length - 1) : Math.max(i - 1, 0);
+    this.go(this.TAB_ORDER[next]);
+  };
+
+  INCOMES = [
+    { id: 'inc-maya', label: 'Maya — salary', value: 6400, color: '#4da3f0', note: "Maya's paycheck from Aurora Studio, deposited twice a month." },
+    { id: 'inc-jordan', label: 'Jordan — salary', value: 5150, color: '#3ecf8e', note: "Jordan's paycheck, deposited twice a month." },
+    { id: 'inc-int', label: 'Interest & dividends', value: 210, color: '#9184d9', note: 'Interest from the high-yield savings account plus brokerage dividends.' }
+  ];
+  LEAVES = [
+    { id: 'mortgage', label: 'Mortgage', value: 2850, color: '#ef8354', note: 'First National · fixed monthly payment.' },
+    { id: 'groceries', label: 'Groceries', value: 980, color: '#3ecf8e', note: 'Up $140 from May — three Costco runs drove the overage.' },
+    { id: 'dining', label: 'Dining out', value: 460, color: '#ec6a9c', note: 'Restaurants and takeout, including your anniversary dinner.' },
+    { id: 'transport', label: 'Transport', value: 520, color: '#4da3f0', note: 'Gas, transit, and car maintenance.' },
+    { id: 'insurance', label: 'Insurance', value: 430, color: '#8a94a6', note: 'Home and auto insurance premiums.' },
+    { id: 'shopping', label: 'Shopping', value: 390, color: '#b47ef0', note: 'Clothing, home goods, and general purchases.' },
+    { id: 'utilities', label: 'Utilities', value: 310, color: '#d8b23c', note: 'Power, water, and internet.' },
+    { id: 'health', label: 'Health', value: 240, color: '#43cfc0', note: 'Pharmacy and out-of-pocket medical costs.' },
+    { id: 'misc', label: 'Everything else', value: 180, color: '#9aa0ab', note: 'Small miscellaneous purchases.' },
+    { id: 'subscriptions', label: 'Subscriptions', value: 118, color: '#e0a030', note: 'Streaming and app subscriptions — three look forgotten.' },
+    { id: 'debt', label: 'Car loan', value: 450, color: '#e25c5c', note: '4.4% APR · 21 months left.' },
+    { id: 'savings', label: 'Savings', value: 1500, color: '#3ecf8e', note: 'Auto-transfer to the emergency fund.' },
+    { id: 'invest', label: 'Investments', value: 1200, color: '#6f8ef2', note: 'Brokerage and retirement contributions.' },
+    { id: 'buffer', label: 'Checking buffer', value: 2132, color: '#9184d9', note: 'Left in checking above your $5,000 floor.' }
+  ];
+
+  sankeyGeo() {
+    const W = 300, H = 320, NW = 4, PAD = 16;
+    const xInc = 30, xHub = 145, xLeaf = 260;
+    const total = this.INCOMES.reduce((a, b) => a + b.value, 0);
+    const gapL = 5, gapI = 8;
+    const availL = H - 2 * PAD - (this.LEAVES.length - 1) * gapL;
+    const scale = availL / total;
+    const heights = this.LEAVES.map(n => Math.max(6, n.value * scale));
+    const sumL = heights.reduce((a, b) => a + b, 0) + (this.LEAVES.length - 1) * gapL;
+    let y = (H - sumL) / 2;
+    const leaves = this.LEAVES.map((n, i) => { const node = { ...n, x: xLeaf, y, h: heights[i] }; y += heights[i] + gapL; return node; });
+    const hubH = heights.reduce((a, b) => a + b, 0);
+    const hubY = (H - hubH) / 2;
+    const iHeights = this.INCOMES.map(n => n.value * scale);
+    const sumI = iHeights.reduce((a, b) => a + b, 0) + (this.INCOMES.length - 1) * gapI;
+    let yi = (H - sumI) / 2;
+    const incomes = this.INCOMES.map((n, i) => { const node = { ...n, x: xInc, y: yi, h: iHeights[i] }; yi += iHeights[i] + gapI; return node; });
+    const links = [];
+    let hubIn = hubY;
+    incomes.forEach(n => { links.push({ id: n.id, sx: n.x + NW, sy: n.y, tx: xHub, ty: hubIn, t: n.h, color: n.color }); hubIn += n.h; });
+    let hubOut = hubY;
+    leaves.forEach(n => { links.push({ id: n.id, sx: xHub + NW, sy: hubOut, tx: n.x, ty: n.y, t: n.h, color: n.color }); hubOut += n.h; });
+    return { incomes, leaves, links, hubY, hubH, xHub, xInc, xLeaf, NW, W, H, total };
+  }
+
+  linkPath(l) {
+    const mx = (l.sx + l.tx) / 2;
+    return `M${l.sx},${l.sy} C${mx},${l.sy} ${mx},${l.ty} ${l.tx},${l.ty} L${l.tx},${l.ty + l.t} C${mx},${l.ty + l.t} ${mx},${l.sy + l.t} ${l.sx},${l.sy + l.t} Z`;
+  }
+
+  selectFlow(n) { this.setState({ sheet: { ...n, valueFmt: n.value.toLocaleString() } }); }
+  closeSheet = () => this.setState({ sheet: null });
+
+  buildSankey() {
+    const el = React.createElement;
+    const geo = this.sankeyGeo();
+    const defs = el('defs', { key: 'defs' }, geo.links.map((l, i) =>
+      el('linearGradient', { key: i, id: 'msf' + i, gradientUnits: 'userSpaceOnUse', x1: l.sx, x2: l.tx, y1: 0, y2: 0 },
+        el('stop', { key: 'a', offset: '0%', stopColor: l.color + '99' }),
+        el('stop', { key: 'b', offset: '100%', stopColor: '#8a8ea699' })
+      )
+    ));
+    const paths = geo.links.map((l, i) => el('path', { key: 'l' + i, d: this.linkPath(l), fill: 'url(#msf' + i + ')', opacity: 0.82 }));
+    const label = { fontFamily: 'var(--font-heading)', fontWeight: 600, fontSize: 8.5, fill: 'var(--color-text)' };
+    const muted = { fontFamily: 'var(--font-body)', fontWeight: 400, fontSize: 8, fill: 'var(--color-neutral-500)' };
+    const MIN_LABEL_H = 16;
+    const tiny = { fontFamily: 'var(--font-body)', fontWeight: 600, fontSize: 6.5, fill: '#fff' };
+    const incomeNodes = geo.incomes.map(n => el('g', {
+      key: n.id, style: { cursor: 'pointer' }, onClick: () => this.selectFlow(n)
+    },
+      el('rect', { key: 'r', x: n.x, y: n.y, width: geo.NW, height: n.h, rx: 0, fill: n.color }),
+      n.h >= MIN_LABEL_H && el('text', { key: 't', x: n.x + geo.NW + 4, y: n.y + n.h / 2 + 2.3, textAnchor: 'start', style: tiny }, n.label)
+    ));
+    const hubNode = el('rect', { key: 'hub', x: geo.xHub, y: geo.hubY, width: geo.NW, height: geo.hubH, rx: 0, fill: 'var(--color-accent)' });
+    const leafNodes = geo.leaves.map(n => el('g', {
+      key: n.id, style: { cursor: 'pointer' }, onClick: () => this.selectFlow(n)
+    },
+      el('rect', { key: 'r', x: n.x, y: n.y, width: geo.NW, height: n.h, rx: 0, fill: n.color }),
+      n.h >= MIN_LABEL_H && el('text', { key: 't', x: n.x - 4, y: n.y + n.h / 2 + 2.3, textAnchor: 'end', style: tiny }, n.label)
+    ));
+    const hint = el('text', { key: 'hint', x: geo.W / 2, y: 14, textAnchor: 'middle', style: { fontFamily: 'var(--font-body)', fontSize: 8, fill: 'var(--color-neutral-500)' } }, 'Tap a bar for details');
+    return el('svg', { viewBox: `0 0 ${geo.W} ${geo.H}`, style: { width: '100%', height: 'auto', display: 'block' }, role: 'img', 'aria-label': 'Sankey diagram of June cash flow — tap a bar for details' },
+      defs, hint, paths, incomeNodes, hubNode, leafNodes);
+  }
+
+  ask(label) {
+    const answers = {
+      'Why did groceries increase?': 'Groceries hit $980 against your $900 budget — up $140 from May, driven by three Costco runs ($635) instead of the usual two.',
+      'Find unusual purchases': "Three stand out: Hansen's auto service $180, date night $86.40, and a $129.50 REI order.",
+      'Suggest ways to save': 'Cancel two idle subscriptions ($43/mo) and sweep your $2,132 checking buffer into high-yield savings.'
+    };
+    const chat = (this.state.chat || [{ isAssistant: true, text: "Hi Maya — ask me anything about your household finances." }]).concat([
+      { isUser: true, text: label },
+      { isAssistant: true, text: answers[label] }
+    ]);
+    this.setState({ chat });
+  }
+
+  renderVals() {
+    const s = this.state;
+    const active = 'var(--color-accent-300)';
+    const inactive = 'var(--color-neutral-500)';
+    const TITLES = {
+      dashboard: 'Dashboard', transactions: 'Transactions', budgets: 'Budgets', goals: 'Goals', more: 'More',
+      accounts: 'Accounts', cashflow: 'Cash Flow', investments: 'Investments', reports: 'Reports',
+      assistant: 'AI Assistant', settings: 'Settings'
+    };
+    const tabDefs = [
+      { id: 'dashboard', label: 'Home' },
+      { id: 'cashflow', label: 'Cash Flow' },
+      { id: 'budgets', label: 'Budgets' },
+      { id: 'goals', label: 'Goals' },
+      { id: 'more', label: 'More' }
+    ];
+    const isSub = this.SUBPAGES.includes(s.page);
+    const activeTabId = isSub ? 'more' : s.page;
+    const tabs = tabDefs.map(t => ({
+      label: t.label,
+      color: activeTabId === t.id ? active : inactive,
+      dotOpacity: activeTabId === t.id ? 1 : 0,
+      onClick: () => this.go(t.id)
+    }));
+
+    const moreLinks = [
+      ['accounts', 'Accounts'], ['transactions', 'Transactions'], ['investments', 'Investments'],
+      ['reports', 'Reports'], ['assistant', 'AI Assistant'], ['settings', 'Settings']
+    ].map(p => ({ label: p[1], onClick: () => this.go(p[0]) }));
+
+    const stats = [
+      { label: 'Net worth', value: '$536,306', delta: '▲ $4,120 this month', deltaColor: '#3ecf8e' },
+      { label: 'Cash on hand', value: '$40,320', delta: 'Checking $8,420 · Savings $31,900', deltaColor: 'var(--color-neutral-500)' },
+      { label: 'Spent in June', value: '$6,478', delta: '$122 left of $6,600 budget', deltaColor: 'var(--color-neutral-500)' }
+    ];
+
+    const budgets = [
+      { name: 'Groceries', meta: '$980 / $900', metaColor: '#ef8354', pct: '100%', bar: '#ef8354' },
+      { name: 'Dining out', meta: '$460 / $400', metaColor: '#ef8354', pct: '100%', bar: '#ef8354' },
+      { name: 'Transport', meta: '$520 / $550', metaColor: 'var(--color-neutral-500)', pct: '95%', bar: 'var(--color-accent)' },
+      { name: 'Shopping', meta: '$390 / $450', metaColor: 'var(--color-neutral-500)', pct: '87%', bar: 'var(--color-accent)' }
+    ];
+    const fixedRows = [
+      { name: 'Mortgage', amt: '$2,850' }, { name: 'Insurance', amt: '$430' }, { name: 'Car loan', amt: '$450' }
+    ];
+
+    const acctStats = [{ label: 'Assets', value: '$950,354' }, { label: 'Liabilities', value: '−$414,048' }];
+    const acctGroups = [
+      { title: 'Cash', rows: [
+        { icon: '🏦', name: 'Everyday Checking', sub: 'First National ····2841', balance: '$8,420', color: 'var(--color-text)', tint: 'rgba(77,163,240,.15)' },
+        { icon: '💰', name: 'High-Yield Savings', sub: 'Bright Bank · 4.10% APY', balance: '$31,900', color: 'var(--color-text)', tint: 'rgba(62,207,142,.15)' }
+      ]},
+      { title: 'Investments', rows: [
+        { icon: '📈', name: 'Joint Brokerage', sub: 'Harbor Investments', balance: '$86,584', color: 'var(--color-text)', tint: 'rgba(111,142,242,.15)' },
+        { icon: '🌱', name: 'Roth IRA — Maya', sub: 'Harbor Investments', balance: '$56,450', color: 'var(--color-text)', tint: 'rgba(145,132,217,.15)' },
+        { icon: '🏛️', name: '401(k) — both', sub: 'Employer plans, combined', balance: '$182,000', color: 'var(--color-text)', tint: 'rgba(67,207,192,.15)' }
+      ]},
+      { title: 'Debt & credit', rows: [
+        { icon: '🏠', name: 'Mortgage', sub: 'First National · 5.1% · 26 yrs left', balance: '−$403,890', color: '#e25c5c', tint: 'rgba(239,131,84,.15)' },
+        { icon: '🚗', name: 'Car loan', sub: '4.4% · 21 months left', balance: '−$8,874', color: '#e25c5c', tint: 'rgba(226,92,92,.15)' },
+        { icon: '💳', name: 'Joint credit card', sub: 'Pays in full monthly', balance: '−$1,284', color: '#e25c5c', tint: 'rgba(236,106,156,.15)' }
+      ]}
+    ];
+
+    const txns = [
+      { date: 'Jun 30', merchant: 'Aurora Studio — payroll', catLabel: 'Income', amt: '+$3,200', amtColor: '#3ecf8e' },
+      { date: 'Jun 28', merchant: 'Costco Wholesale', catLabel: 'Groceries', amt: '−$248', amtColor: 'var(--color-text)' },
+      { date: 'Jun 26', merchant: "Hansen's Auto Service", catLabel: 'Transport', amt: '−$180', amtColor: 'var(--color-text)' },
+      { date: 'Jun 22', merchant: 'Safeway', catLabel: 'Groceries', amt: '−$96', amtColor: 'var(--color-text)' },
+      { date: 'Jun 20', merchant: 'REI', catLabel: 'Shopping', amt: '−$129.50', amtColor: 'var(--color-text)' },
+      { date: 'Jun 18', merchant: 'Date night — Camas', catLabel: 'Dining out', amt: '−$86.40', amtColor: 'var(--color-text)' },
+      { date: 'Jun 15', merchant: 'Aurora Studio — payroll', catLabel: 'Income', amt: '+$3,200', amtColor: '#3ecf8e' },
+      { date: 'Jun 12', merchant: 'HBO Max', catLabel: 'Subscriptions', amt: '−$16.99', amtColor: 'var(--color-text)' },
+      { date: 'Jun 5', merchant: 'City Power & Light', catLabel: 'Utilities', amt: '−$142', amtColor: 'var(--color-text)' },
+      { date: 'Jun 1', merchant: 'First National — Mortgage', catLabel: 'Mortgage', amt: '−$2,850', amtColor: 'var(--color-text)' }
+    ];
+
+    const months = [
+      { name: 'Jan', incH: '78%', outH: '68%' }, { name: 'Feb', incH: '80%', outH: '70%' },
+      { name: 'Mar', incH: '76%', outH: '72%' }, { name: 'Apr', incH: '82%', outH: '66%' },
+      { name: 'May', incH: '79%', outH: '69%' }, { name: 'Jun', incH: '100%', outH: '82%' }
+    ];
+    const cfStats = [
+      { label: 'Avg. monthly income', value: '$11,760' },
+      { label: 'Avg. monthly spending', value: '$6,410' },
+      { label: 'Savings rate', value: '23%' }
+    ];
+
+    const invStats = [
+      { label: 'Total invested', value: '$325,034', sub: '▲ $21,400 YTD', subColor: '#3ecf8e' },
+      { label: 'YTD return', value: '+7.1%', sub: 'vs. +6.4% benchmark', subColor: 'var(--color-neutral-500)' },
+      { label: 'Monthly contributions', value: '$1,200', sub: '+ 401(k) pre-tax', subColor: 'var(--color-neutral-500)' }
+    ];
+    const alloc = [
+      { name: 'US total market', pct: '52%', color: '#6f8ef2' },
+      { name: 'International', pct: '22%', color: '#43cfc0' },
+      { name: 'Bonds', pct: '14%', color: '#3ecf8e' },
+      { name: 'REITs', pct: '6%', color: '#ef8354' },
+      { name: 'Company stock', pct: '6%', color: '#b47ef0' }
+    ];
+    const invAccts = [
+      { name: 'Joint Brokerage', ytd: '+8.2% YTD', value: '$86,584' },
+      { name: 'Roth IRA — Maya', ytd: '+7.4% YTD', value: '$56,450' },
+      { name: '401(k) — both', ytd: '+6.5% YTD', value: '$182,000' }
+    ];
+
+    const goals = [
+      { name: 'Emergency fund', saved: '$31,900', target: '$39,000', pct: '82%', color: '#9184d9', eta: 'Dec 2026', note: '4.9 of 6 months of expenses covered.' },
+      { name: 'Japan trip', saved: '$2,600', target: '$7,000', pct: '37%', color: '#4da3f0', eta: 'Apr 2027', note: '$400/month — flights get booked in November.' },
+      { name: 'House projects', saved: '$4,200', target: '$12,000', pct: '35%', color: '#3ecf8e', eta: 'Sep 2027', note: 'Deck rebuild + heat pump, funded from year-end bonuses.' }
+    ];
+
+    const ytd = [
+      { label: 'Income', value: '$69,710' }, { label: 'Spending', value: '$38,756' },
+      { label: 'Saved', value: '$16,700' }, { label: 'Savings rate', value: '24%' }
+    ];
+    const reportRows = ['Jun', 'May', 'Apr', 'Mar', 'Feb', 'Jan'].map(m => ({
+      month: m + ' 2026', saved: '$2,7' + (m === 'Mar' ? '95' : '00'), rate: '23%'
+    }));
+
+    const userName = 'Maya Chen', userEmail = 'maya@chen.home';
+    const members = [
+      { initial: 'M', name: 'Maya Chen', you: '(you)', role: 'Owner · both accounts linked', tint: 'var(--color-accent-700)' },
+      { initial: 'J', name: 'Jordan Chen', you: '', role: 'Member · payroll + joint card', tint: 'var(--color-accent-800)' }
+    ];
+    const catChips = ['Mortgage', 'Groceries', 'Dining out', 'Transport', 'Insurance', 'Shopping', 'Utilities', 'Health'].map((label, i) => ({
+      label, dot: ['#ef8354', '#e25c5c', '#4da3f0', '#3ecf8e', '#9184d9', '#43cfc0', '#b47ef0', '#ec6a9c'][i % 8],
+      bg: 'rgba(120,120,120,.14)'
+    }));
+
+    const prompts = [
+      { label: 'Why did groceries increase?' }, { label: 'Find unusual purchases' }, { label: 'Suggest ways to save' }
+    ].map(p => ({ ...p, onClick: () => this.ask(p.label) }));
+    const chat = s.chat || [{ isAssistant: true, text: "Hi Maya — ask me anything about your household finances." }];
+
+    return {
+      isSplash: s.page === 'splash', showApp: s.page !== 'splash', enter: this.enter,
+      pageTitle: TITLES[s.page], showBack: isSub, goBack: () => this.go('more'),
+      isDashboard: s.page === 'dashboard', isTransactions: s.page === 'transactions',
+      isBudgets: s.page === 'budgets', isGoals: s.page === 'goals', isMore: s.page === 'more',
+      isAccounts: s.page === 'accounts', isCashflow: s.page === 'cashflow', isInvestments: s.page === 'investments',
+      isReports: s.page === 'reports', isAssistant: s.page === 'assistant', isSettings: s.page === 'settings',
+      stats, budgets, fixedRows, acctStats, acctGroups, txns, months, cfStats, invStats, alloc, invAccts,
+      goals, ytd, reportRows, userName, userEmail, members, catChips, prompts, chat, tabs, moreLinks,
+      search: '', onSearch: () => {},
+      sankeySvg: this.buildSankey(),
+      sheet: s.sheet, closeSheet: this.closeSheet,
+      onSwipeStart: this.onSwipeStart, onSwipeEnd: this.onSwipeEnd
+    };
+  }
+}
+</script>
+</body>
+</html>
