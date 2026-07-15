@@ -1,0 +1,90 @@
+import { randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { z } from "zod";
+
+const EnvSchema = z.object({
+  // Postgres
+  DATABASE_URL: z
+    .string()
+    .default("postgres://vault:vault@localhost:5432/vault"),
+
+  // HTTP
+  VAULT_PORT: z.coerce.number().int().default(8443),
+  VAULT_HOST: z.string().default("0.0.0.0"),
+
+  // TLS: paths to a cert/key pair. When unset, a self-signed pair is
+  // generated into VAULT_DATA_DIR on first boot (ADR-0004). VAULT_TLS=off is
+  // for local development and tests only.
+  VAULT_TLS: z.enum(["on", "off"]).default("on"),
+  VAULT_TLS_CERT: z.string().optional(),
+  VAULT_TLS_KEY: z.string().optional(),
+
+  // Data dir: generated TLS certs, JWT secret, uploaded attachments.
+  VAULT_DATA_DIR: z.string().default("./data"),
+
+  // Auth. If unset, a random secret is generated and persisted in the data
+  // dir so restarts don't invalidate sessions.
+  VAULT_JWT_SECRET: z.string().min(32).optional(),
+  VAULT_ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().default(15 * 60),
+
+  // Ollama defaults used when the setup wizard doesn't override them.
+  OLLAMA_HOST: z.string().default("ollama"),
+  OLLAMA_PORT: z.coerce.number().int().default(11434),
+  OLLAMA_MODEL: z.string().default("llama3.1:8b"),
+
+  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+});
+
+export interface AppConfig {
+  databaseUrl: string;
+  port: number;
+  host: string;
+  tls: { enabled: boolean; certPath?: string; keyPath?: string };
+  dataDir: string;
+  jwtSecret: string;
+  accessTokenTtlSeconds: number;
+  ollama: { host: string; port: number; model: string };
+  logLevel: string;
+  /** Shared semver for the version-compatibility check. */
+  apiVersion: string;
+  minClientVersion: string;
+}
+
+function loadOrCreateJwtSecret(dataDir: string): string {
+  const secretPath = path.join(dataDir, "jwt-secret");
+  if (existsSync(secretPath)) {
+    return readFileSync(secretPath, "utf8").trim();
+  }
+  const secret = randomBytes(48).toString("base64url");
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(secretPath, secret, { mode: 0o600 });
+  return secret;
+}
+
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  const parsed = EnvSchema.parse(env);
+  const dataDir = path.resolve(parsed.VAULT_DATA_DIR);
+
+  return {
+    databaseUrl: parsed.DATABASE_URL,
+    port: parsed.VAULT_PORT,
+    host: parsed.VAULT_HOST,
+    tls: {
+      enabled: parsed.VAULT_TLS === "on",
+      ...(parsed.VAULT_TLS_CERT ? { certPath: parsed.VAULT_TLS_CERT } : {}),
+      ...(parsed.VAULT_TLS_KEY ? { keyPath: parsed.VAULT_TLS_KEY } : {}),
+    },
+    dataDir,
+    jwtSecret: parsed.VAULT_JWT_SECRET ?? loadOrCreateJwtSecret(dataDir),
+    accessTokenTtlSeconds: parsed.VAULT_ACCESS_TOKEN_TTL_SECONDS,
+    ollama: {
+      host: parsed.OLLAMA_HOST,
+      port: parsed.OLLAMA_PORT,
+      model: parsed.OLLAMA_MODEL,
+    },
+    logLevel: parsed.LOG_LEVEL,
+    apiVersion: "0.1.0",
+    minClientVersion: "0.1.0",
+  };
+}

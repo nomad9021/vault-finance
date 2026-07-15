@@ -1,0 +1,48 @@
+import Fastify, { type FastifyInstance } from "fastify";
+import type { AppConfig } from "./config.js";
+import authPlugin from "./plugins/auth.js";
+import dbPlugin from "./plugins/db.js";
+import errorHandlerPlugin from "./plugins/error-handler.js";
+import versionGatePlugin from "./plugins/version-gate.js";
+import authRoutes from "./modules/auth/routes.js";
+import metaRoutes from "./modules/meta/routes.js";
+import setupRoutes from "./modules/setup/routes.js";
+
+export interface BuildAppOptions {
+  config: AppConfig;
+  /** Tests run migrations themselves against a throwaway DB. */
+  runMigrations?: boolean;
+  https?: { cert: string; key: string };
+}
+
+export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> {
+  const app = Fastify({
+    logger: { level: opts.config.logLevel },
+    trustProxy: false,
+    ...(opts.https ? { https: opts.https } : {}),
+  });
+
+  await app.register(errorHandlerPlugin);
+  await app.register(versionGatePlugin, {
+    minClientVersion: opts.config.minClientVersion,
+  });
+  await app.register(dbPlugin, {
+    databaseUrl: opts.config.databaseUrl,
+    runMigrations: opts.runMigrations ?? true,
+  });
+  await app.register(authPlugin, {
+    jwtSecret: opts.config.jwtSecret,
+    accessTokenTtlSeconds: opts.config.accessTokenTtlSeconds,
+  });
+
+  await app.register(
+    async (api) => {
+      await api.register(metaRoutes, { config: opts.config });
+      await api.register(setupRoutes, { config: opts.config });
+      await api.register(authRoutes);
+    },
+    { prefix: "/api/v1" },
+  );
+
+  return app;
+}

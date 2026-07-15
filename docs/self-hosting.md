@@ -1,40 +1,210 @@
 # Self-hosting guide
 
-> **Status**: skeleton only. This becomes the first-class deliverable it needs
-> to be as each milestone in [roadmap.md](roadmap.md) lands — most sections
-> below can't be written accurately until the thing they describe exists. The
-> structure is fixed now so nothing referenced from [architecture.md](architecture.md)
-> or the ADRs links to a missing page.
+Vault Finance is a client–server system where **you run the server**: all
+financial data, uploads, and AI processing stay on your own hardware. There is
+no cloud component. This guide covers deploying the server with Docker
+Compose.
 
-## Planned sections
+> Sections marked *(coming with M-x)* describe functionality from a later
+> milestone in [roadmap.md](roadmap.md) and will be filled in when it lands.
 
-1. **Requirements** — Docker + Docker Compose, disk space for Postgres +
-   Ollama models, a machine that stays on (this is a server, not a
-   one-off script).
-2. **Quick start** — clone, copy `.env.example`, `docker compose up -d`, open
-   the desktop app, complete the setup wizard. Target: five commands or fewer.
-3. **Configuring remote access** — connecting over a LAN vs. a VPN/overlay
-   (Tailscale is the documented example from the spec); what to put in the
-   desktop app's "server address" field in each case.
-4. **TLS and certificate trust** — what Trust-On-First-Use means in practice
-   for this app ([ADR-0004](adr/0004-tls-trust.md)), what the fingerprint
-   confirmation screen looks like, and how to swap in your own cert (internal
-   CA, or a reverse proxy with a real one) instead of the wizard-generated
-   self-signed one.
-5. **AI setup** — running Ollama in the bundled Compose service vs. pointing
-   at an existing Ollama install elsewhere on the network; how to pull a
-   model; what happens when AI is unreachable.
-6. **Hardware sizing for Ollama** — RAM/VRAM expectations per common model
-   size class (e.g. 7–8B, 13–14B, 30B+), to be filled in with real numbers
-   measured during milestone M4 rather than vendor-quoted figures.
-7. **Backups** — which Docker volumes hold state (Postgres data, uploaded
-   attachments/receipts), and a recommended backup command.
-8. **Updating** — server: `docker compose pull && docker compose up -d`;
-   desktop: in-app auto-updater, what the version-compatibility warning means
-   if you update one side and not the other.
-9. **Troubleshooting** — common first-run issues (port conflicts, cert
-   fingerprint mismatches after a redeploy, Ollama model not found).
-10. **Manual release steps for maintainers** — the macOS notarization steps
-    that must happen in a browser/CLI outside CI (Apple Developer account,
-    `notarytool` credentials as GitHub Actions secrets), referenced from the
-    M6 CI milestone.
+## 1. Requirements
+
+- **Docker** with the Compose plugin (Docker Engine 24+ recommended).
+- **A machine that stays on** — a home server, NAS, mini-PC, or spare desktop.
+  This is a server other devices connect to, not a one-off script.
+- **Disk**: ~1 GB for the app + Postgres to start (grows with your data), plus
+  **4–20 GB per AI model** if you run the bundled Ollama.
+- **RAM**: 2 GB is plenty for the finance stack itself. Add what your chosen
+  AI model needs (see [§6](#6-hardware-sizing-for-ollama)).
+
+## 2. Quick start
+
+```bash
+git clone <your-fork-or-release-tarball> vault-finance
+cd vault-finance/docker
+cp .env.example .env        # defaults work; edit if you want
+docker compose up -d
+```
+
+First boot does everything automatically:
+
+1. Postgres initializes and the server runs all database migrations.
+2. A self-signed TLS certificate and a JWT signing secret are generated into
+   the `vaultdata` volume (they persist across restarts and upgrades).
+3. The API comes up at `https://<server-ip>:8443`.
+
+Check it:
+
+```bash
+curl -k https://localhost:8443/api/v1/setup/status
+# → {"needsSetup":true}
+```
+
+Then open the desktop app, enter the server address, and the app walks you
+through the **setup wizard** (owner account + AI configuration). Until the
+desktop app milestone lands you can complete setup from a terminal:
+
+```bash
+curl -k -X POST https://localhost:8443/api/v1/setup/complete \
+  -H 'content-type: application/json' \
+  -d '{
+    "ownerEmail": "you@example.com",
+    "ownerPassword": "pick-a-long-passphrase",
+    "ownerDisplayName": "Your Name"
+  }'
+```
+
+The wizard refuses to run twice — after the owner account exists,
+`setup/complete` returns `409 SETUP_ALREADY_COMPLETE`.
+
+## 3. Configuring remote access
+
+The desktop app asks for a **server address**. What you enter depends on how
+you reach the machine:
+
+| Scenario | Server address to enter |
+|---|---|
+| Same LAN | `https://192.168.x.x:8443` or `https://hostname.local:8443` |
+| Tailscale / VPN | `https://<tailscale-ip-or-magicdns-name>:8443` |
+| Reverse proxy with real TLS | whatever hostname the proxy serves |
+
+**Tailscale** is the recommended way to use the app away from home: install
+Tailscale on both the server and your devices, and use the server's Tailscale
+IP (or MagicDNS name) as the server address. No ports are exposed to the
+internet, and the app's own TLS still applies inside the tunnel.
+
+Do **not** port-forward 8443 to the open internet. If you need
+internet-without-VPN access, put a reverse proxy with a real certificate and
+its own hardening in front, and understand what you're exposing.
+
+## 4. TLS and certificate trust
+
+The server always speaks HTTPS. By default it generates a **self-signed
+certificate** on first boot ([ADR-0004](adr/0004-tls-trust.md)) and keeps it
+stable from then on. Desktop clients use trust-on-first-use: the first
+connection shows the certificate fingerprint, you confirm it, and the app
+pins it — any later change is a hard warning, not a silent accept.
+
+To use your own certificate instead (internal CA, or a wildcard you own),
+mount the pair into the container and point the server at it:
+
+```yaml
+# docker-compose.yml, under server:
+    environment:
+      VAULT_TLS_CERT: /certs/server.crt
+      VAULT_TLS_KEY: /certs/server.key
+    volumes:
+      - ./certs:/certs:ro
+      - vaultdata:/data
+```
+
+`curl` note: `-k` skips verification, fine for spot checks on localhost. For
+scripts, fetch the cert once and pass `--cacert` instead.
+
+## 5. AI setup
+
+The AI assistant runs on **Ollama — on your hardware, never a cloud API**.
+The compose file bundles an Ollama service, and the server reaches it at
+`OLLAMA_HOST`/`OLLAMA_PORT` (defaults: the bundled `ollama` service on 11434).
+
+Pull a model once after first boot:
+
+```bash
+docker compose exec ollama ollama pull llama3.1:8b
+```
+
+To use an Ollama running **elsewhere on your network** (say, a gaming PC with
+a real GPU), delete the `ollama` service from the compose file and set in
+`.env`:
+
+```env
+OLLAMA_HOST=192.168.1.50
+OLLAMA_PORT=11434
+OLLAMA_MODEL=llama3.1:8b
+```
+
+The same settings are editable in-app (Settings → AI) once the desktop app
+lands; in-app values are stored in the database and take precedence over the
+environment defaults.
+
+**If Ollama is unreachable, nothing else breaks.** Accounts, transactions,
+budgets, reports — everything non-AI keeps working; AI surfaces show a clear
+"AI offline" state with setup instructions instead of errors.
+
+## 6. Hardware sizing for Ollama
+
+*(numbers to be measured and filled in during M4 — placeholder guidance:)*
+
+| Model class | RAM (CPU-only) | VRAM (GPU) | Feel |
+|---|---|---|---|
+| 3B (e.g. `llama3.2:3b`) | 8 GB | 4 GB | fast, good for summaries |
+| 7–8B (e.g. `llama3.1:8b`) | 16 GB | 8 GB | recommended default |
+| 13–14B | 32 GB | 12–16 GB | noticeably better reasoning |
+| 30B+ | 64 GB+ | 24 GB+ | best quality, needs real hardware |
+
+CPU-only works — responses stream slower but the app is fully usable.
+
+## 7. Backups
+
+All state lives in named Docker volumes:
+
+| Volume | Contents |
+|---|---|
+| `pgdata` | every account, transaction, budget — the database |
+| `vaultdata` | TLS cert, JWT secret, uploaded receipts/attachments |
+| `ollamadata` | downloaded AI models (re-pullable, skip if space matters) |
+| `redisdata` | cache only — safe to lose |
+
+Simple offline backup:
+
+```bash
+docker compose stop server
+docker run --rm -v vault-finance_pgdata:/v -v "$PWD":/backup alpine \
+  tar czf /backup/pgdata-$(date +%F).tar.gz -C /v .
+docker run --rm -v vault-finance_vaultdata:/v -v "$PWD":/backup alpine \
+  tar czf /backup/vaultdata-$(date +%F).tar.gz -C /v .
+docker compose start server
+```
+
+For a live backup of just the database:
+`docker compose exec postgres pg_dump -U vault vault | gzip > vault-$(date +%F).sql.gz`
+
+Backups never leave your machine unless you move them.
+
+## 8. Updating
+
+**Server** — pull the new code/image and restart; migrations run
+automatically on boot:
+
+```bash
+git pull            # or download the release
+docker compose up -d --build
+```
+
+**Desktop apps** *(coming with M6)* — built-in auto-updater. Server and
+clients share one semantic version line; if a client is older than the
+server's `minClientVersion`, the API answers `426` and the app shows an
+"update required" screen instead of failing in confusing ways. Updating the
+server first is always the safe order.
+
+## 9. Troubleshooting
+
+- **Port already in use** — change `VAULT_PORT` in `.env` (host side only;
+  the container keeps listening on 8443 internally).
+- **`needsSetup` is still true after setup** — you're probably talking to a
+  different server/volume than you think. `docker compose logs server` shows
+  the database it connected to.
+- **Certificate warning after redeploy** — if you deleted the `vaultdata`
+  volume, a new cert was generated and clients that pinned the old
+  fingerprint will (correctly) warn. Re-confirm the new fingerprint.
+- **AI shows offline** — `docker compose logs ollama`; confirm the model is
+  pulled (`docker compose exec ollama ollama list`) and that
+  `OLLAMA_HOST`/`OLLAMA_PORT` in `.env` match where Ollama actually runs.
+- **Login rate-limited (429)** — 10 attempts per 15 minutes per device+email.
+  Wait, or restart the server to clear it.
+
+## 10. Manual release steps for maintainers
+
+*(coming with M6 — macOS signing/notarization credentials and the
+browser-side Apple Developer steps that CI cannot do.)*

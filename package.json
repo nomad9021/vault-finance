@@ -1,0 +1,22 @@
+{
+  "name": "vault-finance",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted, AI-powered personal finance — your finances, your AI, your server.",
+  "license": "MIT",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.3"
+  }
+}

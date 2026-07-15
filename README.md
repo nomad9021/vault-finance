@@ -1,0 +1,45 @@
+# Vault Finance
+
+Self-hosted, AI-powered personal finance. Your data, your AI, your server —
+nothing ever leaves your hardware.
+
+- **Server**: Fastify + PostgreSQL, deployed with a single `docker compose up`
+  on your own machine ([self-hosting guide](docs/self-hosting.md)).
+- **Desktop apps**: Windows / macOS / Linux (Tauri 2 + React), connecting to
+  your server over LAN or Tailscale. *(in progress — see the
+  [roadmap](docs/roadmap.md))*
+- **AI**: local models via Ollama on your own hardware. No cloud APIs, no
+  telemetry, ever.
+
+## Documentation
+
+| Doc | What it covers |
+|---|---|
+| [architecture.md](docs/architecture.md) | System overview, network diagram, where the future iOS client fits |
+| [folder-structure.md](docs/folder-structure.md) | Monorepo layout |
+| [database-schema.md](docs/database-schema.md) | PostgreSQL schema |
+| [api-design.md](docs/api-design.md) | REST API, auth flows, streaming |
+| [roadmap.md](docs/roadmap.md) | Milestones M1–M6 |
+| [self-hosting.md](docs/self-hosting.md) | Deploying and operating your server |
+| [docs/adr/](docs/adr/) | Architecture decision records |
+
+## Development
+
+Requirements: Node 22+, pnpm 9 (via corepack), Docker (for the full stack).
+
+```bash
+pnpm install
+pnpm build          # build all workspace packages
+pnpm test           # server e2e tests run against a real embedded Postgres
+pnpm --filter @vault/server dev   # dev server with hot reload
+```
+
+The server dev process needs a `DATABASE_URL` pointing at any Postgres 16+;
+`docker compose -f docker/docker-compose.yml up -d postgres` gives you one.
+
+## Status
+
+Milestone **M1 — backend core** is complete: auth (short-lived access +
+rotating refresh tokens, per-device sessions), first-run setup wizard,
+HTTPS with generated self-signed certs, migrations, Docker Compose stack.
+Next up: the desktop app shell (M2).

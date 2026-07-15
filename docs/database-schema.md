@@ -8,14 +8,16 @@ the design (a small, fixed member list, not a multi-tenant model).
 
 All money is stored as **integer cents** (`bigint`), never floating point.
 Every table has `created_at timestamptz not null default now()`; tables that
-are user-editable also get `updated_at` maintained by a trigger.
+are user-editable also get `updated_at`, set by the application layer on
+every update (no triggers — keeps the schema portable and behavior visible
+in one place).
 
 ```sql
 -- ── Identity & auth ─────────────────────────────────────────────
 
 create table users (
   id              uuid primary key default gen_random_uuid(),
-  email           citext not null unique,
+  email           text not null unique,        -- normalized to lowercase in the app layer (avoids the citext extension)
   password_hash   text not null,               -- argon2id
   display_name    text not null,
   avatar_color    text not null,                -- hex, used for the initial-bubble tint

@@ -1,0 +1,81 @@
+# Vault Finance — self-hosted stack.
+#   cp .env.example .env   (edit if you like)
+#   docker compose up -d
+# Everything stays on this machine. See docs/self-hosting.md.
+
+name: vault-finance
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vault}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vault}
+      POSTGRES_DB: ${POSTGRES_DB:-vault}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vault} -d ${POSTGRES_DB:-vault}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Optional: the server runs fine without Redis (in-memory fallbacks).
+    # Remove this service if you want the smallest possible stack.
+    volumes:
+      - redisdata:/data
+
+  server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-vault}:${POSTGRES_PASSWORD:-vault}@postgres:5432/${POSTGRES_DB:-vault}
+      VAULT_PORT: "8443"
+      # TLS: a self-signed cert is generated into the data volume on first
+      # boot (stable across restarts — clients pin its fingerprint). To use
+      # your own cert, mount it and set VAULT_TLS_CERT / VAULT_TLS_KEY.
+      VAULT_TLS: "on"
+      # Point at the bundled Ollama by default; change OLLAMA_HOST/PORT to use
+      # an Ollama elsewhere on your network (never hardcoded to localhost).
+      OLLAMA_HOST: ${OLLAMA_HOST:-ollama}
+      OLLAMA_PORT: ${OLLAMA_PORT:-11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - vaultdata:/data
+    ports:
+      - "${VAULT_PORT:-8443}:8443"
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    # Local AI runtime. Optional: comment this service out (or set
+    # OLLAMA_HOST to another machine) and every non-AI feature keeps working.
+    volumes:
+      - ollamadata:/root/.ollama
+    # Uncomment to expose Ollama to other machines on your network:
+    # ports:
+    #   - "11434:11434"
+    # For NVIDIA GPU acceleration, uncomment:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  pgdata:
+  redisdata:
+  vaultdata:
+  ollamadata:
