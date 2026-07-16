@@ -2,10 +2,13 @@ import { Banner, Button } from "@vault/ui";
 import { useState } from "react";
 import { useApp } from "../../state/store.js";
 import { AppMark } from "../AuthLayout.js";
+import { AccountsPage } from "./AccountsPage.js";
+import { BudgetsPage } from "./BudgetsPage.js";
 import { DashboardPage } from "./DashboardPage.js";
 import { Header } from "./Header.js";
 import { PlaceholderPage } from "./PlaceholderPage.js";
 import { SettingsPage } from "./SettingsPage.js";
+import { TransactionsPage } from "./TransactionsPage.js";
 
 export type PageId =
   | "dashboard"
@@ -196,6 +199,12 @@ export function AppShell() {
         <div style={{ flex: 1, overflow: "auto", padding: 24 }}>
           {page === "dashboard" ? (
             <DashboardPage onNavigate={setPage} />
+          ) : page === "accounts" ? (
+            <AccountsPage />
+          ) : page === "transactions" ? (
+            <TransactionsPage />
+          ) : page === "budgets" ? (
+            <BudgetsPage />
           ) : page === "settings" ? (
             <SettingsPage />
           ) : (

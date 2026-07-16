@@ -11,6 +11,32 @@ import {
 import { SetupStatusResponse, type SetupCompleteRequest } from "../schemas/setup.js";
 import { User } from "../schemas/user.js";
 import { VersionResponse } from "../schemas/version.js";
+import {
+  Account,
+  AccountListResponse,
+  type CreateAccountRequest,
+  type UpdateAccountRequest,
+} from "../schemas/accounts.js";
+import {
+  Category,
+  CategoryListResponse,
+  type CreateCategoryRequest,
+  type UpdateCategoryRequest,
+} from "../schemas/categories.js";
+import {
+  ImportResponse,
+  Transaction,
+  TransactionListResponse,
+  type CreateTransactionRequest,
+  type TransactionListQuery,
+  type UpdateTransactionRequest,
+} from "../schemas/transactions.js";
+import {
+  Budget,
+  BudgetListResponse,
+  type CreateBudgetRequest,
+  type UpdateBudgetRequest,
+} from "../schemas/budgets.js";
 
 /**
  * Transport abstraction: the browser passes global fetch; the Tauri desktop
@@ -239,5 +265,85 @@ export class ApiClient {
   }
   revokeSession(id: string) {
     return this.request(z.undefined(), "DELETE", `/auth/sessions/${id}`);
+  }
+
+  // ── Accounts ──
+  accounts(includeArchived = false) {
+    return this.request(
+      AccountListResponse,
+      "GET",
+      `/accounts${includeArchived ? "?archived=true" : ""}`,
+    );
+  }
+  createAccount(body: CreateAccountRequest) {
+    return this.request(Account, "POST", "/accounts", body);
+  }
+  updateAccount(id: string, body: UpdateAccountRequest) {
+    return this.request(Account, "PATCH", `/accounts/${id}`, body);
+  }
+  deleteAccount(id: string) {
+    return this.request(z.object({ archived: z.boolean() }), "DELETE", `/accounts/${id}`);
+  }
+
+  // ── Categories ──
+  categories() {
+    return this.request(CategoryListResponse, "GET", "/categories");
+  }
+  createCategory(body: CreateCategoryRequest) {
+    return this.request(Category, "POST", "/categories", body);
+  }
+  updateCategory(id: string, body: UpdateCategoryRequest) {
+    return this.request(Category, "PATCH", `/categories/${id}`, body);
+  }
+  deleteCategory(id: string) {
+    return this.request(z.undefined(), "DELETE", `/categories/${id}`);
+  }
+
+  // ── Transactions ──
+  transactions(query: Partial<TransactionListQuery> = {}) {
+    // Hand-rolled query string: URLSearchParams is a DOM/Node global and this
+    // package deliberately compiles against pure ES lib types.
+    const qs = Object.entries(query)
+      .filter(([, v]) => v !== undefined && v !== "")
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+      .join("&");
+    return this.request(
+      TransactionListResponse,
+      "GET",
+      `/transactions${qs ? `?${qs}` : ""}`,
+    );
+  }
+  createTransaction(body: CreateTransactionRequest) {
+    return this.request(Transaction, "POST", "/transactions", body);
+  }
+  updateTransaction(id: string, body: UpdateTransactionRequest) {
+    return this.request(Transaction, "PATCH", `/transactions/${id}`, body);
+  }
+  deleteTransaction(id: string) {
+    return this.request(z.undefined(), "DELETE", `/transactions/${id}`);
+  }
+  importTransactions(accountId: string, csvText: string) {
+    return this.request(ImportResponse, "POST", "/transactions/import", {
+      accountId,
+      csv: csvText,
+    });
+  }
+
+  // ── Budgets ──
+  budgets(month?: string) {
+    return this.request(
+      BudgetListResponse,
+      "GET",
+      `/budgets${month ? `?month=${month}` : ""}`,
+    );
+  }
+  createBudget(body: CreateBudgetRequest) {
+    return this.request(Budget, "POST", "/budgets", body);
+  }
+  updateBudget(id: string, body: UpdateBudgetRequest) {
+    return this.request(Budget, "PATCH", `/budgets/${id}`, body);
+  }
+  deleteBudget(id: string) {
+    return this.request(z.undefined(), "DELETE", `/budgets/${id}`);
   }
 }

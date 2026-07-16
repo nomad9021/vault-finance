@@ -5,9 +5,13 @@ import authPlugin from "./plugins/auth.js";
 import dbPlugin from "./plugins/db.js";
 import errorHandlerPlugin from "./plugins/error-handler.js";
 import versionGatePlugin from "./plugins/version-gate.js";
+import accountRoutes from "./modules/accounts/routes.js";
 import authRoutes from "./modules/auth/routes.js";
+import budgetRoutes from "./modules/budgets/routes.js";
+import categoryRoutes from "./modules/categories/routes.js";
 import metaRoutes from "./modules/meta/routes.js";
 import setupRoutes from "./modules/setup/routes.js";
+import transactionRoutes from "./modules/transactions/routes.js";
 
 export interface BuildAppOptions {
   config: AppConfig;
@@ -45,6 +49,10 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       await api.register(metaRoutes, { config: opts.config });
       await api.register(setupRoutes, { config: opts.config });
       await api.register(authRoutes);
+      await api.register(accountRoutes);
+      await api.register(categoryRoutes);
+      await api.register(transactionRoutes);
+      await api.register(budgetRoutes);
     },
     { prefix: "/api/v1" },
   );

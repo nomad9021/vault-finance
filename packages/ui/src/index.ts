@@ -7,3 +7,4 @@ export * from "./primitives/Avatar.js";
 export * from "./primitives/Spinner.js";
 export * from "./primitives/Segmented.js";
 export * from "./primitives/Banner.js";
+export * from "./primitives/Select.js";

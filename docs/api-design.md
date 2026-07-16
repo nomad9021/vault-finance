@@ -70,7 +70,7 @@ see [ADR-0005](adr/0005-ai-streaming.md)). Every request after login carries
 | GET | `/api/v1/transactions/:id` | |
 | PATCH | `/api/v1/transactions/:id` | Includes re-categorization. |
 | DELETE | `/api/v1/transactions/:id` | |
-| POST | `/api/v1/transactions/import` | multipart CSV upload → `{ imported, skippedDuplicates, errors[] }`, dedupes on `external_id`. |
+| POST | `/api/v1/transactions/import` | `{ accountId, csv }` (CSV as a JSON string field — household CSVs are small, and this keeps every endpoint JSON; revisit as multipart only if receipts-scale uploads ever need it) → `{ imported, skippedDuplicates, errors[] }`, dedupes on `external_id`; rows without one get a deterministic content hash so re-importing the same file is idempotent. |
 | POST | `/api/v1/transactions/:id/attachments` | multipart file upload (receipts). |
 | GET | `/api/v1/attachments/:id` | Streams the file; server enforces the requester owns the parent transaction's household. |
 

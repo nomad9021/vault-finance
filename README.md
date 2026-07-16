@@ -50,4 +50,11 @@ The server dev process needs a `DATABASE_URL` pointing at any Postgres 16+;
   compiles in CI (M6) — building it locally needs the Tauri Linux
   prerequisites (webkit2gtk, libappindicator).
 
-Next up: core modules — accounts, transactions, budgets (M3).
+- **M3 — core modules**: complete. Accounts (grouped list, net-worth stats,
+  archive-vs-delete), transactions (cursor pagination, merchant full-text
+  search, category/account filters, CSV import with idempotent dedupe,
+  balance-tracking mutations), categories (system + custom, in-use
+  protection), and month-versioned budgets with live spent-vs-budget bars.
+  The app is now useful without AI.
+
+Next up: AI assistant integration via local Ollama (M4).

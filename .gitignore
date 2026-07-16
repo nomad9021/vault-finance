@@ -8,3 +8,4 @@ docker/certs/*.pem
 docker/certs/*.key
 .embedded-postgres/
 coverage/
+.dev-stack/
