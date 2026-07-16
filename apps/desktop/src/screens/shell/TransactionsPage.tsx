@@ -11,7 +11,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 
-export function TransactionsPage() {
+export function TransactionsPage({
+  initialCategoryId,
+}: {
+  /** Pre-applied category filter (Sankey drill-in → "View in Transactions"). */
+  initialCategoryId?: string;
+} = {}) {
   const client = useApp((s) => s.client);
 
   const { data: accountData } = useData(() => client.accounts(true), [client]);
@@ -24,7 +29,7 @@ export function TransactionsPage() {
   // Filters
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState(initialCategoryId ?? "");
   const [accountFilter, setAccountFilter] = useState("");
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 250);

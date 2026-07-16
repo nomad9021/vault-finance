@@ -5,9 +5,12 @@ import { AppMark } from "../AuthLayout.js";
 import { AccountsPage } from "./AccountsPage.js";
 import { AssistantPage } from "./AssistantPage.js";
 import { BudgetsPage } from "./BudgetsPage.js";
+import { CashFlowPage } from "./CashFlowPage.js";
 import { DashboardPage } from "./DashboardPage.js";
+import { GoalsPage } from "./GoalsPage.js";
 import { Header } from "./Header.js";
-import { PlaceholderPage } from "./PlaceholderPage.js";
+import { InvestmentsPage } from "./InvestmentsPage.js";
+import { ReportsPage } from "./ReportsPage.js";
 import { SettingsPage } from "./SettingsPage.js";
 import { TransactionsPage } from "./TransactionsPage.js";
 
@@ -54,6 +57,13 @@ export function AppShell() {
   const user = useApp((s) => s.user);
   const [page, setPage] = useState<PageId>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  // Set by Sankey drill-in ("View in Transactions"); consumed once on navigate.
+  const [txnCategoryFilter, setTxnCategoryFilter] = useState<string | undefined>();
+
+  const navigate = (target: PageId, categoryId?: string) => {
+    setTxnCategoryFilter(categoryId);
+    setPage(target);
+  };
 
   return (
     <div
@@ -199,19 +209,28 @@ export function AppShell() {
         />
         <div style={{ flex: 1, overflow: "auto", padding: 24 }}>
           {page === "dashboard" ? (
-            <DashboardPage onNavigate={setPage} />
+            <DashboardPage onNavigate={navigate} />
           ) : page === "accounts" ? (
             <AccountsPage />
           ) : page === "transactions" ? (
-            <TransactionsPage />
+            <TransactionsPage
+              key={txnCategoryFilter ?? "all"}
+              {...(txnCategoryFilter ? { initialCategoryId: txnCategoryFilter } : {})}
+            />
           ) : page === "budgets" ? (
             <BudgetsPage />
+          ) : page === "cashflow" ? (
+            <CashFlowPage />
+          ) : page === "investments" ? (
+            <InvestmentsPage onNavigate={navigate} />
+          ) : page === "goals" ? (
+            <GoalsPage />
+          ) : page === "reports" ? (
+            <ReportsPage />
           ) : page === "assistant" ? (
             <AssistantPage onNavigate={setPage} />
-          ) : page === "settings" ? (
-            <SettingsPage />
           ) : (
-            <PlaceholderPage title={PAGE_TITLES[page]} />
+            <SettingsPage />
           )}
         </div>
       </main>

@@ -8,6 +8,13 @@
       "when": 1784142925199,
       "tag": "0000_woozy_black_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784221947426,
+      "tag": "0001_magical_glorian",
+      "breakpoints": true
     }
   ]
 }

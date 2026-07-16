@@ -103,9 +103,8 @@ see [ADR-0005](adr/0005-ai-streaming.md)). Every request after login carries
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/v1/investment-accounts` | Accounts of type `investment`, with holdings and computed allocation %. |
-| GET | `/api/v1/investment-accounts/:id/holdings` | |
-| POST | `/api/v1/investment-accounts/:id/holdings` | |
+| GET | `/api/v1/investments` | Accounts of type `investment` with their holdings, plus totals and allocation-by-symbol. Holding values are user-entered (`marketValueCents`) — a privacy-first app has no market-data feed. |
+| POST | `/api/v1/investments/:accountId/holdings` | |
 | PATCH | `/api/v1/holdings/:id` | |
 | DELETE | `/api/v1/holdings/:id` | |
 

@@ -64,5 +64,13 @@ The server dev process needs a `DATABASE_URL` pointing at any Postgres 16+;
   and model picker; graceful offline states everywhere. Docker stack and
   Tauri Rust shell now verified on a real machine.
 
-Next up: Cash Flow with the Sankey diagram, Investments, Savings Goals,
-Reports (M5).
+- **M5 — Sankey, Investments, Goals, Reports**: complete. The flagship
+  interactive cash-flow Sankey on the dashboard (click any node to drill into
+  its transactions, weekly/monthly/yearly views), 6-month income-vs-spending
+  cash flow page, investments with user-entered valuations and allocation,
+  savings goals with linked-account progress and projected completion,
+  monthly/yearly reports with cached AI commentary, and CSV export.
+  `scripts/seed-demo.mjs` fills a dev server with realistic data.
+
+Next up: CI pipeline, signed installers for all three platforms, and
+auto-update (M6).

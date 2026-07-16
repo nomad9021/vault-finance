@@ -45,6 +45,20 @@ import {
   type ChatRequest,
   type UpdateAiSettingsRequest,
 } from "../schemas/ai.js";
+import { CashflowSummaryResponse, SankeyResponse } from "../schemas/cashflow.js";
+import {
+  Holding,
+  InvestmentsResponse,
+  type CreateHoldingRequest,
+  type UpdateHoldingRequest,
+} from "../schemas/investments.js";
+import {
+  Goal,
+  GoalListResponse,
+  type CreateGoalRequest,
+  type UpdateGoalRequest,
+} from "../schemas/goals.js";
+import { MonthlyReport, YearlyReport } from "../schemas/reports.js";
 
 /**
  * Transport abstraction: the browser passes global fetch; the Tauri desktop
@@ -449,6 +463,85 @@ export class ApiClient {
       );
     }
     return result;
+  }
+
+  // ── Cash flow ──
+  cashflowSummary(months = 6) {
+    return this.request(CashflowSummaryResponse, "GET", `/cashflow/summary?months=${months}`);
+  }
+  sankey(month?: string) {
+    return this.request(
+      SankeyResponse,
+      "GET",
+      `/cashflow/sankey${month ? `?month=${month}` : ""}`,
+    );
+  }
+
+  // ── Investments ──
+  investments() {
+    return this.request(InvestmentsResponse, "GET", "/investments");
+  }
+  createHolding(accountId: string, body: CreateHoldingRequest) {
+    return this.request(Holding, "POST", `/investments/${accountId}/holdings`, body);
+  }
+  updateHolding(id: string, body: UpdateHoldingRequest) {
+    return this.request(Holding, "PATCH", `/holdings/${id}`, body);
+  }
+  deleteHolding(id: string) {
+    return this.request(z.undefined(), "DELETE", `/holdings/${id}`);
+  }
+
+  // ── Goals ──
+  goals() {
+    return this.request(GoalListResponse, "GET", "/goals");
+  }
+  createGoal(body: CreateGoalRequest) {
+    return this.request(Goal, "POST", "/goals", body);
+  }
+  updateGoal(id: string, body: UpdateGoalRequest) {
+    return this.request(Goal, "PATCH", `/goals/${id}`, body);
+  }
+  deleteGoal(id: string) {
+    return this.request(z.undefined(), "DELETE", `/goals/${id}`);
+  }
+
+  // ── Reports ──
+  monthlyReport(month?: string) {
+    return this.request(
+      MonthlyReport,
+      "GET",
+      `/reports/monthly${month ? `?month=${month}` : ""}`,
+    );
+  }
+  yearlyReport(year?: number) {
+    return this.request(
+      YearlyReport,
+      "GET",
+      `/reports/yearly${year ? `?year=${year}` : ""}`,
+    );
+  }
+  /** Raw CSV text — the caller saves it (download in browser, dialog in Tauri). */
+  async exportCsv(from?: string, to?: string): Promise<string> {
+    const params = [
+      "type=transactions",
+      ...(from ? [`from=${from}`] : []),
+      ...(to ? [`to=${to}`] : []),
+    ].join("&");
+    const tokens = this.opts.getTokens();
+    const res = await this.opts.fetchImpl(
+      `${this.opts.baseUrl}/api/v1/export/csv?${params}`,
+      {
+        method: "GET",
+        headers: {
+          "x-client-version": this.opts.clientVersion,
+          ...(tokens ? { authorization: `Bearer ${tokens.accessToken}` } : {}),
+        },
+      },
+    );
+    if (res.status >= 400) {
+      throw new ApiRequestError("INTERNAL", res.status, "Export failed.");
+    }
+    return res.text();
   }
 
   // ── Budgets ──

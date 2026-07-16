@@ -183,6 +183,9 @@ export const investmentHoldings = pgTable(
     name: text("name"),
     quantity: numeric("quantity", { precision: 20, scale: 6 }).notNull(),
     costBasisCents: bigint("cost_basis_cents", { mode: "number" }),
+    // User-maintained current value: a privacy-first self-hosted app has no
+    // market-data feed, so valuations are entered by hand, never fetched.
+    marketValueCents: bigint("market_value_cents", { mode: "number" }).notNull().default(0),
     asOfDate: date("as_of_date").notNull().defaultNow(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

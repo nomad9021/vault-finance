@@ -22,6 +22,24 @@ export async function listModels(target: OllamaTarget): Promise<string[]> {
   return (body.models ?? []).map((m) => m.name ?? "").filter(Boolean);
 }
 
+/** One-shot non-streaming completion — used for cached report commentary. */
+export async function generateText(
+  target: OllamaTarget,
+  model: string,
+  prompt: string,
+): Promise<string> {
+  const res = await fetch(`${baseUrl(target)}/api/generate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ model, prompt, stream: false }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) throw new Error(`ollama /api/generate returned ${res.status}`);
+  const body = (await res.json()) as { response?: string; error?: string };
+  if (body.error) throw new Error(`ollama: ${body.error}`);
+  return body.response ?? "";
+}
+
 export interface OllamaChatMessage {
   role: "system" | "user" | "assistant";
   content: string;

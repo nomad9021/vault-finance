@@ -9,7 +9,11 @@ import accountRoutes from "./modules/accounts/routes.js";
 import aiRoutes from "./modules/ai/routes.js";
 import authRoutes from "./modules/auth/routes.js";
 import budgetRoutes from "./modules/budgets/routes.js";
+import cashflowRoutes from "./modules/cashflow/routes.js";
 import categoryRoutes from "./modules/categories/routes.js";
+import goalRoutes from "./modules/goals/routes.js";
+import investmentRoutes from "./modules/investments/routes.js";
+import reportRoutes from "./modules/reports/routes.js";
 import metaRoutes from "./modules/meta/routes.js";
 import setupRoutes from "./modules/setup/routes.js";
 import transactionRoutes from "./modules/transactions/routes.js";
@@ -55,6 +59,10 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       await api.register(transactionRoutes);
       await api.register(budgetRoutes);
       await api.register(aiRoutes, { config: opts.config });
+      await api.register(cashflowRoutes);
+      await api.register(investmentRoutes);
+      await api.register(goalRoutes);
+      await api.register(reportRoutes, { config: opts.config });
     },
     { prefix: "/api/v1" },
   );

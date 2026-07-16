@@ -1,0 +1,1 @@
+ALTER TABLE "investment_holdings" ADD COLUMN "market_value_cents" bigint DEFAULT 0 NOT NULL;
