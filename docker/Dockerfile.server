@@ -19,7 +19,10 @@ RUN pnpm --filter @vault/shared build && pnpm --filter @vault/server build
 RUN pnpm --filter @vault/server --prod deploy /prod/server
 
 FROM node:22-alpine
-RUN addgroup -S vault && adduser -S vault -G vault
+RUN addgroup -S vault && adduser -S vault -G vault \
+    # Pre-create /data owned by vault: named volumes copy ownership from the
+    # image on first use, so the non-root server can write certs/secrets.
+    && mkdir -p /data && chown vault:vault /data
 WORKDIR /app
 COPY --from=build /prod/server /app
 USER vault
