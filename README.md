@@ -39,7 +39,15 @@ The server dev process needs a `DATABASE_URL` pointing at any Postgres 16+;
 
 ## Status
 
-Milestone **M1 — backend core** is complete: auth (short-lived access +
-rotating refresh tokens, per-device sessions), first-run setup wizard,
-HTTPS with generated self-signed certs, migrations, Docker Compose stack.
-Next up: the desktop app shell (M2).
+- **M1 — backend core**: complete. Auth (short-lived access + rotating
+  refresh tokens, per-device sessions), first-run setup wizard, HTTPS with
+  generated self-signed certs, migrations, Docker Compose stack.
+- **M2 — desktop app shell**: complete. Tauri 2 + React app with
+  connect-to-server (TOFU certificate pinning per ADR-0004), setup wizard UI,
+  profile-picker login, app shell matching the Nocturne design, five themes,
+  offline/reconnect handling, OS-keychain token storage, tray icon. The
+  frontend flow is verified end-to-end against a live server; the Rust shell
+  compiles in CI (M6) — building it locally needs the Tauri Linux
+  prerequisites (webkit2gtk, libappindicator).
+
+Next up: core modules — accounts, transactions, budgets (M3).

@@ -1,11 +1,14 @@
 import {
+  LoginByIdRequest,
   LoginRequest,
   LogoutRequest,
   RefreshRequest,
   type LoginResponse,
+  type ProfilesResponse,
   type SessionListResponse,
   type TokenPair,
 } from "@vault/shared";
+import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { notFound, rateLimited } from "../../errors.js";
 import * as authService from "./service.js";
@@ -37,14 +40,21 @@ function makeRateLimiter(max = 10, windowMs = 15 * 60_000) {
 export default async function authRoutes(app: FastifyInstance) {
   const allowLogin = makeRateLimiter();
 
+  app.get("/auth/profiles", async (): Promise<ProfilesResponse> => {
+    return { profiles: await authService.listProfiles(app.db) };
+  });
+
   app.post("/auth/login", async (request, reply) => {
-    const body = LoginRequest.parse(request.body);
-    if (!allowLogin(`${request.ip}:${body.email.toLowerCase()}`)) {
+    // The desktop login screen sends userId (profile picker, per the design);
+    // email login remains for scripts and recovery.
+    const body = z.union([LoginRequest, LoginByIdRequest]).parse(request.body);
+    const identifier = "email" in body ? body.email.toLowerCase() : body.userId;
+    if (!allowLogin(`${request.ip}:${identifier}`)) {
       throw rateLimited();
     }
 
     const result = await authService.login(app.db, {
-      email: body.email,
+      ...("email" in body ? { email: body.email } : { userId: body.userId }),
       password: body.password,
       deviceName: body.deviceName,
       platform: body.platform,

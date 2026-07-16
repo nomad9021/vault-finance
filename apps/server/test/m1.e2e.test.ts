@@ -297,6 +297,28 @@ describe("auth", () => {
     expect(bRefresh.json().error.code).toBe("SESSION_REVOKED");
   });
 
+  it("lists public profiles and logs in by userId (profile picker flow)", async () => {
+    const profiles = await app.inject({ method: "GET", url: "/api/v1/auth/profiles" });
+    expect(profiles.statusCode).toBe(200);
+    const list = profiles.json().profiles;
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ displayName: "Maya Chen" });
+    expect(list[0]).not.toHaveProperty("email"); // profile list must not leak emails
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: {
+        userId: list[0].id,
+        password: OWNER.ownerPassword,
+        deviceName: "Picker login",
+        platform: "linux",
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().user.email).toBe("maya@chen.home");
+  });
+
   it("logs out idempotently", async () => {
     const login = await app.inject({
       method: "POST",

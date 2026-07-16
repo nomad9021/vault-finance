@@ -49,18 +49,33 @@ export interface LoginResult {
   refreshToken: string;
 }
 
+/** Login-screen profile list — no auth, so no emails (ADR-0003 note in api-design.md). */
+export async function listProfiles(
+  db: Db,
+): Promise<Array<{ id: string; displayName: string; avatarColor: string }>> {
+  const rows = await db.query.users.findMany({
+    columns: { id: true, displayName: true, avatarColor: true },
+    orderBy: (t, { asc }) => [asc(t.createdAt)],
+  });
+  return rows;
+}
+
 export async function login(
   db: Db,
   input: {
-    email: string;
+    email?: string;
+    userId?: string;
     password: string;
     deviceName: string;
     platform: Platform;
     ipAddress: string | null;
   },
 ): Promise<LoginResult> {
-  const email = input.email.trim().toLowerCase();
-  const user = await db.query.users.findFirst({ where: eq(users.email, email) });
+  const user = input.userId
+    ? await db.query.users.findFirst({ where: eq(users.id, input.userId) })
+    : await db.query.users.findFirst({
+        where: eq(users.email, (input.email ?? "").trim().toLowerCase()),
+      });
   // Verify against a constant dummy hash when the user doesn't exist so the
   // response time doesn't reveal which emails are registered.
   const DUMMY_HASH =

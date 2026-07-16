@@ -34,7 +34,8 @@ see [ADR-0005](adr/0005-ai-streaming.md)). Every request after login carries
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/api/v1/auth/login` | `{ email, password, deviceName, platform }` → `{ accessToken, refreshToken, user }`. Rate-limited (Redis-backed if present, in-memory fallback otherwise). |
+| GET | `/api/v1/auth/profiles` | Unauthenticated: `{ profiles: [{ id, displayName, avatarColor }] }` — powers the design's login profile picker. Emails are deliberately excluded; exposing household display names to the LAN is an accepted trade-off for a self-hosted household app. |
+| POST | `/api/v1/auth/login` | `{ email \| userId, password, deviceName, platform }` → `{ accessToken, refreshToken, user }`. `userId` comes from the profile picker; `email` remains for scripts/recovery. Rate-limited (Redis-backed if present, in-memory fallback otherwise). |
 | POST | `/api/v1/auth/refresh` | `{ refreshToken }` → `{ accessToken, refreshToken }`. Rotates the refresh token; reuse of an already-rotated token revokes the session. |
 | POST | `/api/v1/auth/logout` | `{ refreshToken }` → revokes that session. |
 | GET | `/api/v1/auth/sessions` | List the current user's device sessions (id, deviceName, platform, ipAddress, lastUsedAt, isCurrent). |

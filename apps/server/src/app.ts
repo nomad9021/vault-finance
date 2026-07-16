@@ -1,3 +1,4 @@
+import cors from "@fastify/cors";
 import Fastify, { type FastifyInstance } from "fastify";
 import type { AppConfig } from "./config.js";
 import authPlugin from "./plugins/auth.js";
@@ -22,6 +23,10 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     ...(opts.https ? { https: opts.https } : {}),
   });
 
+  // Reflective CORS is safe here: auth is bearer-token (no cookies), so a
+  // hostile origin gains nothing — and the Tauri clients bypass CORS anyway.
+  // This exists for browser-based dev of the frontend.
+  await app.register(cors, { origin: true });
   await app.register(errorHandlerPlugin);
   await app.register(versionGatePlugin, {
     minClientVersion: opts.config.minClientVersion,
