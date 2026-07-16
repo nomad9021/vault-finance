@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { platform as osPlatform, hostname } from "@tauri-apps/plugin-os";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import type { Platform as ApiPlatform } from "@vault/shared";
@@ -43,6 +43,25 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
         },
       });
       return { status: res.status, text: async () => res.body };
+    },
+
+    streamFetchImpl: async (url, init, onChunk) => {
+      const address = new URL(url).origin;
+      const channel = new Channel<{ chunk?: string }>();
+      channel.onmessage = (msg) => {
+        if (msg.chunk) onChunk(msg.chunk);
+      };
+      const res = await invoke<{ status: number }>("http_request_stream", {
+        args: {
+          url,
+          method: init.method,
+          headers: init.headers,
+          body: init.body ?? null,
+          pinnedFingerprint: await getPin(address),
+        },
+        onChunk: channel,
+      });
+      return { status: res.status };
     },
 
     async probeServer(address): Promise<ProbeResult> {

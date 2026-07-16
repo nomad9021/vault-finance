@@ -6,6 +6,7 @@ import dbPlugin from "./plugins/db.js";
 import errorHandlerPlugin from "./plugins/error-handler.js";
 import versionGatePlugin from "./plugins/version-gate.js";
 import accountRoutes from "./modules/accounts/routes.js";
+import aiRoutes from "./modules/ai/routes.js";
 import authRoutes from "./modules/auth/routes.js";
 import budgetRoutes from "./modules/budgets/routes.js";
 import categoryRoutes from "./modules/categories/routes.js";
@@ -53,6 +54,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       await api.register(categoryRoutes);
       await api.register(transactionRoutes);
       await api.register(budgetRoutes);
+      await api.register(aiRoutes, { config: opts.config });
     },
     { prefix: "/api/v1" },
   );

@@ -57,4 +57,12 @@ The server dev process needs a `DATABASE_URL` pointing at any Postgres 16+;
   protection), and month-versioned budgets with live spent-vs-budget bars.
   The app is now useful without AI.
 
-Next up: AI assistant integration via local Ollama (M4).
+- **M4 — AI assistant**: complete. Streaming chat (NDJSON per ADR-0005)
+  through a server-side Ollama proxy that injects a live snapshot of the
+  household's real accounts, spending, and budgets; assistant page with
+  prompt chips; persisted conversations; Settings → AI with connection test
+  and model picker; graceful offline states everywhere. Docker stack and
+  Tauri Rust shell now verified on a real machine.
+
+Next up: Cash Flow with the Sankey diagram, Investments, Savings Goals,
+Reports (M5).

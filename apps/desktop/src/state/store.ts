@@ -179,6 +179,7 @@ function rebuildClient(
     baseUrl: address,
     clientVersion: APP_VERSION,
     fetchImpl: platform.fetchImpl,
+    streamFetchImpl: platform.streamFetchImpl,
     getTokens: () => tokens,
     setTokens: persistTokens,
     onAuthLost: () => {

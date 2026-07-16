@@ -16,6 +16,19 @@ export function createBrowserPlatform(): HostPlatform {
       return { status: res.status, text: () => res.text() };
     },
 
+    streamFetchImpl: async (url, init, onChunk) => {
+      const res = await fetch(url, init);
+      if (!res.body) return { status: res.status };
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        onChunk(decoder.decode(value, { stream: true }));
+      }
+      return { status: res.status };
+    },
+
     async probeServer(address): Promise<ProbeResult> {
       try {
         const res = await fetch(`${address}/api/v1/version`);

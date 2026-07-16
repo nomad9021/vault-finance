@@ -7,5 +7,6 @@ export * from "./schemas/accounts.js";
 export * from "./schemas/categories.js";
 export * from "./schemas/transactions.js";
 export * from "./schemas/budgets.js";
+export * from "./schemas/ai.js";
 export * from "./money.js";
 export * from "./api-client/index.js";

@@ -1,0 +1,14 @@
+/home/mason/projects/personal-finance-ai/apps/desktop/src-tauri/target/debug/deps/thiserror-9ca69ad85b3a5bad.d: /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/lib.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/aserror.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/display.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/var.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/private.rs /home/mason/projects/personal-finance-ai/apps/desktop/src-tauri/target/debug/build/thiserror-7805d5d10e848388/out/private.rs
+
+/home/mason/projects/personal-finance-ai/apps/desktop/src-tauri/target/debug/deps/libthiserror-9ca69ad85b3a5bad.rlib: /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/lib.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/aserror.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/display.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/var.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/private.rs /home/mason/projects/personal-finance-ai/apps/desktop/src-tauri/target/debug/build/thiserror-7805d5d10e848388/out/private.rs
+
+/home/mason/projects/personal-finance-ai/apps/desktop/src-tauri/target/debug/deps/libthiserror-9ca69ad85b3a5bad.rmeta: /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/lib.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/aserror.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/display.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/var.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/private.rs /home/mason/projects/personal-finance-ai/apps/desktop/src-tauri/target/debug/build/thiserror-7805d5d10e848388/out/private.rs
+
+/home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/lib.rs:
+/home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/aserror.rs:
+/home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/display.rs:
+/home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/var.rs:
+/home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.18/src/private.rs:
+/home/mason/projects/personal-finance-ai/apps/desktop/src-tauri/target/debug/build/thiserror-7805d5d10e848388/out/private.rs:
+
+# env-dep:OUT_DIR=/home/mason/projects/personal-finance-ai/apps/desktop/src-tauri/target/debug/build/thiserror-7805d5d10e848388/out

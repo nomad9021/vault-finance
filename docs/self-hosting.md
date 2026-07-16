@@ -145,6 +145,11 @@ budgets, reports — everything non-AI keeps working; AI surfaces show a clear
 
 CPU-only works — responses stream slower but the app is fully usable.
 
+For a quick smoke test that the pipeline works before committing to a big
+download, `ollama pull llama3.2:1b` (~1.3 GB) streams fine on any hardware —
+just don't judge answer quality by it; small models quote your numbers
+correctly but reason clumsily about them.
+
 ## 7. Backups
 
 All state lives in named Docker volumes:

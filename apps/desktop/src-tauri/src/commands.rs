@@ -77,6 +77,51 @@ pub async fn http_request(args: HttpRequestArgs) -> Result<HttpResponse, Command
     })
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamEvent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub chunk: Option<String>,
+}
+
+/// Streaming variant of http_request for the AI chat endpoint (ADR-0005):
+/// response bytes are pushed over an IPC channel as they arrive, with the
+/// same certificate-pinning policy.
+#[tauri::command]
+pub async fn http_request_stream(
+    args: HttpRequestArgs,
+    on_chunk: tauri::ipc::Channel<StreamEvent>,
+) -> Result<HttpResponse, CommandError> {
+    let client = match &args.pinned_fingerprint {
+        Some(fp) => tls::client_with_verifier(Arc::new(tls::PinnedVerifier {
+            pinned_fingerprint: fp.clone(),
+        }))?,
+        None => tls::os_trust_client()?,
+    };
+
+    let method = reqwest::Method::from_bytes(args.method.as_bytes())
+        .map_err(|e| CommandError::Other(format!("bad method: {e}")))?;
+    let mut req = client.request(method, &args.url);
+    for (k, v) in &args.headers {
+        req = req.header(k, v);
+    }
+    if let Some(body) = args.body {
+        req = req.body(body);
+    }
+
+    let mut res = req.send().await?;
+    let status = res.status().as_u16();
+    while let Some(bytes) = res.chunk().await? {
+        let _ = on_chunk.send(StreamEvent {
+            chunk: Some(String::from_utf8_lossy(&bytes).into_owned()),
+        });
+    }
+    Ok(HttpResponse {
+        status,
+        body: String::new(),
+    })
+}
+
 /// TOFU probe: capture the certificate (accept-any verifier — the probe sends
 /// nothing sensitive), then check whether the OS trust store would have
 /// accepted it so the UI can skip the fingerprint step for real CAs.

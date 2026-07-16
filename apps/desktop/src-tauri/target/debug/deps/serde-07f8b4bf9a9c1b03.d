@@ -1,0 +1,14 @@
+/home/mason/projects/personal-finance-ai/apps/desktop/src-tauri/target/debug/deps/serde-07f8b4bf9a9c1b03.d: /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /home/mason/projects/personal-finance-ai/apps/desktop/src-tauri/target/debug/build/serde-51d80f5d345f5c47/out/private.rs
+
+/home/mason/projects/personal-finance-ai/apps/desktop/src-tauri/target/debug/deps/libserde-07f8b4bf9a9c1b03.rlib: /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /home/mason/projects/personal-finance-ai/apps/desktop/src-tauri/target/debug/build/serde-51d80f5d345f5c47/out/private.rs
+
+/home/mason/projects/personal-finance-ai/apps/desktop/src-tauri/target/debug/deps/libserde-07f8b4bf9a9c1b03.rmeta: /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /home/mason/projects/personal-finance-ai/apps/desktop/src-tauri/target/debug/build/serde-51d80f5d345f5c47/out/private.rs
+
+/home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/home/mason/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/home/mason/projects/personal-finance-ai/apps/desktop/src-tauri/target/debug/build/serde-51d80f5d345f5c47/out/private.rs:
+
+# env-dep:OUT_DIR=/home/mason/projects/personal-finance-ai/apps/desktop/src-tauri/target/debug/build/serde-51d80f5d345f5c47/out

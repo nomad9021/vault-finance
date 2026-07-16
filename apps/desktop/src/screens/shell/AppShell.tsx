@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useApp } from "../../state/store.js";
 import { AppMark } from "../AuthLayout.js";
 import { AccountsPage } from "./AccountsPage.js";
+import { AssistantPage } from "./AssistantPage.js";
 import { BudgetsPage } from "./BudgetsPage.js";
 import { DashboardPage } from "./DashboardPage.js";
 import { Header } from "./Header.js";
@@ -205,6 +206,8 @@ export function AppShell() {
             <TransactionsPage />
           ) : page === "budgets" ? (
             <BudgetsPage />
+          ) : page === "assistant" ? (
+            <AssistantPage onNavigate={setPage} />
           ) : page === "settings" ? (
             <SettingsPage />
           ) : (

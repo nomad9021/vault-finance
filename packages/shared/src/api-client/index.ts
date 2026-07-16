@@ -37,6 +37,14 @@ import {
   type CreateBudgetRequest,
   type UpdateBudgetRequest,
 } from "../schemas/budgets.js";
+import {
+  AiStatus,
+  ChatStreamLine,
+  ConversationDetail,
+  ConversationListResponse,
+  type ChatRequest,
+  type UpdateAiSettingsRequest,
+} from "../schemas/ai.js";
 
 /**
  * Transport abstraction: the browser passes global fetch; the Tauri desktop
@@ -55,6 +63,22 @@ export type FetchLike = (
   status: number;
   text(): Promise<string>;
 }>;
+
+/**
+ * Streaming transport for the AI chat endpoint (ADR-0005). Delivers raw
+ * response chunks as they arrive; resolves with the status once the stream
+ * ends. Browser: fetch + ReadableStream reader. Tauri: Rust command pushing
+ * chunks over an IPC channel (same pinned-TLS policy as FetchLike).
+ */
+export type StreamFetchLike = (
+  url: string,
+  init: {
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+  },
+  onChunk: (chunk: string) => void,
+) => Promise<{ status: number }>;
 
 /** Server answered with a structured error body. */
 export class ApiRequestError extends Error {
@@ -83,6 +107,8 @@ export interface ApiClientOptions {
   baseUrl: string;
   clientVersion: string;
   fetchImpl: FetchLike;
+  /** Required for ApiClient.chat(); every other method works without it. */
+  streamFetchImpl?: StreamFetchLike;
   getTokens: () => TokenPair | null;
   setTokens: (tokens: TokenPair | null) => void;
   /** Called when a refresh fails and the user must sign in again. */
@@ -327,6 +353,102 @@ export class ApiClient {
       accountId,
       csv: csvText,
     });
+  }
+
+  // ── AI ──
+  aiStatus() {
+    return this.request(AiStatus, "GET", "/ai/status");
+  }
+  updateAiSettings(body: UpdateAiSettingsRequest) {
+    return this.request(AiStatus, "POST", "/ai/settings", body);
+  }
+  conversations() {
+    return this.request(ConversationListResponse, "GET", "/ai/conversations");
+  }
+  conversation(id: string) {
+    return this.request(ConversationDetail, "GET", `/ai/conversations/${id}`);
+  }
+  deleteConversation(id: string) {
+    return this.request(z.undefined(), "DELETE", `/ai/conversations/${id}`);
+  }
+
+  /**
+   * Streaming chat (ADR-0005). Parses NDJSON lines from raw chunks — a chunk
+   * may contain several lines or a partial one, so a carry buffer reassembles
+   * them. Calls onToken per token; resolves with the conversation id once the
+   * server sends its terminal line.
+   */
+  async chat(
+    body: ChatRequest,
+    onToken: (token: string) => void,
+  ): Promise<{ conversationId: string }> {
+    const streamImpl = this.opts.streamFetchImpl;
+    if (!streamImpl) throw new Error("streamFetchImpl not configured");
+
+    const tokens = this.opts.getTokens();
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      "x-client-version": this.opts.clientVersion,
+      ...(tokens ? { authorization: `Bearer ${tokens.accessToken}` } : {}),
+    };
+
+    let buffer = "";
+    let result: { conversationId: string } | null = null;
+    let streamError: ApiRequestError | null = null;
+
+    const handleLine = (line: string) => {
+      if (!line.trim() || streamError) return;
+      let obj: unknown;
+      try {
+        obj = JSON.parse(line);
+      } catch {
+        return; // torn or non-JSON line — ignore rather than kill the stream
+      }
+      const parsed = ChatStreamLine.safeParse(obj);
+      if (!parsed.success) return;
+      const data = parsed.data;
+      if ("token" in data) onToken(data.token);
+      else if ("done" in data) result = { conversationId: data.conversationId };
+      else {
+        streamError = new ApiRequestError(
+          (data.error.code as ErrorCode) ?? "INTERNAL",
+          502,
+          data.error.message,
+        );
+      }
+    };
+
+    let status: number;
+    try {
+      ({ status } = await streamImpl(
+        `${this.opts.baseUrl}/api/v1/ai/chat`,
+        { method: "POST", headers, body: JSON.stringify(body) },
+        (chunk) => {
+          buffer += chunk;
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? ""; // keep the trailing partial line
+          for (const line of lines) handleLine(line);
+        },
+      ));
+    } catch (err) {
+      this.noteConnection("offline");
+      throw new ApiConnectionError(err);
+    }
+    this.noteConnection("online");
+    if (buffer) handleLine(buffer);
+
+    if (streamError) throw streamError;
+    if (status >= 400) {
+      throw new ApiRequestError("INTERNAL", status, `Chat failed with status ${status}.`);
+    }
+    if (!result) {
+      throw new ApiRequestError(
+        "INTERNAL",
+        502,
+        "The response was interrupted before it finished.",
+      );
+    }
+    return result;
   }
 
   // ── Budgets ──

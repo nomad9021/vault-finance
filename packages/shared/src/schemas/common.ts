@@ -16,6 +16,8 @@ export const ErrorCode = z.enum([
   "RATE_LIMITED",
   "CLIENT_VERSION_TOO_OLD",
   "CATEGORY_IN_USE",
+  "AI_UNAVAILABLE",
+  "AI_DISABLED",
   "INTERNAL",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

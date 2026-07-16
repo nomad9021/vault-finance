@@ -1,4 +1,4 @@
-import type { FetchLike, Platform as ApiPlatform } from "@vault/shared";
+import type { FetchLike, Platform as ApiPlatform, StreamFetchLike } from "@vault/shared";
 
 export interface ProbeResult {
   reachable: boolean;
@@ -21,6 +21,8 @@ export interface HostPlatform {
   readonly deviceName: string;
   /** Transport for the API client. In Tauri this enforces the pinned fingerprint. */
   readonly fetchImpl: FetchLike;
+  /** Chunked transport for AI streaming (ADR-0005), same TLS policy. */
+  readonly streamFetchImpl: StreamFetchLike;
 
   /** Reach the server and capture its certificate identity. */
   probeServer(address: string): Promise<ProbeResult>;
