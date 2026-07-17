@@ -27,7 +27,13 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
   const os = osPlatform();
   const platformName: ApiPlatform =
     os === "windows" ? "windows" : os === "macos" ? "macos" : "linux";
-  const deviceName = (await hostname()) ?? `${platformName} desktop`;
+  // Best-effort: a device name is a nicety, not a reason to fail boot.
+  let deviceName = `${platformName} desktop`;
+  try {
+    deviceName = (await hostname()) ?? deviceName;
+  } catch (err) {
+    console.error("hostname lookup failed; using a generic device name", err);
+  }
 
   const getPin = async (address: string) =>
     (await store.get<string>(`pin:${address}`)) ?? null;

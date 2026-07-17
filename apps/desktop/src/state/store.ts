@@ -55,9 +55,13 @@ let platformRef: HostPlatform | null = null;
 function persistTokens(next: TokenPair | null) {
   tokens = next;
   if (!platformRef) return;
+  // Best-effort: the in-memory `tokens` above already drives this session, so
+  // a locked/unavailable OS keychain just means the session won't survive a
+  // restart — it must never throw into the caller.
   void (next
     ? platformRef.setSecret(TOKENS_KEY, JSON.stringify(next))
-    : platformRef.deleteSecret(TOKENS_KEY));
+    : platformRef.deleteSecret(TOKENS_KEY)
+  ).catch((err) => console.error("keychain write failed; session is memory-only", err));
 }
 
 export const useApp = create<AppState>((set, get) => ({
@@ -206,27 +210,63 @@ function rebuildClient(
   set({ client });
 }
 
+/**
+ * Reject if `p` doesn't settle within `ms`. Used to guard boot-critical calls
+ * that talk to the OS (the keychain in particular): on Linux a locked or
+ * unavailable Secret Service can block indefinitely, and the app must still
+ * boot — a missing session just means "logged out", never a frozen spinner.
+ */
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 /** Load persisted state and decide the first screen. Called once before render. */
 export async function bootstrap(): Promise<void> {
-  const platform = await getPlatform();
+  let platform: HostPlatform;
+  try {
+    platform = await getPlatform();
+  } catch (err) {
+    console.error("platform init failed", err);
+    useApp.setState({ screen: { name: "connect" } });
+    return;
+  }
   platformRef = platform;
   useApp.setState({ platform });
 
-  const storedTheme = await platform.loadValue(THEME_KEY);
-  const theme: Theme = isTheme(storedTheme) ? storedTheme : "automatic";
-  applyTheme(theme);
-  useApp.setState({ theme });
-
-  const storedTokens = await platform.getSecret(TOKENS_KEY);
-  if (storedTokens) {
-    try {
-      tokens = JSON.parse(storedTokens) as TokenPair;
-    } catch {
-      tokens = null;
-    }
+  try {
+    const storedTheme = await platform.loadValue(THEME_KEY);
+    const theme: Theme = isTheme(storedTheme) ? storedTheme : "automatic";
+    applyTheme(theme);
+    useApp.setState({ theme });
+  } catch (err) {
+    console.error("loading theme failed; using default", err);
   }
 
-  const address = await platform.loadValue(ADDRESS_KEY);
+  // The OS keychain is best-effort: if it's locked, missing, or slow (common
+  // on headless/autologin Linux), we boot logged-out rather than hang.
+  try {
+    const storedTokens = await withTimeout(
+      platform.getSecret(TOKENS_KEY),
+      3000,
+      "keychain read",
+    );
+    if (storedTokens) tokens = JSON.parse(storedTokens) as TokenPair;
+  } catch (err) {
+    console.error("keychain unavailable; continuing without a saved session", err);
+    tokens = null;
+  }
+
+  let address: string | null = null;
+  try {
+    address = await platform.loadValue(ADDRESS_KEY);
+  } catch (err) {
+    console.error("loading server address failed", err);
+  }
   if (!address) {
     useApp.setState({ screen: { name: "connect" } });
     return;
@@ -234,5 +274,10 @@ export async function bootstrap(): Promise<void> {
 
   useApp.setState({ serverAddress: address });
   rebuildClient((p) => useApp.setState(p), useApp.getState, address);
-  await useApp.getState().routeForServer();
+  try {
+    await useApp.getState().routeForServer();
+  } catch (err) {
+    console.error("routing to server failed", err);
+    useApp.setState({ screen: { name: "connect", error: "Couldn't reach the saved server. Check the address below." } });
+  }
 }
