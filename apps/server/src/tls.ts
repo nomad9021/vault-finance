@@ -1,3 +1,4 @@
+import { createHash, X509Certificate } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import selfsigned from "selfsigned";
@@ -6,6 +7,22 @@ import type { AppConfig } from "./config.js";
 export interface TlsMaterial {
   cert: string;
   key: string;
+}
+
+/**
+ * SHA-256 of the certificate DER, formatted like the desktop trust screen
+ * shows it (colon-separated pairs) so users can compare by eye. Logged at
+ * boot — the TOFU flow (ADR-0004) depends on users being able to find this.
+ */
+export function certFingerprint(certPem: string): string {
+  const der = new X509Certificate(certPem).raw;
+  return (
+    createHash("sha256")
+      .update(der)
+      .digest("hex")
+      .toUpperCase()
+      .match(/.{1,2}/g) ?? []
+  ).join(":");
 }
 
 /**

@@ -1,6 +1,6 @@
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
-import { resolveTls } from "./tls.js";
+import { certFingerprint, resolveTls } from "./tls.js";
 
 const config = loadConfig();
 const tls = resolveTls(config);
@@ -15,6 +15,10 @@ try {
   app.log.info(
     `Vault Finance server listening on ${tls ? "https" : "http"}://${config.host}:${config.port}`,
   );
+  if (tls) {
+    // The desktop trust screen tells users to find this exact line.
+    app.log.info(`TLS certificate fingerprint (SHA-256): ${certFingerprint(tls.cert)}`);
+  }
 } catch (err) {
   app.log.error(err);
   process.exit(1);
