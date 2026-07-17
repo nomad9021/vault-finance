@@ -26,7 +26,8 @@ export type PageId =
   | "assistant"
   | "settings";
 
-export const NAV_ITEMS: Array<{ id: PageId; label: string }> = [
+/** `ai: true` items only appear once the assistant is enabled and configured. */
+export const NAV_ITEMS: Array<{ id: PageId; label: string; ai?: boolean }> = [
   { id: "dashboard", label: "Dashboard" },
   { id: "accounts", label: "Accounts" },
   { id: "transactions", label: "Transactions" },
@@ -35,7 +36,7 @@ export const NAV_ITEMS: Array<{ id: PageId; label: string }> = [
   { id: "investments", label: "Investments" },
   { id: "goals", label: "Savings Goals" },
   { id: "reports", label: "Reports" },
-  { id: "assistant", label: "AI Assistant" },
+  { id: "assistant", label: "AI Assistant", ai: true },
   { id: "settings", label: "Settings" },
 ];
 
@@ -55,6 +56,7 @@ const PAGE_TITLES: Record<PageId, string> = {
 export function AppShell() {
   const connection = useApp((s) => s.connection);
   const user = useApp((s) => s.user);
+  const aiVisible = useApp((s) => s.aiVisible);
   const [page, setPage] = useState<PageId>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   // Set by Sankey drill-in ("View in Transactions"); consumed once on navigate.
@@ -125,7 +127,7 @@ export function AppShell() {
               gap: 2,
             }}
           >
-            {NAV_ITEMS.map((item) => {
+            {NAV_ITEMS.filter((item) => !item.ai || aiVisible).map((item) => {
               const active = page === item.id;
               return (
                 <button
@@ -227,7 +229,7 @@ export function AppShell() {
             <GoalsPage />
           ) : page === "reports" ? (
             <ReportsPage />
-          ) : page === "assistant" ? (
+          ) : page === "assistant" && aiVisible ? (
             <AssistantPage onNavigate={setPage} />
           ) : (
             <SettingsPage />

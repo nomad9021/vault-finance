@@ -93,20 +93,31 @@ new backend.
 
 ## AI integration
 
-- Ollama runs as an optional service in the same Docker Compose stack
-  (`ollama/ollama` image) but the server never assumes it's local — `OLLAMA_HOST`
-  / `OLLAMA_PORT` / `OLLAMA_MODEL` are configurable via env var and in
-  Settings → AI, so a user can point at a beefier Ollama box elsewhere on their
-  LAN.
-- The server proxies Ollama's streaming `/api/chat` as newline-delimited JSON
+- **AI is optional and off by default.** Out of the box there is no assistant
+  UI at all — the owner opts in from Settings → AI, choosing a provider and
+  supplying their own credentials. Until then nothing is sent anywhere. This
+  is a deliberate revision of the original "local AI only, no cloud, ever"
+  stance ([ADR-0006](adr/0006-optional-multi-provider-ai.md)).
+- **Three providers, bring-your-own-key:** local **Ollama** (base URL
+  configurable — the bundled Docker service or any box on the LAN), **OpenAI**,
+  and **Anthropic (Claude)**. The server holds the credentials (in its own
+  Postgres, never returned to clients) and makes all outbound provider calls,
+  so a key lives only on the user's own server. Cloud providers are integrated
+  via their official SDKs; Ollama via its native HTTP API.
+- **Privacy honesty:** with Ollama, nothing leaves the user's hardware. With a
+  cloud provider, a bounded financial-context summary is sent to that provider
+  under the user's key when they ask a question — the desktop Settings screen
+  shows an explicit warning before a cloud provider can be enabled.
+- The server proxies the chosen provider's stream as newline-delimited JSON
   (NDJSON) over a chunked HTTP response, not Server-Sent Events — `EventSource`
   can't send an `Authorization` header, and this API is bearer-token
   authenticated end to end. The desktop client reads the response body with a
   `ReadableStream` reader and appends tokens as they arrive.
-- If Ollama is unreachable, `GET /api/v1/ai/status` reports
-  `{ reachable: false, ... }`; every AI-touching module (Dashboard insight card,
-  Assistant page, Reports commentary) checks this and renders a "connect AI"
-  affordance instead of failing. No other module depends on AI being present.
+- `GET /api/v1/ai/status` reports `{ enabled, configured, reachable, provider,
+  ... }`. Every AI-touching surface (the Assistant nav item and page, the "Ask
+  AI" button, Reports commentary) is hidden until AI is both enabled and
+  configured, and degrades gracefully if the provider later becomes
+  unreachable. No other module depends on AI being present.
 
 ## Where Phase 2 (iOS) fits
 

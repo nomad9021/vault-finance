@@ -226,16 +226,22 @@ export const monthlyReportSnapshots = pgTable("monthly_report_snapshots", {
 // ── ai ──
 
 // Singleton row: primary key is a bool constrained to true, so at most one row
-// can ever exist. Defaults mirror the docker-compose service names/ports.
+// can ever exist. AI is OFF by default — the owner picks a provider and
+// supplies credentials in Settings before anything is sent anywhere.
 export const aiSettings = pgTable("ai_settings", {
   id: boolean("id")
     .primaryKey()
     .default(true)
     .$type<true>(),
-  ollamaHost: text("ollama_host").notNull().default("ollama"),
-  ollamaPort: integer("ollama_port").notNull().default(11434),
-  modelName: text("model_name").notNull().default("llama3.1:8b"),
-  enabled: boolean("enabled").notNull().default(true),
+  provider: text("provider", { enum: ["ollama", "openai", "anthropic"] })
+    .notNull()
+    .default("ollama"),
+  model: text("model").notNull().default("llama3.1:8b"),
+  // Cloud API key (openai/anthropic). Never returned by any endpoint.
+  apiKey: text("api_key"),
+  // Ollama base URL; also an optional OpenAI-compatible endpoint override.
+  baseUrl: text("base_url").notNull().default("http://ollama:11434"),
+  enabled: boolean("enabled").notNull().default(false),
 });
 
 export const aiConversations = pgTable("ai_conversations", {

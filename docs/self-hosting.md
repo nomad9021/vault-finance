@@ -102,35 +102,40 @@ mount the pair into the container and point the server at it:
 `curl` note: `-k` skips verification, fine for spot checks on localhost. For
 scripts, fetch the cert once and pass `--cacert` instead.
 
-## 5. AI setup
+## 5. AI setup (optional)
 
-The AI assistant runs on **Ollama — on your hardware, never a cloud API**.
-The compose file bundles an Ollama service, and the server reaches it at
-`OLLAMA_HOST`/`OLLAMA_PORT` (defaults: the bundled `ollama` service on 11434).
+**The AI assistant is off by default.** The app is fully usable without it —
+there's no assistant UI at all until you turn it on. To enable it, open
+**Settings → AI** in the desktop app, pick a provider, and save. Three
+providers are supported:
 
-Pull a model once after first boot:
+- **Ollama (local)** — runs a model on your own hardware; nothing leaves your
+  server. The compose file bundles an Ollama service; point the base URL at
+  `http://ollama:11434` (the default) or at another machine on your network.
+  Pull a model once after first boot:
+  ```bash
+  docker compose exec ollama ollama pull llama3.1:8b
+  ```
+- **OpenAI** — paste your OpenAI API key and a model (e.g. `gpt-4o-mini`).
+- **Anthropic (Claude)** — paste your Anthropic API key and a model
+  (e.g. `claude-sonnet-5`).
 
-```bash
-docker compose exec ollama ollama pull llama3.1:8b
-```
+Your API key is stored on **your** server and is never shown again or sent to
+anyone but the provider you chose.
 
-To use an Ollama running **elsewhere on your network** (say, a gaming PC with
-a real GPU), delete the `ollama` service from the compose file and set in
-`.env`:
+> **Privacy note.** With **Ollama**, your financial data never leaves your
+> hardware. With **OpenAI or Anthropic**, a short summary of your accounts,
+> spending, and budgets is sent to that provider under your key each time you
+> ask a question. The app shows this warning before you enable a cloud
+> provider. Choose Ollama if you want everything to stay local.
 
-```env
-OLLAMA_HOST=192.168.1.50
-OLLAMA_PORT=11434
-OLLAMA_MODEL=llama3.1:8b
-```
+**If the provider is unreachable, nothing else breaks.** Accounts,
+transactions, budgets, reports — everything non-AI keeps working; the AI
+surfaces simply stay hidden or show a clear "reconnect" state.
 
-The same settings are editable in-app (Settings → AI) once the desktop app
-lands; in-app values are stored in the database and take precedence over the
-environment defaults.
-
-**If Ollama is unreachable, nothing else breaks.** Accounts, transactions,
-budgets, reports — everything non-AI keeps working; AI surfaces show a clear
-"AI offline" state with setup instructions instead of errors.
+Not running the bundled Ollama? You can drop the `ollama` service from the
+compose file entirely — the app doesn't need it unless you choose Ollama as
+your provider.
 
 ## 6. Hardware sizing for Ollama
 

@@ -1,4 +1,5 @@
 import {
+  AI_PROVIDER_LABELS,
   ApiRequestError,
   type AiStatus,
 } from "@vault/shared";
@@ -91,7 +92,9 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
     }
   };
 
-  const aiOffline = status !== null && (!status.enabled || !status.reachable);
+  const aiOffline =
+    status !== null && (!status.enabled || !status.configured || !status.reachable);
+  const providerLabel = status ? AI_PROVIDER_LABELS[status.provider] : "The provider";
 
   return (
     <div style={{ display: "flex", height: "100%", minHeight: 0, animation: "fadeUp .3s both", margin: -24 }}>
@@ -105,9 +108,11 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
               </Button>
             }
           >
-            {status.enabled
-              ? `Ollama isn't reachable at ${status.host}:${status.port}. Everything else keeps working.`
-              : "The AI assistant is turned off in Settings."}
+            {!status.enabled
+              ? "The AI assistant is turned off in Settings."
+              : !status.configured
+                ? "The AI assistant isn't fully configured — finish setup in Settings."
+                : `${providerLabel} isn't reachable right now. Everything else keeps working.`}
           </Banner>
         )}
 

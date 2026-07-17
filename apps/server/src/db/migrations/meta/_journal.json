@@ -15,6 +15,13 @@
       "when": 1784221947426,
       "tag": "0001_magical_glorian",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784291092436,
+      "tag": "0002_ai_multi_provider",
+      "breakpoints": true
     }
   ]
 }

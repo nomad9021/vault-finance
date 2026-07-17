@@ -26,6 +26,8 @@ interface AppState {
   connection: ConnectionStatus;
   user: User | null;
   theme: Theme;
+  /** Whether AI is on AND configured — gates every AI surface (off by default). */
+  aiVisible: boolean;
 
   /** Probe an address; route to trust confirmation or straight on. */
   connectTo(address: string): Promise<void>;
@@ -37,6 +39,8 @@ interface AppState {
   signOut(): Promise<void>;
   setTheme(theme: Theme): Promise<void>;
   changeServer(): Promise<void>;
+  /** Re-check AI status and update aiVisible (called after login and after saving AI settings). */
+  refreshAiEnabled(): Promise<void>;
 }
 
 const TOKENS_KEY = "refresh-tokens";
@@ -66,6 +70,7 @@ export const useApp = create<AppState>((set, get) => ({
   connection: "online",
   user: null,
   theme: "automatic",
+  aiVisible: false,
 
   async connectTo(rawAddress) {
     const address = normalizeAddress(rawAddress);
@@ -119,6 +124,7 @@ export const useApp = create<AppState>((set, get) => ({
         try {
           const user = await client.me();
           set({ user, screen: { name: "shell" } });
+          void get().refreshAiEnabled();
           return;
         } catch {
           persistTokens(null); // stale/revoked session — fall through to login
@@ -137,11 +143,21 @@ export const useApp = create<AppState>((set, get) => ({
 
   signedIn(user) {
     set({ user, screen: { name: "shell" } });
+    void get().refreshAiEnabled();
+  },
+
+  async refreshAiEnabled() {
+    try {
+      const status = await get().client.aiStatus();
+      set({ aiVisible: status.enabled && status.configured });
+    } catch {
+      set({ aiVisible: false });
+    }
   },
 
   async signOut() {
     await get().client.logout();
-    set({ user: null, screen: { name: "login" } });
+    set({ user: null, aiVisible: false, screen: { name: "login" } });
   },
 
   async setTheme(theme) {

@@ -9,7 +9,8 @@ import {
   transactions,
 } from "../../db/schema.js";
 import type { AppConfig } from "../../config.js";
-import { generateText } from "../ai/ollama.js";
+import { getProvider, isConfigured } from "../ai/providers/index.js";
+import { resolveSettings } from "../ai/settings.js";
 
 const MonthlyQuery = z.object({
   month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
@@ -104,8 +105,8 @@ export default async function reportRoutes(
       return cached.aiSummary;
     }
 
-    const settings = await app.db.query.aiSettings.findFirst();
-    if (!settings?.enabled) return null;
+    const settings = await resolveSettings(app, opts.config);
+    if (!settings.enabled || !isConfigured(settings.aiConfig)) return null;
 
     const dollars = (c: number) => `$${(c / 100).toFixed(2)}`;
     const prompt = [
@@ -118,9 +119,8 @@ export default async function reportRoutes(
     let summary: string;
     try {
       summary = (
-        await generateText(
-          { host: settings.ollamaHost, port: settings.ollamaPort },
-          settings.modelName,
+        await getProvider(settings.aiConfig.provider).generateText(
+          settings.aiConfig,
           prompt,
         )
       ).trim();

@@ -46,13 +46,14 @@ export default async function setupRoutes(
         role: "owner",
       });
 
-      const ai = body.aiConfig;
+      // AI is off by default — the owner configures a provider later in
+      // Settings. Seed a disabled row pointing at the bundled Ollama service.
       await tx.insert(aiSettings).values({
         id: true,
-        ollamaHost: ai?.ollamaHost ?? opts.config.ollama.host,
-        ollamaPort: ai?.ollamaPort ?? opts.config.ollama.port,
-        modelName: ai?.modelName ?? opts.config.ollama.model,
-        enabled: ai?.enabled ?? true,
+        provider: "ollama",
+        model: opts.config.ollama.model,
+        baseUrl: `http://${opts.config.ollama.host}:${opts.config.ollama.port}`,
+        enabled: false,
       });
 
       await seedDefaultCategories(tx);

@@ -1,4 +1,11 @@
-import type { AiStatus, DeviceSession } from "@vault/shared";
+import {
+  AI_MODEL_SUGGESTIONS,
+  AI_PROVIDER_LABELS,
+  AiProvider,
+  CLOUD_PROVIDERS,
+  type AiStatus,
+  type DeviceSession,
+} from "@vault/shared";
 import { THEMES, THEME_LABELS } from "@vault/design-tokens";
 import { Button, Card, Dialog, Field, Segmented, Select, Spinner, Tag } from "@vault/ui";
 import { useCallback, useEffect, useState } from "react";
@@ -107,26 +114,32 @@ function UpdatesSection() {
 function AiSection() {
   const client = useApp((s) => s.client);
   const user = useApp((s) => s.user);
+  const refreshAiEnabled = useApp((s) => s.refreshAiEnabled);
   const { data: status, reload } = useData<AiStatus>(() => client.aiStatus(), [client]);
 
-  const [host, setHost] = useState("");
-  const [port, setPort] = useState("");
+  const [provider, setProvider] = useState<AiProvider>("ollama");
   const [model, setModel] = useState("");
-  const [enabled, setEnabled] = useState(true);
+  const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [enabled, setEnabled] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Seed the form from server state until the user starts editing.
   useEffect(() => {
     if (status && !dirty) {
-      setHost(status.host);
-      setPort(String(status.port));
+      setProvider(status.provider);
       setModel(status.model);
+      setBaseUrl(status.baseUrl);
       setEnabled(status.enabled);
+      setApiKey(""); // never populated — the key is write-only
     }
   }, [status, dirty]);
 
   const isOwner = user?.role === "owner";
+  const touch = () => setDirty(true);
+  const isCloud = CLOUD_PROVIDERS.has(provider);
 
   const save = async () => {
     if (busy) return;
@@ -134,13 +147,18 @@ function AiSection() {
     setError(null);
     try {
       await client.updateAiSettings({
-        ollamaHost: host.trim(),
-        ollamaPort: Number(port) || 11434,
-        modelName: model.trim(),
         enabled,
+        provider,
+        model: model.trim(),
+        // Only send the key when the user typed one — blank leaves the stored
+        // key untouched (they can clear it with the button below).
+        ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+        baseUrl: baseUrl.trim(),
       });
+      setApiKey("");
       setDirty(false);
       reload();
+      await refreshAiEnabled();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save AI settings.");
     } finally {
@@ -148,12 +166,41 @@ function AiSection() {
     }
   };
 
+  const clearKey = async () => {
+    setBusy(true);
+    try {
+      await client.updateAiSettings({ enabled, provider, model: model.trim(), apiKey: "", baseUrl: baseUrl.trim() });
+      setApiKey("");
+      setDirty(false);
+      reload();
+      await refreshAiEnabled();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const statusLine = (s: AiStatus): string => {
+    if (!s.enabled) return "Off";
+    if (!s.configured) return "Needs configuration";
+    if (s.reachable) {
+      return s.availableModels.length > 0
+        ? `Connected — ${s.availableModels.length} model${s.availableModels.length === 1 ? "" : "s"} available`
+        : "Connected";
+    }
+    return "Unreachable";
+  };
+
   return (
-    <Card kicker="AI assistant" title="Local AI (Ollama)">
+    <Card kicker="AI assistant" title="AI assistant (optional)">
       {status === null ? (
         <Spinner label="Checking AI status" />
       ) : (
         <>
+          <p className="card-body">
+            Off by default. Turn it on and connect a provider to get spending
+            explanations, forecasts, and monthly summaries. The server talks to
+            the provider — the desktop app never holds your key.
+          </p>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span
               aria-hidden="true"
@@ -163,113 +210,159 @@ function AiSection() {
                 borderRadius: "50%",
                 background: !status.enabled
                   ? "var(--color-neutral-600)"
-                  : status.reachable
+                  : status.configured && status.reachable
                     ? "var(--color-positive)"
                     : "var(--color-negative)",
               }}
             />
-            <span style={{ fontSize: 13 }}>
-              {!status.enabled
-                ? "Disabled"
-                : status.reachable
-                  ? `Connected — ${status.availableModels.length} model${status.availableModels.length === 1 ? "" : "s"} available`
-                  : `Unreachable at ${status.host}:${status.port}`}
-            </span>
-            <Button variant="ghost" onClick={reload} style={{ marginLeft: "auto" }}>
-              Test connection
-            </Button>
+            <span style={{ fontSize: 13 }}>{statusLine(status)}</span>
+            {status.enabled && status.configured && (
+              <Button variant="ghost" onClick={reload} style={{ marginLeft: "auto" }}>
+                Test connection
+              </Button>
+            )}
           </div>
-          {status.enabled && !status.reachable && (
-            <p className="card-meta" style={{ lineHeight: 1.6 }}>
-              Ollama isn't answering. If you use the bundled Docker service,
-              check <code>docker compose logs ollama</code>; otherwise confirm
-              the host/port below match where Ollama runs. Every non-AI feature
-              keeps working in the meantime.
-            </p>
-          )}
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <div style={{ flex: 2, minWidth: 140 }}>
-              <Field
-                label="Host"
-                value={host}
-                disabled={!isOwner}
-                onChange={(e) => {
-                  setHost(e.target.value);
-                  setDirty(true);
-                }}
-              />
-            </div>
-            <div style={{ width: 90 }}>
-              <Field
-                label="Port"
-                inputMode="numeric"
-                value={port}
-                disabled={!isOwner}
-                onChange={(e) => {
-                  setPort(e.target.value.replace(/\D/g, ""));
-                  setDirty(true);
-                }}
-              />
-            </div>
-            <div style={{ flex: 2, minWidth: 140 }}>
-              {status.availableModels.length > 0 ? (
-                <Select
-                  label="Model"
-                  value={model}
-                  disabled={!isOwner}
+
+          {!isOwner ? (
+            <p className="card-meta">Only the owner can change AI settings.</p>
+          ) : (
+            <>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <Select
+                    label="Provider"
+                    value={provider}
+                    onChange={(e) => {
+                      const next = e.target.value as AiProvider;
+                      setProvider(next);
+                      // Reset per-provider fields to that provider's default.
+                      setModel(AI_MODEL_SUGGESTIONS[next][0] ?? "");
+                      if (next === "ollama" && !baseUrl.trim()) setBaseUrl("http://ollama:11434");
+                      setApiKey("");
+                      touch();
+                    }}
+                  >
+                    {AiProvider.options.map((p) => (
+                      <option key={p} value={p}>
+                        {AI_PROVIDER_LABELS[p]}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <Field
+                    label="Model"
+                    value={model}
+                    list="ai-model-suggestions"
+                    onChange={(e) => {
+                      setModel(e.target.value);
+                      touch();
+                    }}
+                    placeholder={AI_MODEL_SUGGESTIONS[provider][0]}
+                  />
+                  <datalist id="ai-model-suggestions">
+                    {AI_MODEL_SUGGESTIONS[provider].map((m) => (
+                      <option key={m} value={m} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+
+              {provider === "ollama" ? (
+                <Field
+                  label="Ollama base URL"
+                  value={baseUrl}
                   onChange={(e) => {
-                    setModel(e.target.value);
-                    setDirty(true);
+                    setBaseUrl(e.target.value);
+                    touch();
                   }}
-                >
-                  {!status.availableModels.includes(model) && (
-                    <option value={model}>{model} (not pulled)</option>
-                  )}
-                  {status.availableModels.map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </Select>
+                  placeholder="http://ollama:11434"
+                  hint={'"ollama" is the bundled Docker service; or an address elsewhere on your network.'}
+                />
               ) : (
                 <Field
-                  label="Model"
-                  value={model}
-                  disabled={!isOwner}
+                  label={`${AI_PROVIDER_LABELS[provider]} API key`}
+                  type="password"
+                  value={apiKey}
                   onChange={(e) => {
-                    setModel(e.target.value);
-                    setDirty(true);
+                    setApiKey(e.target.value);
+                    touch();
                   }}
+                  placeholder={
+                    status.hasApiKey && status.provider === provider
+                      ? "•••••••• (saved — leave blank to keep)"
+                      : "sk-…"
+                  }
+                  hint={
+                    status.hasApiKey && status.provider === provider ? (
+                      <>
+                        A key is saved.{" "}
+                        <button
+                          type="button"
+                          onClick={() => void clearKey()}
+                          style={{
+                            background: "none",
+                            border: 0,
+                            padding: 0,
+                            color: "var(--color-accent)",
+                            cursor: "pointer",
+                            font: "inherit",
+                          }}
+                        >
+                          Remove it
+                        </button>
+                        .
+                      </>
+                    ) : (
+                      "Stored on your server, never on this device."
+                    )
+                  }
                 />
               )}
-            </div>
-          </div>
-          <label className="radio" style={{ fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={enabled}
-              disabled={!isOwner}
-              onChange={(e) => {
-                setEnabled(e.target.checked);
-                setDirty(true);
-              }}
-            />
-            <span className="dot" style={{ borderRadius: 4 }} />
-            AI assistant enabled
-          </label>
-          {error && (
-            <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>
-              {error}
-            </div>
-          )}
-          {isOwner ? (
-            <div>
-              <Button variant="primary" onClick={() => void save()} disabled={!dirty || busy}>
-                {busy ? <Spinner label="Saving" /> : "Save & test"}
-              </Button>
-            </div>
-          ) : (
-            <p className="card-meta">Only the owner can change AI settings.</p>
+
+              {isCloud && (
+                <div
+                  role="note"
+                  style={{
+                    fontSize: 12.5,
+                    lineHeight: 1.6,
+                    padding: "10px 12px",
+                    borderRadius: "var(--radius-md)",
+                    background: "color-mix(in srgb, var(--color-negative) 10%, transparent)",
+                    border: "1px solid color-mix(in srgb, var(--color-negative) 35%, transparent)",
+                  }}
+                >
+                  <strong>Heads up:</strong> {AI_PROVIDER_LABELS[provider]} is a cloud
+                  service. When you ask a question, a summary of your accounts,
+                  spending, and budgets is sent to {AI_PROVIDER_LABELS[provider]} under
+                  your API key. Choose Ollama to keep everything on your own hardware.
+                </div>
+              )}
+
+              <label className="radio" style={{ fontSize: 13 }}>
+                <input
+                  type="checkbox"
+                  checked={enabled}
+                  onChange={(e) => {
+                    setEnabled(e.target.checked);
+                    touch();
+                  }}
+                />
+                <span className="dot" style={{ borderRadius: 4 }} />
+                Enable the AI assistant
+              </label>
+
+              {error && (
+                <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>
+                  {error}
+                </div>
+              )}
+              <div>
+                <Button variant="primary" onClick={() => void save()} disabled={!dirty || busy}>
+                  {busy ? <Spinner label="Saving" /> : "Save & test"}
+                </Button>
+              </div>
+            </>
           )}
         </>
       )}

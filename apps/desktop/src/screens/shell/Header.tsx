@@ -13,6 +13,7 @@ export function Header({
   onNavigate: (page: PageId) => void;
 }) {
   const user = useApp((s) => s.user);
+  const aiVisible = useApp((s) => s.aiVisible);
   const signOut = useApp((s) => s.signOut);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -78,13 +79,15 @@ export function Header({
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>
-        <Button
-          variant="primary"
-          style={{ whiteSpace: "nowrap" }}
-          onClick={() => onNavigate("assistant")}
-        >
-          ✦ Ask AI
-        </Button>
+        {aiVisible && (
+          <Button
+            variant="primary"
+            style={{ whiteSpace: "nowrap" }}
+            onClick={() => onNavigate("assistant")}
+          >
+            ✦ Ask AI
+          </Button>
+        )}
         <div style={{ position: "relative" }} ref={menuRef}>
           <button
             onClick={() => setMenuOpen((v) => !v)}

@@ -1,58 +1,19 @@
 import { PassThrough } from "node:stream";
 import {
   ChatRequest,
+  CLOUD_PROVIDERS,
   UpdateAiSettingsRequest,
-  type AiStatus,
   type ChatStreamLine,
   type ConversationDetail,
 } from "@vault/shared";
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { aiConversations, aiMessages, aiSettings } from "../../db/schema.js";
 import { AppError, notFound } from "../../errors.js";
 import type { AppConfig } from "../../config.js";
 import { buildFinancialContext } from "./context.js";
-import { listModels, streamChat, type OllamaChatMessage } from "./ollama.js";
-
-async function getSettings(app: FastifyInstance, config: AppConfig) {
-  const row = await app.db.query.aiSettings.findFirst();
-  // Setup seeds this row; the fallback covers databases from before it existed.
-  return (
-    row ?? {
-      id: true as const,
-      ollamaHost: config.ollama.host,
-      ollamaPort: config.ollama.port,
-      modelName: config.ollama.model,
-      enabled: true,
-    }
-  );
-}
-
-async function statusFor(
-  settings: Awaited<ReturnType<typeof getSettings>>,
-): Promise<AiStatus> {
-  let availableModels: string[] = [];
-  let reachable = false;
-  if (settings.enabled) {
-    try {
-      availableModels = await listModels({
-        host: settings.ollamaHost,
-        port: settings.ollamaPort,
-      });
-      reachable = true;
-    } catch {
-      reachable = false;
-    }
-  }
-  return {
-    enabled: settings.enabled,
-    reachable,
-    host: settings.ollamaHost,
-    port: settings.ollamaPort,
-    model: settings.modelName,
-    availableModels,
-  };
-}
+import { getProvider, isConfigured, type ChatMessage } from "./providers/index.js";
+import { resolveSettings, statusFor } from "./settings.js";
 
 const HISTORY_LIMIT = 20;
 
@@ -63,7 +24,7 @@ export default async function aiRoutes(
   app.addHook("preHandler", app.requireAuth);
 
   app.get("/ai/status", async () => {
-    return statusFor(await getSettings(app, opts.config));
+    return statusFor(await resolveSettings(app, opts.config));
   });
 
   app.post(
@@ -71,25 +32,30 @@ export default async function aiRoutes(
     { preHandler: [app.requireOwner] },
     async (request) => {
       const body = UpdateAiSettingsRequest.parse(request.body);
+      const current = await app.db.query.aiSettings.findFirst();
+
+      // apiKey semantics: omitted keeps the stored key, empty string clears it.
+      const apiKey =
+        body.apiKey === undefined
+          ? (current?.apiKey ?? null)
+          : body.apiKey.trim() === ""
+            ? null
+            : body.apiKey.trim();
+
+      const values = {
+        id: true as const,
+        provider: body.provider,
+        model: body.model.trim(),
+        apiKey,
+        baseUrl: body.baseUrl?.trim() ?? "",
+        enabled: body.enabled,
+      };
       await app.db
         .insert(aiSettings)
-        .values({
-          id: true,
-          ollamaHost: body.ollamaHost,
-          ollamaPort: body.ollamaPort,
-          modelName: body.modelName,
-          enabled: body.enabled,
-        })
-        .onConflictDoUpdate({
-          target: aiSettings.id,
-          set: {
-            ollamaHost: body.ollamaHost,
-            ollamaPort: body.ollamaPort,
-            modelName: body.modelName,
-            enabled: body.enabled,
-          },
-        });
-      return statusFor(await getSettings(app, opts.config));
+        .values(values)
+        .onConflictDoUpdate({ target: aiSettings.id, set: values });
+
+      return statusFor(await resolveSettings(app, opts.config));
     },
   );
 
@@ -161,25 +127,32 @@ export default async function aiRoutes(
     const body = ChatRequest.parse(request.body);
     const userId = request.auth!.userId;
 
-    const settings = await getSettings(app, opts.config);
+    const settings = await resolveSettings(app, opts.config);
     if (!settings.enabled) {
+      throw new AppError("AI_DISABLED", 503, "The AI assistant is turned off in Settings.");
+    }
+    if (!isConfigured(settings.aiConfig)) {
       throw new AppError(
-        "AI_DISABLED",
+        "AI_UNAVAILABLE",
         503,
-        "The AI assistant is turned off in Settings.",
+        "The AI assistant isn't fully configured yet. Add your provider details in Settings.",
       );
     }
-    const target = { host: settings.ollamaHost, port: settings.ollamaPort };
+    const { aiConfig } = settings;
+    const provider = getProvider(aiConfig.provider);
+    const isCloud = CLOUD_PROVIDERS.has(aiConfig.provider);
 
-    // Probe cheaply before touching the conversation: if Ollama is down we
-    // want a clean JSON 503, not a half-created conversation.
+    // Probe before touching the conversation so an unreachable provider or a
+    // rejected key returns a clean JSON 503, not a half-created conversation.
     try {
-      await listModels(target);
+      await provider.listModels(aiConfig);
     } catch {
       throw new AppError(
         "AI_UNAVAILABLE",
         503,
-        `Can't reach Ollama at ${target.host}:${target.port}. Every other feature keeps working — check Settings → AI for setup instructions.`,
+        isCloud
+          ? `Couldn't reach ${aiConfig.provider} — check your API key and model in Settings. Every other feature keeps working.`
+          : `Can't reach Ollama at ${aiConfig.baseUrl}. Every other feature keeps working — check Settings → AI.`,
       );
     }
 
@@ -212,7 +185,7 @@ export default async function aiRoutes(
       orderBy: (t, { desc: d }) => [d(t.createdAt)],
       limit: HISTORY_LIMIT,
     });
-    const messages: OllamaChatMessage[] = [
+    const messages: ChatMessage[] = [
       { role: "system", content: context },
       ...history.reverse().map((m) => ({ role: m.role, content: m.content })),
     ];
@@ -231,7 +204,7 @@ export default async function aiRoutes(
     void (async () => {
       let assistantText = "";
       try {
-        await streamChat(target, settings.modelName, messages, (token) => {
+        await provider.streamChat(aiConfig, messages, (token) => {
           assistantText += token;
           writeLine({ token });
         });

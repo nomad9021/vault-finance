@@ -8,8 +8,9 @@ nothing ever leaves your hardware.
 - **Desktop apps**: Windows / macOS / Linux (Tauri 2 + React), connecting to
   your server over LAN or Tailscale. *(in progress — see the
   [roadmap](docs/roadmap.md))*
-- **AI**: local models via Ollama on your own hardware. No cloud APIs, no
-  telemetry, ever.
+- **AI**: optional and off by default. Bring your own provider — local Ollama
+  (nothing leaves your hardware), or your own OpenAI / Anthropic key. No
+  telemetry, ever; no AI unless you turn it on ([ADR-0006](docs/adr/0006-optional-multi-provider-ai.md)).
 
 ## Documentation
 

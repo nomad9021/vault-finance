@@ -1,19 +1,68 @@
 import { z } from "zod";
-import { AiConfigInput } from "./setup.js";
 
-/** Settings + live reachability, shown on every AI-touching surface. */
+/**
+ * AI providers the assistant can use. The user brings their own credentials
+ * for cloud providers; Ollama is local/self-hosted. AI is OFF by default —
+ * nothing is sent anywhere until the owner enables and configures a provider.
+ */
+export const AiProvider = z.enum(["ollama", "openai", "anthropic"]);
+export type AiProvider = z.infer<typeof AiProvider>;
+
+export const AI_PROVIDER_LABELS: Record<AiProvider, string> = {
+  ollama: "Ollama (local)",
+  openai: "OpenAI",
+  anthropic: "Anthropic (Claude)",
+};
+
+/** Cloud providers send your financial context off your server under your key. */
+export const CLOUD_PROVIDERS: ReadonlySet<AiProvider> = new Set([
+  "openai",
+  "anthropic",
+]);
+
+/** Suggested default model per provider (the owner can type any value). */
+export const AI_MODEL_SUGGESTIONS: Record<AiProvider, string[]> = {
+  ollama: ["llama3.1:8b", "llama3.2:3b", "qwen2.5:7b", "mistral:7b"],
+  openai: ["gpt-4o-mini", "gpt-4o", "o4-mini"],
+  anthropic: ["claude-sonnet-5", "claude-opus-4-8", "claude-haiku-4-5"],
+};
+
+/**
+ * Live AI status, shown on every AI-touching surface. The API key itself is
+ * never returned — only `hasApiKey`. `configured` means the provider has the
+ * credentials it needs (a key for cloud, a base URL for Ollama).
+ */
 export const AiStatus = z.object({
   enabled: z.boolean(),
+  configured: z.boolean(),
   reachable: z.boolean(),
-  host: z.string(),
-  port: z.number().int(),
+  provider: AiProvider,
   model: z.string(),
-  /** Model names Ollama reports as available (empty when unreachable). */
+  /** Ollama base URL (e.g. http://ollama:11434); empty for cloud providers. */
+  baseUrl: z.string(),
+  hasApiKey: z.boolean(),
+  /** Models the provider reports (Ollama's installed list; cloud model IDs). */
   availableModels: z.array(z.string()),
 });
 export type AiStatus = z.infer<typeof AiStatus>;
 
-export const UpdateAiSettingsRequest = AiConfigInput;
+export const UpdateAiSettingsRequest = z
+  .object({
+    enabled: z.boolean(),
+    provider: AiProvider,
+    model: z.string().min(1).max(100),
+    /**
+     * Cloud API key. Omit to keep the stored key unchanged; send an empty
+     * string to clear it. Never returned by any endpoint.
+     */
+    apiKey: z.string().max(400).optional(),
+    /** Ollama base URL, or an optional OpenAI-compatible endpoint override. */
+    baseUrl: z.string().max(300).optional(),
+  })
+  .refine((v) => v.provider !== "ollama" || (v.baseUrl?.trim().length ?? 0) > 0, {
+    message: "Ollama needs a base URL, e.g. http://ollama:11434",
+    path: ["baseUrl"],
+  });
 export type UpdateAiSettingsRequest = z.infer<typeof UpdateAiSettingsRequest>;
 
 export const AiMessage = z.object({

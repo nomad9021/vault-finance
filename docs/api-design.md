@@ -129,8 +129,8 @@ see [ADR-0005](adr/0005-ai-streaming.md)). Every request after login carries
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/v1/ai/status` | `{ reachable, model, host, port }` — every AI-touching UI element checks this first. |
-| POST | `/api/v1/ai/settings` | Owner-only: `{ ollamaHost, ollamaPort, modelName, enabled }`. |
+| GET | `/api/v1/ai/status` | `{ enabled, configured, reachable, provider, model, baseUrl, hasApiKey, availableModels }` — every AI-touching UI element checks this first. AI is off by default; UI stays hidden until `enabled && configured`. The API key is never returned (only `hasApiKey`). |
+| POST | `/api/v1/ai/settings` | Owner-only: `{ enabled, provider: "ollama"|"openai"|"anthropic", model, apiKey?, baseUrl? }`. `apiKey` omitted keeps the stored key, empty string clears it. Cloud providers send financial context off-server under the user's key (ADR-0006). |
 | GET | `/api/v1/ai/conversations` | |
 | GET | `/api/v1/ai/conversations/:id` | Includes full message history. |
 | DELETE | `/api/v1/ai/conversations/:id` | |

@@ -429,6 +429,7 @@ function GetStarted({
   onNavigate: (page: PageId) => void;
   hasAccounts: boolean;
 }) {
+  const aiVisible = useApp((s) => s.aiVisible);
   return (
     <div
       style={{
@@ -452,17 +453,31 @@ function GetStarted({
           </Button>
         </div>
       </Card>
-      <Card kicker="Anytime" title="Ask the assistant">
-        <p className="card-body">
-          The AI runs on your own server. Once transactions exist it can
-          explain spending, forecast cash flow, and more.
-        </p>
-        <div>
-          <Button variant="secondary" onClick={() => onNavigate("assistant")}>
-            Open AI Assistant
-          </Button>
-        </div>
-      </Card>
+      {aiVisible ? (
+        <Card kicker="Anytime" title="Ask the assistant">
+          <p className="card-body">
+            Your assistant can explain spending, forecast cash flow, and
+            summarize your month.
+          </p>
+          <div>
+            <Button variant="secondary" onClick={() => onNavigate("assistant")}>
+              Open AI Assistant
+            </Button>
+          </div>
+        </Card>
+      ) : (
+        <Card kicker="Optional" title="Add an AI assistant">
+          <p className="card-body">
+            Off by default. Connect OpenAI, Anthropic, or a local Ollama in
+            Settings to get spending explanations and monthly summaries.
+          </p>
+          <div>
+            <Button variant="secondary" onClick={() => onNavigate("settings")}>
+              Open Settings
+            </Button>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
