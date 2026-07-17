@@ -211,5 +211,6 @@ server first is always the safe order.
 
 ## 10. Manual release steps for maintainers
 
-*(coming with M6 — macOS signing/notarization credentials and the
-browser-side Apple Developer steps that CI cannot do.)*
+Moved to [releasing.md](releasing.md): cutting a release, the updater
+signing key, and the one-time macOS notarization setup (browser + CI only —
+no Mac required, per the project's constraints).

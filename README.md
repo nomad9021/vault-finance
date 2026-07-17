@@ -72,5 +72,15 @@ The server dev process needs a `DATABASE_URL` pointing at any Postgres 16+;
   monthly/yearly reports with cached AI commentary, and CSV export.
   `scripts/seed-demo.mjs` fills a dev server with realistic data.
 
-Next up: CI pipeline, signed installers for all three platforms, and
-auto-update (M6).
+- **M6 — CI, installers, auto-update**: complete. `ci.yml` runs typecheck,
+  the full e2e suite (including the client-version-compatibility fixture),
+  a Tauri `cargo check`, and the Docker image build on every push. A tag
+  push triggers `release-desktop.yml`: MSI/NSIS, `.dmg` for both Mac
+  architectures (built entirely on GitHub's macOS runners — no local Mac),
+  `.deb` + AppImage, all with signed updater artifacts and a `latest.json`
+  manifest. In-app updates live in Settings → Application. See
+  [releasing.md](docs/releasing.md) for the runbook.
+
+Phase 1 milestones are complete. Remaining before a public release:
+M7 polish (accessibility, shortcuts, docs finalization) and pushing the
+repo to GitHub (one-time setup in [releasing.md](docs/releasing.md)).
