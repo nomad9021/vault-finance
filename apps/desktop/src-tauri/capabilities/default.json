@@ -1,11 +1,15 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: store (settings + pins), OS info for device naming. All network access goes through the Rust commands, which are always invokable — the TLS pinning policy lives in Rust, not in capability grants.",
-  "windows": ["main"],
+  "description": "Main window: store (settings + pins), OS info for device naming. All network access goes through the Rust commands, which are always invokable \u2014 the TLS pinning policy lives in Rust, not in capability grants.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "os:default",
-    "store:default"
+    "store:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

@@ -1,6 +1,8 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { platform as osPlatform, hostname } from "@tauri-apps/plugin-os";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { LazyStore } from "@tauri-apps/plugin-store";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 import type { Platform as ApiPlatform } from "@vault/shared";
 import type { HostPlatform, ProbeResult } from "./types.js";
 
@@ -8,6 +10,10 @@ interface RustHttpResponse {
   status: number;
   body: string;
 }
+
+// Holds the checked Update between checkForUpdate and install — the updater
+// plugin's download must reuse the same Update instance.
+let pendingUpdate: Update | null = null;
 
 /**
  * Tauri host: every HTTP request goes through the Rust `http_request`
@@ -91,6 +97,24 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
     async deleteValue(key) {
       await store.delete(key);
       await store.save();
+    },
+
+    async checkForUpdate() {
+      pendingUpdate = await check();
+      return pendingUpdate ? { version: pendingUpdate.version } : null;
+    },
+    async installUpdateAndRestart(onProgress?: (fraction: number) => void) {
+      if (!pendingUpdate) throw new Error("no update pending — check first");
+      let downloaded = 0;
+      let total: number | undefined;
+      await pendingUpdate.downloadAndInstall((event) => {
+        if (event.event === "Started") total = event.data.contentLength;
+        else if (event.event === "Progress") {
+          downloaded += event.data.chunkLength;
+          if (total) onProgress?.(downloaded / total);
+        } else if (event.event === "Finished") onProgress?.(1);
+      });
+      await relaunch();
     },
 
     async getSecret(key) {

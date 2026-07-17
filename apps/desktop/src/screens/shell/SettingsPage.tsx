@@ -3,16 +3,104 @@ import { THEMES, THEME_LABELS } from "@vault/design-tokens";
 import { Button, Card, Dialog, Field, Segmented, Select, Spinner, Tag } from "@vault/ui";
 import { useCallback, useEffect, useState } from "react";
 import { useData } from "../../lib/useData.js";
-import { useApp } from "../../state/store.js";
+import { APP_VERSION, useApp } from "../../state/store.js";
 
 export function SettingsPage() {
   return (
     <div style={{ maxWidth: 640, display: "flex", flexDirection: "column", gap: 16 }}>
       <AppearanceSection />
       <AiSection />
+      <UpdatesSection />
       <SessionsSection />
       <ServerSection />
     </div>
+  );
+}
+
+function UpdatesSection() {
+  const platform = useApp((s) => s.platform);
+  const [state, setState] = useState<
+    | { phase: "idle" }
+    | { phase: "checking" }
+    | { phase: "none" }
+    | { phase: "available"; version: string }
+    | { phase: "installing"; progress: number }
+    | { phase: "error"; message: string }
+  >({ phase: "idle" });
+
+  // Browser dev mode has no updater — hide the card entirely.
+  if (platform.kind !== "tauri") return null;
+
+  const check = async () => {
+    setState({ phase: "checking" });
+    try {
+      const update = await platform.checkForUpdate();
+      setState(update ? { phase: "available", version: update.version } : { phase: "none" });
+    } catch (err) {
+      setState({
+        phase: "error",
+        message: err instanceof Error ? err.message : "Couldn't reach the update server.",
+      });
+    }
+  };
+
+  const install = async () => {
+    setState({ phase: "installing", progress: 0 });
+    try {
+      await platform.installUpdateAndRestart((progress) =>
+        setState({ phase: "installing", progress }),
+      );
+    } catch (err) {
+      setState({
+        phase: "error",
+        message: err instanceof Error ? err.message : "The update failed to install.",
+      });
+    }
+  };
+
+  return (
+    <Card kicker="Application" title={`Updates — v${APP_VERSION}`}>
+      <p className="card-body">
+        Updates are downloaded from the project's GitHub releases and
+        signature-checked before install — the only network request this app
+        ever makes outside your own server.
+      </p>
+      {state.phase === "available" ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Tag variant="accent">v{state.version} available</Tag>
+          <Button variant="primary" onClick={() => void install()}>
+            Install & restart
+          </Button>
+        </div>
+      ) : state.phase === "installing" ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Spinner label="Installing update" />
+          <span style={{ fontSize: 13 }}>
+            Downloading… {Math.round(state.progress * 100)}%
+          </span>
+        </div>
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Button
+            variant="secondary"
+            onClick={() => void check()}
+            disabled={state.phase === "checking"}
+          >
+            {state.phase === "checking" ? <Spinner label="Checking" /> : "Check for updates"}
+          </Button>
+          {state.phase === "none" && (
+            <span style={{ fontSize: 13, color: "var(--color-neutral-500)" }}>
+              You're on the latest version.
+            </span>
+          )}
+          {state.phase === "error" && (
+            <span role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>
+              {state.message}
+            </span>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 

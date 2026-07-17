@@ -53,6 +53,11 @@ export function createBrowserPlatform(): HostPlatform {
       localStorage.removeItem(prefix + key);
     },
 
+    async checkForUpdate() {
+      return null; // dev mode has no updater
+    },
+    async installUpdateAndRestart() {},
+
     async getSecret(key) {
       return localStorage.getItem(prefix + "secret." + key);
     },

@@ -38,6 +38,14 @@ export interface HostPlatform {
   saveValue(key: string, value: string): Promise<void>;
   deleteValue(key: string): Promise<void>;
 
+  /**
+   * Auto-update (Tauri only; dev mode always reports "no update"). Update
+   * artifacts are signature-checked against the public key baked into the
+   * app before install — see docs/releasing.md.
+   */
+  checkForUpdate(): Promise<{ version: string } | null>;
+  installUpdateAndRestart(onProgress?: (fraction: number) => void): Promise<void>;
+
   /** Secret storage — OS keychain in Tauri. Refresh tokens live here. */
   getSecret(key: string): Promise<string | null>;
   setSecret(key: string, value: string): Promise<void>;

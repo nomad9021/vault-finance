@@ -12,7 +12,9 @@
   "dependencies": {
     "@tauri-apps/api": "^2.2.0",
     "@tauri-apps/plugin-os": "^2.2.0",
+    "@tauri-apps/plugin-process": "^2.2.0",
     "@tauri-apps/plugin-store": "^2.2.0",
+    "@tauri-apps/plugin-updater": "^2.5.0",
     "@vault/design-tokens": "workspace:*",
     "@vault/shared": "workspace:*",
     "@vault/ui": "workspace:*",
