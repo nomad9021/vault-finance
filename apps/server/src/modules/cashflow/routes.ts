@@ -1,8 +1,8 @@
 import type { MonthSummary, SankeyLink, SankeyNode, SankeyResponse } from "@vault/shared";
-import { and, gte, lt, sql } from "drizzle-orm";
+import { and, gt, gte, lt, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { categories, transactions } from "../../db/schema.js";
+import { accounts, categories, transactions } from "../../db/schema.js";
 
 const SummaryQuery = z.object({
   months: z.coerce.number().int().min(1).max(24).default(6),
@@ -23,7 +23,9 @@ function shiftMonth(month: string, delta: number): string {
 }
 
 const SAVED_COLOR = "#3ecf8e";
-const OTHER_INCOME_COLOR = "#6f8ef2";
+// Income nodes are per-account; tint them from a rotating palette so different
+// accounts read as distinct flows on the left of the diagram.
+const ACCOUNT_INCOME_COLORS = ["#6f8ef2", "#8b7cf0", "#4db6d0", "#e0a458", "#c96f9c", "#5fbf8f"];
 
 export default async function cashflowRoutes(app: FastifyInstance) {
   app.addHook("preHandler", app.requireAuth);
@@ -79,18 +81,36 @@ export default async function cashflowRoutes(app: FastifyInstance) {
     const month = query.month ?? new Date().toISOString().slice(0, 7);
     const { first, nextFirst } = monthBounds(month);
 
-    const rows = await app.db
+    // Spending grouped by category; income grouped by the account it landed in
+    // (so the left side of the diagram shows each account's income).
+    const spendRows = await app.db
       .select({
         categoryId: transactions.categoryId,
-        income: sql<string>`coalesce(sum(${transactions.amountCents}) filter (where ${transactions.amountCents} > 0), 0)`,
         spending: sql<string>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)`,
       })
       .from(transactions)
       .where(and(gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst)))
       .groupBy(transactions.categoryId);
 
+    const incomeRows = await app.db
+      .select({
+        accountId: transactions.accountId,
+        income: sql<string>`coalesce(sum(${transactions.amountCents}), 0)`,
+      })
+      .from(transactions)
+      .where(
+        and(
+          gte(transactions.postedAt, first),
+          lt(transactions.postedAt, nextFirst),
+          gt(transactions.amountCents, 0),
+        ),
+      )
+      .groupBy(transactions.accountId);
+
     const cats = await app.db.select().from(categories);
     const catById = new Map(cats.map((c) => [c.id, c]));
+    const accts = await app.db.select().from(accounts);
+    const acctById = new Map(accts.map((a) => [a.id, a]));
     const childrenOf = new Map<string, string[]>();
     for (const c of cats) {
       if (c.parentCategoryId && catById.has(c.parentCategoryId)) {
@@ -100,45 +120,32 @@ export default async function cashflowRoutes(app: FastifyInstance) {
       }
     }
 
+    const incomeNodes: SankeyNode[] = incomeRows
+      .map((row, i): SankeyNode => {
+        const acct = acctById.get(row.accountId);
+        return {
+          id: `acct:${row.accountId}`,
+          label: acct?.name ?? "Account",
+          valueCents: Number(row.income),
+          color: ACCOUNT_INCOME_COLORS[i % ACCOUNT_INCOME_COLORS.length]!,
+          depth: 0,
+          kind: "income",
+          categoryId: null,
+          accountId: row.accountId,
+        };
+      })
+      .filter((n) => n.valueCents > 0);
+
     const directSpend = new Map<string, number>();
     let uncategorizedSpend = 0;
-    const incomeNodes: SankeyNode[] = [];
-    let otherIncome = 0;
 
-    for (const row of rows) {
-      const income = Number(row.income);
+    for (const row of spendRows) {
       const spending = Number(row.spending);
       const cat = row.categoryId ? catById.get(row.categoryId) : undefined;
-      if (income > 0) {
-        if (cat) {
-          incomeNodes.push({
-            id: `income:${cat.id}`,
-            label: cat.name,
-            valueCents: income,
-            color: cat.color,
-            depth: 0,
-            kind: "income",
-            categoryId: cat.id,
-          });
-        } else {
-          otherIncome += income;
-        }
-      }
       if (spending > 0) {
         if (cat) directSpend.set(cat.id, (directSpend.get(cat.id) ?? 0) + spending);
         else uncategorizedSpend += spending;
       }
-    }
-    if (otherIncome > 0) {
-      incomeNodes.push({
-        id: "income:other",
-        label: "Other income",
-        valueCents: otherIncome,
-        color: OTHER_INCOME_COLOR,
-        depth: 0,
-        kind: "income",
-        categoryId: null,
-      });
     }
     incomeNodes.sort((a, b) => b.valueCents - a.valueCents);
 

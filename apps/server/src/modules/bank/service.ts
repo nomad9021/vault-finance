@@ -68,9 +68,11 @@ export async function syncConnection(
       )
       .limit(1);
     if (existing) {
+      // Refresh the balance from the provider but keep the account's current
+      // name — the user may have renamed it, and a sync must not clobber that.
       await db
         .update(accounts)
-        .set({ balanceCents: pa.balanceCents, name: pa.name, updatedAt: new Date() })
+        .set({ balanceCents: pa.balanceCents, updatedAt: new Date() })
         .where(eq(accounts.id, existing.id));
       acctIdByExternal.set(pa.externalAccountId, existing.id);
     } else {

@@ -36,8 +36,11 @@ export const SankeyNode = z.object({
   /** Column index: income=0, hub=1, top categories=2, subcategories 3+. */
   depth: z.number().int().nonnegative(),
   kind: SankeyNodeKind,
-  /** Category id for drill-in transaction lookups (null for hub/saved/other). */
+  /** Category id for drill-in transaction lookups (null for hub/saved/account). */
   categoryId: z.string().uuid().nullable(),
+  /** Set on income nodes, which are grouped by the account the money landed in
+   *  — drill-in filters transactions by this account. */
+  accountId: z.string().uuid().nullable().optional(),
 });
 export type SankeyNode = z.infer<typeof SankeyNode>;
 

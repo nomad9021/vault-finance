@@ -244,7 +244,14 @@ function FocusPanel({
 }: {
   side: "left" | "right";
   month: string;
-  node: { id: string; label: string; valueCents: number; color: string; categoryId: string | null };
+  node: {
+    id: string;
+    label: string;
+    valueCents: number;
+    color: string;
+    categoryId: string | null;
+    accountId?: string | null | undefined;
+  };
   isIncome: boolean;
   periodFactor: number;
   onClose: () => void;
@@ -263,8 +270,12 @@ function FocusPanel({
     const [y, m] = month.split("-").map(Number) as [number, number];
     const from = `${month}-01`;
     const to = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+    // Income nodes are per-account → filter by account; spending nodes by category.
+    const filter = node.accountId
+      ? { accountId: node.accountId }
+      : { categoryId: node.categoryId ?? "none" };
     client
-      .transactions({ categoryId: node.categoryId ?? "none", from, to, limit: 8 })
+      .transactions({ ...filter, from, to, limit: 8 })
       .then((res) => {
         if (!cancelled) {
           setTxns(
@@ -278,7 +289,7 @@ function FocusPanel({
     return () => {
       cancelled = true;
     };
-  }, [client, node.id, node.categoryId, month, isIncome]);
+  }, [client, node.id, node.categoryId, node.accountId, month, isIncome]);
 
   return (
     <div
@@ -388,7 +399,7 @@ function FocusPanel({
             <Button
               variant="ghost"
               style={{ marginTop: 12 }}
-              onClick={() => onViewAll(node.categoryId ?? "none")}
+              onClick={() => onViewAll(node.accountId ? undefined : (node.categoryId ?? "none"))}
             >
               View in Transactions →
             </Button>

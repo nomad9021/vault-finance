@@ -150,8 +150,10 @@ describe("cashflow", () => {
     expect(body.totalIncomeCents).toBe(400_000);
     expect(body.totalSpendingCents).toBe(30_000);
 
+    // Income is grouped by the account it landed in (here, "Checking").
     const income = body.nodes.find((n: { kind: string }) => n.kind === "income");
-    expect(income).toMatchObject({ label: "Income", valueCents: 400_000, depth: 0 });
+    expect(income).toMatchObject({ label: "Checking", valueCents: 400_000, depth: 0 });
+    expect(income.accountId).toBeTruthy();
     const hub = body.nodes.find((n: { kind: string }) => n.kind === "hub");
     expect(hub).toMatchObject({ valueCents: 400_000, depth: 1 });
 
