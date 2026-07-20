@@ -53,6 +53,11 @@ import {
   type CreateRuleRequest,
 } from "../schemas/categorize.js";
 import {
+  BankStatus,
+  BankSyncResponse,
+  type UpdateBankSettingsRequest,
+} from "../schemas/bank.js";
+import {
   Holding,
   InvestmentsResponse,
   type CreateHoldingRequest,
@@ -357,6 +362,23 @@ export class ApiClient {
   }
   autocategorize() {
     return this.request(AutocategorizeResponse, "POST", "/transactions/autocategorize");
+  }
+
+  // ── Bank linking (optional) ──
+  bankStatus() {
+    return this.request(BankStatus, "GET", "/bank/status");
+  }
+  updateBankSettings(body: UpdateBankSettingsRequest) {
+    return this.request(BankStatus, "PATCH", "/bank/settings", body);
+  }
+  bankConnect() {
+    return this.request(BankSyncResponse, "POST", "/bank/connect");
+  }
+  bankSync(connectionId: string) {
+    return this.request(BankSyncResponse, "POST", `/bank/connections/${connectionId}/sync`);
+  }
+  bankDisconnect(connectionId: string) {
+    return this.request(z.undefined(), "DELETE", `/bank/connections/${connectionId}`);
   }
 
   // ── Transactions ──

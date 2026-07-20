@@ -8,6 +8,7 @@ import versionGatePlugin from "./plugins/version-gate.js";
 import accountRoutes from "./modules/accounts/routes.js";
 import aiRoutes from "./modules/ai/routes.js";
 import authRoutes from "./modules/auth/routes.js";
+import bankRoutes from "./modules/bank/routes.js";
 import budgetRoutes from "./modules/budgets/routes.js";
 import cashflowRoutes from "./modules/cashflow/routes.js";
 import categorizeRoutes from "./modules/categorize/routes.js";
@@ -59,6 +60,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       await api.register(categoryRoutes);
       await api.register(transactionRoutes);
       await api.register(categorizeRoutes);
+      await api.register(bankRoutes, { config: opts.config });
       await api.register(budgetRoutes);
       await api.register(aiRoutes, { config: opts.config });
       await api.register(cashflowRoutes);

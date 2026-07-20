@@ -91,6 +91,35 @@ export const categorizationRules = pgTable("categorization_rules", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ── bank connections (optional third-party aggregator linking) ──
+// Off by default. "mock" fabricates local data (nothing leaves the server);
+// "plaid" routes through Plaid under the owner's own keys (ADR-0007).
+
+export const bankConnections = pgTable("bank_connections", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  provider: text("provider").notNull(),
+  /** Provider's identifier for the linked item/login. */
+  externalItemId: text("external_item_id").notNull(),
+  /** Provider access token; null for the mock provider. */
+  accessToken: text("access_token"),
+  institutionName: text("institution_name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+});
+
+// Singleton settings row (mirrors ai_settings): whether bank linking is on,
+// which provider, and the owner's Plaid credentials when provider = plaid.
+export const bankSettings = pgTable("bank_settings", {
+  id: boolean("id").primaryKey().default(true).$type<true>(),
+  enabled: boolean("enabled").notNull().default(false),
+  provider: text("provider", { enum: ["mock", "plaid"] }).notNull().default("mock"),
+  plaidClientId: text("plaid_client_id"),
+  plaidSecret: text("plaid_secret"),
+  plaidEnv: text("plaid_env", { enum: ["sandbox", "development", "production"] })
+    .notNull()
+    .default("sandbox"),
+});
+
 // ── accounts ──
 
 export const accounts = pgTable("accounts", {
@@ -116,6 +145,11 @@ export const accounts = pgTable("accounts", {
   isLiability: boolean("is_liability").notNull().default(false),
   interestRate: numeric("interest_rate", { precision: 6, scale: 4 }),
   balanceCents: bigint("balance_cents", { mode: "number" }).notNull().default(0),
+  /** Set when the account was created by a bank connection sync. */
+  bankConnectionId: uuid("bank_connection_id").references(() => bankConnections.id, {
+    onDelete: "set null",
+  }),
+  externalAccountId: text("external_account_id"),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

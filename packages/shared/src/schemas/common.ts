@@ -18,6 +18,9 @@ export const ErrorCode = z.enum([
   "CATEGORY_IN_USE",
   "AI_UNAVAILABLE",
   "AI_DISABLED",
+  "BANK_DISABLED",
+  "BANK_UNCONFIGURED",
+  "BANK_UNAVAILABLE",
   "INTERNAL",
 ]);
 export type ErrorCode = z.infer<typeof ErrorCode>;

@@ -2,8 +2,11 @@ import {
   AI_MODEL_SUGGESTIONS,
   AI_PROVIDER_LABELS,
   AiProvider,
+  BANK_PROVIDER_LABELS,
+  BankProvider,
   CLOUD_PROVIDERS,
   type AiStatus,
+  type BankStatus,
   type DeviceSession,
 } from "@vault/shared";
 import { THEMES, THEME_LABELS } from "@vault/design-tokens";
@@ -18,6 +21,7 @@ export function SettingsPage() {
       <AppearanceSection />
       <CategoriesSection />
       <CategorizationRulesSection />
+      <BankSection />
       <AiSection />
       <UpdatesSection />
       <SessionsSection />
@@ -631,6 +635,269 @@ function AiSection() {
                 </Button>
               </div>
             </>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Optional bank linking (ADR-0007). Off by default. The "mock" provider is
+ * fully local; "plaid" routes data through Plaid under the owner's own keys —
+ * the privacy tradeoff the banner spells out before it's enabled.
+ */
+function BankSection() {
+  const client = useApp((s) => s.client);
+  const user = useApp((s) => s.user);
+  const { data: status, reload } = useData<BankStatus>(() => client.bankStatus(), [client]);
+
+  const [enabled, setEnabled] = useState(false);
+  const [provider, setProvider] = useState<BankProvider>("mock");
+  const [plaidClientId, setPlaidClientId] = useState("");
+  const [plaidSecret, setPlaidSecret] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (status && !dirty) {
+      setEnabled(status.enabled);
+      setProvider(status.provider);
+      setPlaidClientId("");
+      setPlaidSecret("");
+    }
+  }, [status, dirty]);
+
+  const isOwner = user?.role === "owner";
+  const touch = () => setDirty(true);
+  const isPlaid = provider === "plaid";
+
+  const save = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await client.updateBankSettings({
+        enabled,
+        provider,
+        ...(plaidClientId.trim() ? { plaidClientId: plaidClientId.trim() } : {}),
+        ...(plaidSecret.trim() ? { plaidSecret: plaidSecret.trim() } : {}),
+      });
+      setPlaidSecret("");
+      setDirty(false);
+      await reload();
+      setMessage("Saved.");
+    } catch {
+      setError("Couldn't save bank settings.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const connect = async () => {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const r = await client.bankConnect();
+      setMessage(
+        `Connected ${r.institutionName}: ${r.accountsLinked} accounts, ${r.imported} transactions imported.`,
+      );
+      await reload();
+    } catch {
+      setError("Connect failed — make sure the provider is enabled and configured.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sync = async (id: string) => {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const r = await client.bankSync(id);
+      setMessage(`Synced: ${r.imported} new, ${r.skippedDuplicates} already imported.`);
+      await reload();
+    } catch {
+      setError("Sync failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disconnect = async (id: string) => {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await client.bankDisconnect(id);
+      await reload();
+      setMessage("Disconnected. The imported accounts and history were kept.");
+    } catch {
+      setError("Disconnect failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card kicker="Bank linking" title="Connected banks (optional)">
+      <p className="card-body">
+        Off by default. Pull accounts and transactions automatically instead of importing CSVs.
+        Imported transactions run through your local categorization rules.
+      </p>
+
+      {!isOwner ? (
+        <p className="card-meta">Only the owner can change bank settings.</p>
+      ) : (
+        <>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <Select
+                label="Provider"
+                value={provider}
+                onChange={(e) => {
+                  setProvider(e.target.value as BankProvider);
+                  touch();
+                }}
+              >
+                {BankProvider.options.map((p) => (
+                  <option key={p} value={p}>
+                    {BANK_PROVIDER_LABELS[p]}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
+
+          {isPlaid && (
+            <div
+              role="note"
+              style={{
+                marginTop: 12,
+                padding: "10px 12px",
+                borderRadius: 8,
+                fontSize: 13,
+                lineHeight: 1.5,
+                background: "color-mix(in srgb, var(--color-negative) 10%, var(--color-surface))",
+                border: "1px solid color-mix(in srgb, var(--color-negative) 30%, transparent)",
+              }}
+            >
+              <strong>Heads up — this sends data off your server.</strong> With Plaid, your bank
+              login and transactions flow through Plaid's cloud under your own API keys. That breaks
+              the app's otherwise-local guarantee. The Sandbox provider keeps everything on your
+              machine.
+            </div>
+          )}
+
+          {isPlaid && (
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <Field
+                  label="Plaid client ID"
+                  value={plaidClientId}
+                  onChange={(e) => {
+                    setPlaidClientId(e.target.value);
+                    touch();
+                  }}
+                  placeholder={status?.hasPlaidCredentials ? "•••• (saved)" : "client_id"}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <Field
+                  label="Plaid secret"
+                  type="password"
+                  value={plaidSecret}
+                  onChange={(e) => {
+                    setPlaidSecret(e.target.value);
+                    touch();
+                  }}
+                  placeholder={status?.hasPlaidCredentials ? "•••• (saved — blank keeps it)" : "secret"}
+                />
+              </div>
+            </div>
+          )}
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginTop: 12,
+              fontSize: 14,
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => {
+                setEnabled(e.target.checked);
+                touch();
+              }}
+            />
+            Enable bank linking
+          </label>
+
+          <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+            <Button variant="primary" onClick={() => void save()} disabled={busy || !dirty}>
+              Save
+            </Button>
+            {status?.enabled && status?.configured && (
+              <Button variant="secondary" onClick={() => void connect()} disabled={busy}>
+                {provider === "mock" ? "Connect a sandbox bank" : "Connect a bank"}
+              </Button>
+            )}
+          </div>
+
+          {message && (
+            <div role="status" style={{ fontSize: 13, color: "var(--color-neutral-300)", marginTop: 8 }}>
+              {message}
+            </div>
+          )}
+          {error && (
+            <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)", marginTop: 8 }}>
+              {error}
+            </div>
+          )}
+
+          {status && status.connections.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              {status.connections.map((c) => (
+                <div
+                  key={c.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "8px 0",
+                    borderTop: "1px solid var(--color-divider)",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{c.institutionName}</div>
+                    <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
+                      {c.accountCount} account{c.accountCount === 1 ? "" : "s"} ·{" "}
+                      {c.lastSyncedAt
+                        ? `synced ${new Date(c.lastSyncedAt).toLocaleString()}`
+                        : "never synced"}
+                    </div>
+                  </div>
+                  <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                    <Button variant="secondary" onClick={() => void sync(c.id)} disabled={busy}>
+                      Sync
+                    </Button>
+                    <Button variant="ghost" onClick={() => void disconnect(c.id)} disabled={busy}>
+                      Disconnect
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </>
       )}

@@ -33,6 +33,10 @@ const EnvSchema = z.object({
   OLLAMA_PORT: z.coerce.number().int().default(11434),
   OLLAMA_MODEL: z.string().default("llama3.1:8b"),
 
+  // Optional override of the Plaid API base URL (e.g. a mock server in tests).
+  // When unset, the plaid provider derives it from the connection's env.
+  PLAID_BASE_URL: z.string().optional(),
+
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 });
 
@@ -45,6 +49,7 @@ export interface AppConfig {
   jwtSecret: string;
   accessTokenTtlSeconds: number;
   ollama: { host: string; port: number; model: string };
+  plaidBaseUrl?: string;
   logLevel: string;
   /** Shared semver for the version-compatibility check. */
   apiVersion: string;
@@ -83,6 +88,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       port: parsed.OLLAMA_PORT,
       model: parsed.OLLAMA_MODEL,
     },
+    ...(parsed.PLAID_BASE_URL ? { plaidBaseUrl: parsed.PLAID_BASE_URL } : {}),
     logLevel: parsed.LOG_LEVEL,
     apiVersion: "0.1.0",
     minClientVersion: "0.1.0",
