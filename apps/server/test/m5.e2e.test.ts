@@ -140,7 +140,7 @@ describe("cashflow", () => {
     expect(months[1]).toMatchObject({ month: THIS_MONTH, spendingCents: 30_000 });
   });
 
-  it("builds balanced sankey data with a Saved leaf", async () => {
+  it("builds balanced multi-level sankey data with a Saved leaf", async () => {
     const res = await app.inject({
       method: "GET",
       url: `/api/v1/cashflow/sankey?month=${THIS_MONTH}`,
@@ -149,13 +149,78 @@ describe("cashflow", () => {
     const body = res.json();
     expect(body.totalIncomeCents).toBe(400_000);
     expect(body.totalSpendingCents).toBe(30_000);
-    expect(body.incomes).toHaveLength(1);
-    expect(body.incomes[0]).toMatchObject({ label: "Income", valueCents: 400_000 });
 
-    const saved = body.leaves.find((l: { id: string }) => l.id === "saved");
-    expect(saved.valueCents).toBe(370_000); // diagram balances
-    const groceries = body.leaves.find((l: { label: string }) => l.label === "Groceries");
-    expect(groceries).toMatchObject({ valueCents: 30_000, categoryId: groceriesId });
+    const income = body.nodes.find((n: { kind: string }) => n.kind === "income");
+    expect(income).toMatchObject({ label: "Income", valueCents: 400_000, depth: 0 });
+    const hub = body.nodes.find((n: { kind: string }) => n.kind === "hub");
+    expect(hub).toMatchObject({ valueCents: 400_000, depth: 1 });
+
+    const saved = body.nodes.find((n: { id: string }) => n.id === "saved");
+    expect(saved).toMatchObject({ valueCents: 370_000, depth: 2 }); // diagram balances
+    const groceries = body.nodes.find((n: { id: string }) => n.id === `cat:${groceriesId}`);
+    expect(groceries).toMatchObject({ valueCents: 30_000, categoryId: groceriesId, depth: 2 });
+
+    expect(body.links).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ from: income.id, to: "hub", valueCents: 400_000 }),
+        expect.objectContaining({ from: "hub", to: `cat:${groceriesId}`, valueCents: 30_000 }),
+        expect.objectContaining({ from: "hub", to: "saved", valueCents: 370_000 }),
+      ]),
+    );
+  });
+
+  it("branches spending into subcategories via parentCategoryId", async () => {
+    const parent = await app.inject({
+      method: "POST",
+      url: "/api/v1/categories",
+      headers: auth,
+      payload: { name: "Investments", color: "#7c5cff" },
+    });
+    const parentId = parent.json().id;
+    const child = await app.inject({
+      method: "POST",
+      url: "/api/v1/categories",
+      headers: auth,
+      payload: { name: "401(k)", color: "#7c5cff", parentCategoryId: parentId },
+    });
+    const childId = child.json().id;
+    const txn = await app.inject({
+      method: "POST",
+      url: "/api/v1/transactions",
+      headers: auth,
+      payload: {
+        accountId: checkingId,
+        pending: false,
+        postedAt: `${THIS_MONTH}-15`,
+        amountCents: -20_000,
+        categoryId: childId,
+        merchantName: "Fidelity",
+      },
+    });
+    const txnId = txn.json().id;
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/v1/cashflow/sankey?month=${THIS_MONTH}`,
+      headers: auth,
+    });
+    const body = res.json();
+    // Parent aggregates the child's spend and sits one column left of it.
+    const parentNode = body.nodes.find((n: { id: string }) => n.id === `cat:${parentId}`);
+    expect(parentNode).toMatchObject({ valueCents: 20_000, depth: 2 });
+    const childNode = body.nodes.find((n: { id: string }) => n.id === `cat:${childId}`);
+    expect(childNode).toMatchObject({ valueCents: 20_000, depth: 3, categoryId: childId });
+    expect(body.links).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ from: "hub", to: `cat:${parentId}`, valueCents: 20_000 }),
+        expect.objectContaining({ from: `cat:${parentId}`, to: `cat:${childId}`, valueCents: 20_000 }),
+      ]),
+    );
+
+    // Clean up so the shared fixture's totals/balances stay intact for later tests.
+    await app.inject({ method: "DELETE", url: `/api/v1/transactions/${txnId}`, headers: auth });
+    await app.inject({ method: "DELETE", url: `/api/v1/categories/${childId}`, headers: auth });
+    await app.inject({ method: "DELETE", url: `/api/v1/categories/${parentId}`, headers: auth });
   });
 });
 

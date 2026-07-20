@@ -55,6 +55,20 @@ const card = await api("POST", "/accounts", { name: "Travel Card", type: "credit
 const brokerage = await api("POST", "/accounts", { name: "Brokerage", type: "investment", institution: "Vanguard", balanceCents: 0 }, token);
 console.log("accounts created");
 
+// ── Investment sub-categories (demonstrates multi-level Sankey branching) ──
+const ensureCat = async (name, color, parentCategoryId = null) => {
+  if (cats.has(name)) return cats.get(name);
+  const c = await api("POST", "/categories", { name, color, parentCategoryId }, token);
+  const id = c.id ?? c.category?.id;
+  cats.set(name, id);
+  return id;
+};
+const investmentsId = await ensureCat("Investments", "#7c5cff", null);
+await ensureCat("401(k)", "#7c5cff", investmentsId);
+await ensureCat("House Fund", "#5b8def", investmentsId);
+await ensureCat("Brokerage Deposits", "#3ecf8e", investmentsId);
+console.log("investment sub-categories created");
+
 // ── Four months of transactions ──
 const month = (delta) => {
   const d = new Date();
@@ -87,7 +101,10 @@ for (let delta = -3; delta <= 0; delta++) {
   await txn(card.id, `${m}-14`, -Math.round(9_400 * spendScale), "Gas & Go", "Transport");
   await txn(card.id, `${m}-22`, -Math.round(16_700 * spendScale), "Big Box Store", "Shopping");
   await txn(checking.id, `${m}-25`, -4_800, "StreamFlix", "Subscriptions");
-  await txn(checking.id, `${m}-28`, -100_000, "Transfer to Savings", "Savings");
+  // Investment contributions branch under the "Investments" parent category.
+  await txn(checking.id, `${m}-26`, -60_000, "Fidelity 401(k)", "401(k)");
+  await txn(checking.id, `${m}-27`, -25_000, "House Down-Payment Fund", "House Fund");
+  await txn(checking.id, `${m}-28`, -15_000, "Vanguard Brokerage", "Brokerage Deposits");
 }
 console.log("4 months of transactions created");
 

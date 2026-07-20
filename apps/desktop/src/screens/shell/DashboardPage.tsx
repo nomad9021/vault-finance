@@ -31,7 +31,7 @@ export function DashboardPage({
 
   const accounts = accountData?.accounts ?? [];
   const netWorth = accounts.reduce((sum, a) => sum + a.balanceCents, 0);
-  const hasData = (sankeyData?.incomes.length ?? 0) > 0 || (sankeyData?.leaves.length ?? 0) > 0;
+  const hasData = (sankeyData?.links.length ?? 0) > 0;
 
   return (
     <div
@@ -126,11 +126,10 @@ function SankeyCard({
   const [period, setPeriod] = useState<Period>("monthly");
   const pf = PERIOD_FACTOR[period];
 
-  const allNodes = [...data.incomes, ...data.leaves];
-  const focusNode = focus && focus !== "hub" ? allNodes.find((n) => n.id === focus) : null;
-  // Income nodes sit on the left → panel opens right; leaves → left.
-  const panelSide: "left" | "right" =
-    focus && focus !== "hub" && data.leaves.some((n) => n.id === focus) ? "left" : "right";
+  const focusNode = focus ? (data.nodes.find((n) => n.id === focus) ?? null) : null;
+  // Income sources + hub sit on the left → panel opens right; spending → left.
+  const isIncomeSide = !!focusNode && (focusNode.kind === "income" || focusNode.kind === "hub");
+  const panelSide: "left" | "right" = isIncomeSide ? "right" : "left";
 
   return (
     <div
@@ -203,19 +202,15 @@ function SankeyCard({
 
       <div style={{ padding: "0 4px 8px" }}>
         <Sankey
-          incomes={data.incomes.map((n) => ({
+          nodes={data.nodes.map((n) => ({
             id: n.id,
             label: n.label,
             value: n.valueCents,
             color: n.color,
+            depth: n.depth,
+            kind: n.kind,
           }))}
-          leaves={data.leaves.map((n) => ({
-            id: n.id,
-            label: n.label,
-            value: n.valueCents,
-            color: n.color,
-          }))}
-          hubLabel={`TOTAL INCOME · ${formatCentsWhole(data.totalIncomeCents * pf)}`}
+          links={data.links.map((l) => ({ from: l.from, to: l.to, value: l.valueCents }))}
           format={(v) => formatCentsWhole(v * pf)}
           focus={focus}
           onFocus={setFocus}
@@ -223,22 +218,12 @@ function SankeyCard({
         />
       </div>
 
-      {focus && (
+      {focus && focusNode && (
         <FocusPanel
           side={panelSide}
           month={data.month}
-          node={
-            focus === "hub"
-              ? {
-                  id: "hub",
-                  label: "Total income",
-                  valueCents: data.totalIncomeCents,
-                  color: "#9397ab",
-                  categoryId: null,
-                }
-              : focusNode!
-          }
-          isIncome={focus === "hub" || data.incomes.some((n) => n.id === focus)}
+          node={focusNode}
+          isIncome={isIncomeSide}
           periodFactor={pf}
           onClose={() => setFocus(null)}
           onViewAll={(categoryId) => onNavigate("transactions", categoryId)}
