@@ -5,6 +5,8 @@ import { AuthHeading, AuthLayout } from "./AuthLayout.js";
 
 export function ConnectScreen({ error }: { error?: string }) {
   const connectTo = useApp((s) => s.connectTo);
+  const cancelConnect = useApp((s) => s.cancelConnect);
+  const priorAddress = useApp((s) => s.priorAddress);
   const [address, setAddress] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -45,6 +47,17 @@ export function ConnectScreen({ error }: { error?: string }) {
         <Button variant="primary" block type="submit" disabled={busy || !address.trim()}>
           {busy ? <Spinner label="Connecting" /> : "Connect"}
         </Button>
+        {priorAddress && (
+          <Button
+            variant="secondary"
+            block
+            type="button"
+            disabled={busy}
+            onClick={() => void cancelConnect()}
+          >
+            Cancel
+          </Button>
+        )}
       </form>
       <div className="text-muted" style={{ fontSize: 12, marginTop: 16, lineHeight: 1.6 }}>
         Don't have a server yet? The self-hosting guide walks through starting

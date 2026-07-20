@@ -15,7 +15,7 @@ function formatFingerprint(hex: string): string {
  */
 export function TrustScreen({ address, probe }: { address: string; probe: ProbeResult }) {
   const confirmTrust = useApp((s) => s.confirmTrust);
-  const changeServer = useApp((s) => s.changeServer);
+  const declineTrust = useApp((s) => s.declineTrust);
   const [busy, setBusy] = useState(false);
 
   return (
@@ -46,7 +46,7 @@ export function TrustScreen({ address, probe }: { address: string; probe: ProbeR
         {probe.fingerprint ? formatFingerprint(probe.fingerprint) : "(unavailable)"}
       </div>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <Button variant="secondary" onClick={() => void changeServer()}>
+        <Button variant="secondary" onClick={() => declineTrust()}>
           Cancel
         </Button>
         <Button

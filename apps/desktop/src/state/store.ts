@@ -23,6 +23,9 @@ interface AppState {
   client: ApiClient;
   screen: Screen;
   serverAddress: string | null;
+  /** The server to return to if the user backs out of the connect flow; null
+   *  on first-ever launch (nothing to go back to). */
+  priorAddress: string | null;
   connection: ConnectionStatus;
   user: User | null;
   theme: Theme;
@@ -39,6 +42,11 @@ interface AppState {
   signOut(): Promise<void>;
   setTheme(theme: Theme): Promise<void>;
   changeServer(): Promise<void>;
+  /** Back out of the connect screen, restoring the prior server. No-op (and no
+   *  button shown) when there's no prior server to return to. */
+  cancelConnect(): Promise<void>;
+  /** Decline a trust prompt: return to the connect screen without pinning. */
+  declineTrust(): void;
   /** Re-check AI status and update aiVisible (called after login and after saving AI settings). */
   refreshAiEnabled(): Promise<void>;
 }
@@ -71,6 +79,7 @@ export const useApp = create<AppState>((set, get) => ({
   client: null as unknown as ApiClient,
   screen: { name: "boot" },
   serverAddress: null,
+  priorAddress: null,
   connection: "online",
   user: null,
   theme: "automatic",
@@ -172,9 +181,24 @@ export const useApp = create<AppState>((set, get) => ({
 
   /** Settings → connect to a different server. Keeps the pin; drops the session. */
   async changeServer() {
-    persistTokens(null);
-    await get().platform.deleteValue(ADDRESS_KEY);
-    set({ user: null, serverAddress: null, screen: { name: "connect" } });
+    // Non-destructive: keep the current server/session so the user can cancel
+    // back out. The old server is only replaced once a new connection actually
+    // succeeds (connectTo persists the new address). Remember where we were so
+    // the connect screen can offer a way back.
+    set({ priorAddress: get().serverAddress, screen: { name: "connect" } });
+  },
+
+  async cancelConnect() {
+    const prior = get().priorAddress;
+    if (!prior) return;
+    set({ priorAddress: null, serverAddress: prior });
+    await get().platform.saveValue(ADDRESS_KEY, prior);
+    rebuildClient(set, get, prior);
+    await get().routeForServer();
+  },
+
+  declineTrust() {
+    set({ screen: { name: "connect" } });
   },
 }));
 
