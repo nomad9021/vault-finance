@@ -22,6 +22,13 @@
       "when": 1784291092436,
       "tag": "0002_ai_multi_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784553600000,
+      "tag": "0003_categorization_rules",
+      "breakpoints": true
     }
   ]
 }

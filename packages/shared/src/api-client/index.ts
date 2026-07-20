@@ -47,6 +47,12 @@ import {
 } from "../schemas/ai.js";
 import { CashflowSummaryResponse, SankeyResponse } from "../schemas/cashflow.js";
 import {
+  AutocategorizeResponse,
+  CategorizationRule,
+  RuleListResponse,
+  type CreateRuleRequest,
+} from "../schemas/categorize.js";
+import {
   Holding,
   InvestmentsResponse,
   type CreateHoldingRequest,
@@ -337,6 +343,20 @@ export class ApiClient {
   }
   deleteCategory(id: string) {
     return this.request(z.undefined(), "DELETE", `/categories/${id}`);
+  }
+
+  // ── Auto-categorization (local rules) ──
+  categorizationRules() {
+    return this.request(RuleListResponse, "GET", "/categorization-rules");
+  }
+  createCategorizationRule(body: CreateRuleRequest) {
+    return this.request(CategorizationRule, "POST", "/categorization-rules", body);
+  }
+  deleteCategorizationRule(id: string) {
+    return this.request(z.undefined(), "DELETE", `/categorization-rules/${id}`);
+  }
+  autocategorize() {
+    return this.request(AutocategorizeResponse, "POST", "/transactions/autocategorize");
   }
 
   // ── Transactions ──

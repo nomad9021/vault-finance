@@ -10,6 +10,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { accounts, categories, transactions } from "../../db/schema.js";
 import { AppError, notFound } from "../../errors.js";
+import { loadCategorizer } from "../categorize/service.js";
 import { parseTransactionsCsv } from "./csv.js";
 
 function toApi(row: typeof transactions.$inferSelect): ApiTransaction {
@@ -229,18 +230,24 @@ export default async function transactionRoutes(app: FastifyInstance) {
     // Optional category column: match by name, case-insensitive.
     const allCategories = await app.db.query.categories.findMany();
     const byName = new Map(allCategories.map((c) => [c.name.toLowerCase(), c.id]));
+    // Rows without an explicit category fall through to the local engine
+    // (explicit rules + merchant history), so imports arrive pre-sorted.
+    const categorizer = await loadCategorizer(app.db);
 
     const result: ImportResponse = { imported: 0, skippedDuplicates: 0, errors };
     await app.db.transaction(async (tx) => {
       let balanceDelta = 0;
       for (const row of rows) {
+        const explicitCategoryId = row.categoryName
+          ? (byName.get(row.categoryName.toLowerCase()) ?? null)
+          : null;
+        const categoryId =
+          explicitCategoryId ?? categorizer.suggest(row.merchantName)?.categoryId ?? null;
         const inserted = await tx
           .insert(transactions)
           .values({
             accountId: body.accountId,
-            categoryId: row.categoryName
-              ? (byName.get(row.categoryName.toLowerCase()) ?? null)
-              : null,
+            categoryId,
             postedAt: row.postedAt,
             amountCents: row.amountCents,
             currency: account.currency,

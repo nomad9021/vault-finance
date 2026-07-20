@@ -74,6 +74,23 @@ export const categories = pgTable("categories", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ── categorization rules ──
+// User-defined keyword → category rules for local auto-categorization. The
+// engine also learns merchant→category from history at runtime; only these
+// explicit rules are persisted.
+
+export const categorizationRules = pgTable("categorization_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  /** Case-insensitive substring matched against a transaction's merchant name. */
+  keyword: text("keyword").notNull(),
+  categoryId: uuid("category_id")
+    .notNull()
+    .references(() => categories.id, { onDelete: "cascade" }),
+  /** Higher wins when multiple rules match. */
+  priority: integer("priority").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ── accounts ──
 
 export const accounts = pgTable("accounts", {

@@ -17,6 +17,7 @@ export function SettingsPage() {
     <div style={{ maxWidth: 640, display: "flex", flexDirection: "column", gap: 16 }}>
       <AppearanceSection />
       <CategoriesSection />
+      <CategorizationRulesSection />
       <AiSection />
       <UpdatesSection />
       <SessionsSection />
@@ -264,6 +265,114 @@ function UpdatesSection() {
               {state.message}
             </span>
           )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Manage explicit keyword → category rules for local auto-categorization. These
+ * run alongside history-learning (which needs no config); both are local and
+ * never involve the AI assistant.
+ */
+function CategorizationRulesSection() {
+  const client = useApp((s) => s.client);
+  const { data: ruleData, reload } = useData(() => client.categorizationRules(), [client]);
+  const { data: catData } = useData(() => client.categories(), [client]);
+  const rules = ruleData?.rules ?? [];
+  const categories = catData?.categories ?? [];
+  const catName = (id: string) => categories.find((c) => c.id === id)?.name ?? "Unknown";
+
+  const [keyword, setKeyword] = useState("");
+  const [categoryId, setCategoryId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const add = async () => {
+    if (!keyword.trim() || !categoryId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await client.createCategorizationRule({ keyword: keyword.trim(), categoryId });
+      setKeyword("");
+      setCategoryId("");
+      await reload();
+    } catch {
+      setError("Couldn't add that rule.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = async (id: string) => {
+    await client.deleteCategorizationRule(id).catch(() => {});
+    await reload();
+  };
+
+  return (
+    <Card kicker="Categorization" title="Auto-categorization rules">
+      <p className="card-meta">
+        When a transaction’s merchant name contains a keyword, file it under the chosen category —
+        applied on CSV import and when you press “Auto-categorize” on the Transactions page. Entirely
+        local; the AI assistant is never involved. Beyond these rules, the app also learns from how
+        you’ve categorized transactions before.
+      </p>
+
+      <div style={{ margin: "12px 0" }}>
+        {rules.length === 0 ? (
+          <p className="card-meta">No keyword rules yet — history-learning still works without them.</p>
+        ) : (
+          rules.map((r) => (
+            <div
+              key={r.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "7px 0",
+                borderTop: "1px solid var(--color-divider)",
+              }}
+            >
+              <span style={{ fontWeight: 600, fontSize: 13 }}>“{r.keyword}”</span>
+              <span style={{ color: "var(--color-neutral-500)", fontSize: 13 }}>
+                → {catName(r.categoryId)}
+              </span>
+              <div style={{ marginLeft: "auto" }}>
+                <Button variant="ghost" onClick={() => remove(r.id)}>
+                  Delete
+                </Button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div style={{ flex: 2, minWidth: 150 }}>
+          <Field
+            label="Keyword in merchant name"
+            value={keyword}
+            onChange={(e) => setKeyword(e.target.value)}
+            placeholder="e.g. Starbucks"
+          />
+        </div>
+        <div style={{ flex: 1, minWidth: 150 }}>
+          <Select label="Category" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+            <option value="">Choose…</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <Button variant="primary" onClick={add} disabled={busy || !keyword.trim() || !categoryId}>
+          Add rule
+        </Button>
+      </div>
+      {error && (
+        <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)", marginTop: 8 }}>
+          {error}
         </div>
       )}
     </Card>

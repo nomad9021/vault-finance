@@ -82,6 +82,28 @@ export function TransactionsPage({
 
   const [editing, setEditing] = useState<Transaction | "new" | null>(null);
   const [importing, setImporting] = useState(false);
+  const [autocatting, setAutocatting] = useState(false);
+  const [autocatMsg, setAutocatMsg] = useState<string | null>(null);
+
+  const runAutocategorize = async () => {
+    setAutocatting(true);
+    setAutocatMsg(null);
+    try {
+      const r = await client.autocategorize();
+      setAutocatMsg(
+        r.categorized > 0
+          ? `Sorted ${r.categorized} of ${r.scanned} (${r.byRule} by rule, ${r.byHistory} learned from history).`
+          : r.scanned === 0
+            ? "Nothing uncategorized to sort."
+            : `No matches among ${r.scanned} uncategorized — add a rule in Settings → Categorization rules.`,
+      );
+      reload();
+    } catch {
+      setAutocatMsg("Auto-categorize failed. Is the server reachable?");
+    } finally {
+      setAutocatting(false);
+    }
+  };
 
   return (
     <div
@@ -130,6 +152,14 @@ export function TransactionsPage({
             </option>
           ))}
         </Select>
+        <Button
+          variant="secondary"
+          onClick={() => void runAutocategorize()}
+          disabled={autocatting}
+          title="Sort uncategorized transactions using your keyword rules and past categorizations — all local, nothing leaves your server."
+        >
+          {autocatting ? "Sorting…" : "Auto-categorize"}
+        </Button>
         <Button variant="secondary" onClick={() => setImporting(true)}>
           Import CSV
         </Button>
@@ -140,6 +170,22 @@ export function TransactionsPage({
           {totalCount} transaction{totalCount === 1 ? "" : "s"}
         </span>
       </div>
+
+      {autocatMsg && (
+        <div
+          role="status"
+          style={{
+            fontSize: 13,
+            color: "var(--color-neutral-300)",
+            background: "var(--color-surface)",
+            border: "1px solid var(--color-divider)",
+            borderRadius: 8,
+            padding: "8px 12px",
+          }}
+        >
+          {autocatMsg}
+        </div>
+      )}
 
       <div
         style={{
