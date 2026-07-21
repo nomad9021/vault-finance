@@ -13,7 +13,7 @@ import {
 } from "@vault/shared";
 import { THEMES, THEME_LABELS } from "@vault/design-tokens";
 import { Button, Card, Dialog, Field, Segmented, Select, Spinner, Tag } from "@vault/ui";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import { useData } from "../../lib/useData.js";
 import { APP_VERSION, useApp } from "../../state/store.js";
 
@@ -22,7 +22,7 @@ export function SettingsPage() {
     <div style={{ maxWidth: 640, display: "flex", flexDirection: "column", gap: 16 }}>
       <AppearanceSection />
       <CategoriesSection />
-      <CategoryStructureSection />
+      <CategoryTreeSection />
       <CategorizationRulesSection />
       <BankSection />
       <AiSection />
@@ -289,147 +289,236 @@ const STRUCTURE_COLORS = [
   "#5fbf8f",
 ];
 
+type TreeCat = {
+  id: string;
+  name: string;
+  color: string;
+  parentCategoryId: string | null;
+  isSystem: boolean;
+};
+
+const treeIconBtn: CSSProperties = {
+  border: 0,
+  background: "none",
+  cursor: "pointer",
+  color: "var(--color-neutral-400)",
+  font: "inherit",
+  fontSize: 15,
+  lineHeight: 1,
+  padding: "0 2px",
+};
+
+function CategoryTreeNode({
+  cat,
+  childrenOf,
+  onAdd,
+  onRename,
+  onRemove,
+  busy,
+}: {
+  cat: TreeCat;
+  childrenOf: (id: string | null) => TreeCat[];
+  onAdd: (parentId: string | null) => void;
+  onRename: (id: string, name: string) => void;
+  onRemove: (id: string) => void;
+  busy: boolean;
+}) {
+  const kids = childrenOf(cat.id);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(cat.name);
+  return (
+    <div style={{ display: "flex", alignItems: "center" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 7,
+          padding: "6px 9px",
+          border: "1px solid var(--color-divider)",
+          borderRadius: 8,
+          background: "var(--color-surface)",
+          whiteSpace: "nowrap",
+          boxShadow: "var(--shadow-sm)",
+        }}
+      >
+        <span
+          style={{ width: 10, height: 10, borderRadius: 3, background: cat.color, flex: "0 0 auto" }}
+        />
+        {editing ? (
+          <input
+            autoFocus
+            className="input"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() => {
+              setEditing(false);
+              if (draft.trim() && draft.trim() !== cat.name) onRename(cat.id, draft.trim());
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur();
+              if (e.key === "Escape") {
+                setDraft(cat.name);
+                setEditing(false);
+              }
+            }}
+            style={{ width: 150, padding: "2px 6px", fontSize: 13 }}
+          />
+        ) : (
+          <button
+            onClick={() => {
+              setDraft(cat.name);
+              setEditing(true);
+            }}
+            title="Rename"
+            style={{
+              background: "none",
+              border: 0,
+              font: "inherit",
+              fontWeight: 600,
+              fontSize: 13,
+              cursor: "text",
+              color: "var(--color-text)",
+            }}
+          >
+            {cat.name}
+          </button>
+        )}
+        {cat.isSystem && <Tag>system</Tag>}
+        <button title="Add branch" disabled={busy} onClick={() => onAdd(cat.id)} style={treeIconBtn}>
+          ＋
+        </button>
+        {!cat.isSystem && (
+          <button
+            title="Delete"
+            disabled={busy}
+            onClick={() => onRemove(cat.id)}
+            style={{ ...treeIconBtn, color: "var(--color-negative)" }}
+          >
+            ×
+          </button>
+        )}
+      </div>
+      {kids.length > 0 && (
+        <>
+          <div
+            style={{ width: 20, height: 1, background: "var(--color-divider)", flex: "0 0 auto" }}
+          />
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              borderLeft: "1px solid var(--color-divider)",
+            }}
+          >
+            {kids.map((k) => (
+              <div key={k.id} style={{ display: "flex", alignItems: "center" }}>
+                <div
+                  style={{ width: 14, height: 1, background: "var(--color-divider)", flex: "0 0 auto" }}
+                />
+                <CategoryTreeNode
+                  cat={k}
+                  childrenOf={childrenOf}
+                  onAdd={onAdd}
+                  onRename={onRename}
+                  onRemove={onRemove}
+                  busy={busy}
+                />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /**
- * Edit the category hierarchy — the thing that shapes the cash-flow Sankey — as
- * an indented text outline instead of the row-by-row list above. Two spaces per
- * level; a nested line becomes a sub-category of the line above it. Applying is
- * additive: it creates missing categories and re-parents to match the outline,
- * and never deletes (use the list above to remove).
+ * Interactive tree editor for the category hierarchy — the structure that
+ * shapes the cash-flow Sankey. It grows to the right: a category's sub-branches
+ * sit to its right, connected by lines. Click a name to rename, ＋ to add a
+ * branch, × to delete.
  */
-function CategoryStructureSection() {
+function CategoryTreeSection() {
   const client = useApp((s) => s.client);
   const { data, reload } = useData(() => client.categories(), [client]);
-  const categories = data?.categories ?? [];
-
-  const [text, setText] = useState("");
-  const [dirty, setDirty] = useState(false);
+  const categories = (data?.categories ?? []) as TreeCat[];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
 
-  // Render the current tree as an indented outline until the user edits.
-  useEffect(() => {
-    if (dirty || categories.length === 0) return;
-    const byId = new Map(categories.map((c) => [c.id, c]));
-    const childrenOf = (id: string | null) =>
-      categories
-        .filter((c) => (c.parentCategoryId ?? null) === id)
-        .sort((a, b) => a.name.localeCompare(b.name));
-    const lines: string[] = [];
-    const walk = (parentId: string | null, depth: number) => {
-      for (const c of childrenOf(parentId)) {
-        lines.push(`${"  ".repeat(depth)}${c.name}`);
-        walk(c.id, depth + 1);
-      }
-    };
-    // Only render categories whose whole parent chain resolves (avoid orphans).
-    void byId;
-    walk(null, 0);
-    setText(lines.join("\n"));
-  }, [categories, dirty]);
+  const childrenOf = (id: string | null) =>
+    categories
+      .filter((c) => (c.parentCategoryId ?? null) === id)
+      .sort((a, b) => a.name.localeCompare(b.name));
 
-  const apply = async () => {
+  const addChild = async (parentId: string | null) => {
     setBusy(true);
     setError(null);
-    setMessage(null);
     try {
-      // Parse the outline into { name, parentName } using indentation depth.
-      const parents: string[] = []; // parent name at each depth
-      const rows: Array<{ name: string; parent: string | null }> = [];
-      for (const raw of text.split("\n")) {
-        if (!raw.trim()) continue;
-        const indent = raw.length - raw.trimStart().length;
-        const depth = Math.floor(indent / 2);
-        const name = raw.trim();
-        parents[depth] = name;
-        parents.length = depth + 1;
-        rows.push({ name, parent: depth > 0 ? (parents[depth - 1] ?? null) : null });
-      }
-
-      const byName = new Map(categories.map((c) => [c.name.toLowerCase(), c]));
-      let created = 0;
-      let moved = 0;
-      let colorI = 0;
-      // Process in document order so a parent is resolved before its children.
-      for (const row of rows) {
-        const parentId = row.parent ? (byName.get(row.parent.toLowerCase())?.id ?? null) : null;
-        const existing = byName.get(row.name.toLowerCase());
-        if (!existing) {
-          const c = await client.createCategory({
-            name: row.name,
-            color: STRUCTURE_COLORS[colorI++ % STRUCTURE_COLORS.length]!,
-            parentCategoryId: parentId,
-          });
-          byName.set(row.name.toLowerCase(), c);
-          created++;
-        } else if ((existing.parentCategoryId ?? null) !== parentId) {
-          const c = await client.updateCategory(existing.id, { parentCategoryId: parentId });
-          byName.set(row.name.toLowerCase(), c);
-          moved++;
-        }
-      }
-      setDirty(false);
+      await client.createCategory({
+        name: "New category",
+        color: STRUCTURE_COLORS[categories.length % STRUCTURE_COLORS.length]!,
+        parentCategoryId: parentId,
+      });
       await reload();
-      setMessage(
-        created === 0 && moved === 0
-          ? "No changes — the structure already matches."
-          : `Applied: ${created} created, ${moved} re-parented.`,
-      );
     } catch {
-      setError("Couldn't apply the structure. Check the outline and try again.");
+      setError("Couldn't add the branch.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const rename = async (id: string, name: string) => {
+    await client.updateCategory(id, { name }).catch(() => setError("Couldn't rename."));
+    await reload();
+  };
+  const remove = async (id: string) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await client.deleteCategory(id);
+      await reload();
+    } catch {
+      setError(
+        "That category is in use (transactions or budgets) or is a system default — reassign those first.",
+      );
     } finally {
       setBusy(false);
     }
   };
 
+  const roots = childrenOf(null);
   return (
-    <Card kicker="Categories" title="Edit structure as text">
+    <Card kicker="Categories" title="Category tree">
       <p className="card-meta">
-        The cash-flow diagram branches by this hierarchy. Two spaces per level — indent a line to make
-        it a sub-category. Applying creates and re-parents; it never deletes.
+        Shape the cash-flow Sankey here. The tree grows to the right — a category’s sub-branches sit to
+        its right. Click a name to rename, ＋ to add a branch, × to delete.
       </p>
-      <textarea
-        className="input"
-        value={text}
-        spellCheck={false}
-        onChange={(e) => {
-          setText(e.target.value);
-          setDirty(true);
-        }}
-        style={{
-          width: "100%",
-          minHeight: 200,
-          marginTop: 10,
-          fontFamily: "ui-monospace, monospace",
-          fontSize: 13,
-          lineHeight: 1.6,
-          resize: "vertical",
-          whiteSpace: "pre",
-        }}
-        aria-label="Category structure outline"
-      />
-      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10 }}>
-        <Button variant="primary" onClick={() => void apply()} disabled={busy || !dirty}>
-          {busy ? <Spinner label="Applying" /> : "Apply structure"}
-        </Button>
-        {dirty && (
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setDirty(false);
-              setMessage(null);
-              setError(null);
-            }}
+      <div style={{ overflowX: "auto", padding: "10px 2px" }}>
+        {roots.length === 0 ? (
+          <p className="card-meta">No categories yet — add one below.</p>
+        ) : (
+          <div
+            style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: "max-content" }}
           >
-            Revert
-          </Button>
+            {roots.map((c) => (
+              <CategoryTreeNode
+                key={c.id}
+                cat={c}
+                childrenOf={childrenOf}
+                onAdd={addChild}
+                onRename={rename}
+                onRemove={remove}
+                busy={busy}
+              />
+            ))}
+          </div>
         )}
       </div>
-      {message && (
-        <div role="status" style={{ fontSize: 13, color: "var(--color-neutral-300)", marginTop: 8 }}>
-          {message}
-        </div>
-      )}
+      <div style={{ marginTop: 8 }}>
+        <Button variant="secondary" onClick={() => void addChild(null)} disabled={busy}>
+          ＋ Add top-level category
+        </Button>
+      </div>
       {error && (
         <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)", marginTop: 8 }}>
           {error}
