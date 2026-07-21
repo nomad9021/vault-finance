@@ -22,6 +22,7 @@ export function SettingsPage() {
     <div style={{ maxWidth: 640, display: "flex", flexDirection: "column", gap: 16 }}>
       <AppearanceSection />
       <CategoriesSection />
+      <CategoryStructureSection />
       <CategorizationRulesSection />
       <BankSection />
       <AiSection />
@@ -271,6 +272,167 @@ function UpdatesSection() {
               {state.message}
             </span>
           )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+const STRUCTURE_COLORS = [
+  "#7c5cff",
+  "#5b8def",
+  "#3ecf8e",
+  "#e0a458",
+  "#c96f9c",
+  "#4db6d0",
+  "#8b7cf0",
+  "#5fbf8f",
+];
+
+/**
+ * Edit the category hierarchy — the thing that shapes the cash-flow Sankey — as
+ * an indented text outline instead of the row-by-row list above. Two spaces per
+ * level; a nested line becomes a sub-category of the line above it. Applying is
+ * additive: it creates missing categories and re-parents to match the outline,
+ * and never deletes (use the list above to remove).
+ */
+function CategoryStructureSection() {
+  const client = useApp((s) => s.client);
+  const { data, reload } = useData(() => client.categories(), [client]);
+  const categories = data?.categories ?? [];
+
+  const [text, setText] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  // Render the current tree as an indented outline until the user edits.
+  useEffect(() => {
+    if (dirty || categories.length === 0) return;
+    const byId = new Map(categories.map((c) => [c.id, c]));
+    const childrenOf = (id: string | null) =>
+      categories
+        .filter((c) => (c.parentCategoryId ?? null) === id)
+        .sort((a, b) => a.name.localeCompare(b.name));
+    const lines: string[] = [];
+    const walk = (parentId: string | null, depth: number) => {
+      for (const c of childrenOf(parentId)) {
+        lines.push(`${"  ".repeat(depth)}${c.name}`);
+        walk(c.id, depth + 1);
+      }
+    };
+    // Only render categories whose whole parent chain resolves (avoid orphans).
+    void byId;
+    walk(null, 0);
+    setText(lines.join("\n"));
+  }, [categories, dirty]);
+
+  const apply = async () => {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      // Parse the outline into { name, parentName } using indentation depth.
+      const parents: string[] = []; // parent name at each depth
+      const rows: Array<{ name: string; parent: string | null }> = [];
+      for (const raw of text.split("\n")) {
+        if (!raw.trim()) continue;
+        const indent = raw.length - raw.trimStart().length;
+        const depth = Math.floor(indent / 2);
+        const name = raw.trim();
+        parents[depth] = name;
+        parents.length = depth + 1;
+        rows.push({ name, parent: depth > 0 ? (parents[depth - 1] ?? null) : null });
+      }
+
+      const byName = new Map(categories.map((c) => [c.name.toLowerCase(), c]));
+      let created = 0;
+      let moved = 0;
+      let colorI = 0;
+      // Process in document order so a parent is resolved before its children.
+      for (const row of rows) {
+        const parentId = row.parent ? (byName.get(row.parent.toLowerCase())?.id ?? null) : null;
+        const existing = byName.get(row.name.toLowerCase());
+        if (!existing) {
+          const c = await client.createCategory({
+            name: row.name,
+            color: STRUCTURE_COLORS[colorI++ % STRUCTURE_COLORS.length]!,
+            parentCategoryId: parentId,
+          });
+          byName.set(row.name.toLowerCase(), c);
+          created++;
+        } else if ((existing.parentCategoryId ?? null) !== parentId) {
+          const c = await client.updateCategory(existing.id, { parentCategoryId: parentId });
+          byName.set(row.name.toLowerCase(), c);
+          moved++;
+        }
+      }
+      setDirty(false);
+      await reload();
+      setMessage(
+        created === 0 && moved === 0
+          ? "No changes — the structure already matches."
+          : `Applied: ${created} created, ${moved} re-parented.`,
+      );
+    } catch {
+      setError("Couldn't apply the structure. Check the outline and try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card kicker="Categories" title="Edit structure as text">
+      <p className="card-meta">
+        The cash-flow diagram branches by this hierarchy. Two spaces per level — indent a line to make
+        it a sub-category. Applying creates and re-parents; it never deletes.
+      </p>
+      <textarea
+        className="input"
+        value={text}
+        spellCheck={false}
+        onChange={(e) => {
+          setText(e.target.value);
+          setDirty(true);
+        }}
+        style={{
+          width: "100%",
+          minHeight: 200,
+          marginTop: 10,
+          fontFamily: "ui-monospace, monospace",
+          fontSize: 13,
+          lineHeight: 1.6,
+          resize: "vertical",
+          whiteSpace: "pre",
+        }}
+        aria-label="Category structure outline"
+      />
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10 }}>
+        <Button variant="primary" onClick={() => void apply()} disabled={busy || !dirty}>
+          {busy ? <Spinner label="Applying" /> : "Apply structure"}
+        </Button>
+        {dirty && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setDirty(false);
+              setMessage(null);
+              setError(null);
+            }}
+          >
+            Revert
+          </Button>
+        )}
+      </div>
+      {message && (
+        <div role="status" style={{ fontSize: 13, color: "var(--color-neutral-300)", marginTop: 8 }}>
+          {message}
+        </div>
+      )}
+      {error && (
+        <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)", marginTop: 8 }}>
+          {error}
         </div>
       )}
     </Card>
