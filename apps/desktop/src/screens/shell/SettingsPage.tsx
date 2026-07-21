@@ -250,7 +250,7 @@ function CategoryTreeNode({
           </button>
         )}
         {cat.isSystem && <Tag>system</Tag>}
-        <button title="Add branch" disabled={busy} onClick={() => onAdd(cat.id)} style={treeIconBtn}>
+        <button title="Add branch" onClick={() => onAdd(cat.id)} style={treeIconBtn}>
           ＋
         </button>
         {!cat.isSystem && (
@@ -417,7 +417,7 @@ function CategoryTreeSection() {
         )}
       </div>
       <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
-        <Button variant="secondary" onClick={() => void addChild(null)} disabled={busy}>
+        <Button variant="secondary" onClick={() => void addChild(null)}>
           ＋ Add top-level category
         </Button>
         <div

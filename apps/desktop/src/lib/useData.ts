@@ -13,7 +13,7 @@ export function useData<T>(fetcher: () => Promise<T>, deps: unknown[] = []) {
   const load = useCallback(() => {
     const gen = ++generation.current;
     setLoading(true);
-    fetcher()
+    return fetcher()
       .then((result) => {
         if (gen === generation.current) {
           setData(result);
@@ -31,6 +31,8 @@ export function useData<T>(fetcher: () => Promise<T>, deps: unknown[] = []) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
-  useEffect(load, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
   return { data, error, loading, reload: load };
 }
