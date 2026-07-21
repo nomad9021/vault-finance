@@ -1,4 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import EmbeddedPostgres from "embedded-postgres";
@@ -210,5 +212,72 @@ describe("auto-categorization endpoints", () => {
     const txns = list.json().transactions as { merchantName: string; categoryId: string | null }[];
     expect(txns.find((t) => t.merchantName === "Fresh Market #7")?.categoryId).toBe(groceriesId);
     expect(txns.find((t) => t.merchantName === "Total Mystery Vendor")?.categoryId).toBeNull();
+  });
+
+  it("falls back to the local AI provider for merchants rules+history miss", async () => {
+    // Mock Ollama: /api/tags for the status probe, /api/chat classifies. It
+    // only "recognizes" Blue Bottle so the still-uncategorized mystery vendor
+    // stays untouched — proving byAi counts exactly the AI-matched ones.
+    const ollama: Server = createServer((req, res) => {
+      if (req.url?.includes("/api/tags")) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ models: [{ name: "test-model" }] }));
+        return;
+      }
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        const content = /blue bottle/i.test(body) ? "Dining Out" : "Unknown";
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ message: { content } }));
+      });
+    });
+    await new Promise<void>((r) => ollama.listen(0, r));
+    const port = (ollama.address() as AddressInfo).port;
+    const aiSettings = {
+      enabled: true,
+      provider: "ollama" as const,
+      model: "test-model",
+      baseUrl: `http://127.0.0.1:${port}`,
+    };
+
+    const patched = await app.inject({
+      method: "POST",
+      url: "/api/v1/ai/settings",
+      headers: auth,
+      payload: aiSettings,
+    });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json()).toMatchObject({ enabled: true, configured: true });
+
+    await post("/api/v1/transactions", {
+      accountId,
+      pending: false,
+      postedAt: "2026-06-20",
+      amountCents: -1200,
+      merchantName: "Blue Bottle Coffee Roasters",
+    });
+
+    const res = await post("/api/v1/transactions/autocategorize", {});
+    expect(res.statusCode).toBe(200);
+    expect(res.json().byAi).toBe(1); // only Blue Bottle; mystery vendor → "Unknown"
+
+    const list = await app.inject({
+      method: "GET",
+      url: "/api/v1/transactions?limit=50",
+      headers: auth,
+    });
+    const t = (list.json().transactions as { merchantName: string; categoryId: string | null }[]).find(
+      (x) => x.merchantName === "Blue Bottle Coffee Roasters",
+    );
+    expect(t?.categoryId).toBe(diningId);
+
+    await app.inject({
+      method: "POST",
+      url: "/api/v1/ai/settings",
+      headers: auth,
+      payload: { ...aiSettings, enabled: false },
+    });
+    await new Promise<void>((r) => ollama.close(() => r()));
   });
 });

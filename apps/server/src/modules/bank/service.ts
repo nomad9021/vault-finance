@@ -1,8 +1,15 @@
 import { and, eq, sql } from "drizzle-orm";
+import type { FastifyInstance } from "fastify";
+import type { AppConfig } from "../../config.js";
 import type { Db } from "../../plugins/db.js";
-import { accounts, bankConnections, bankSettings, transactions } from "../../db/schema.js";
-import { loadCategorizer } from "../categorize/service.js";
-import { getBankProvider, type BankProviderConfig, type ConnectionRef } from "./providers/index.js";
+import { accounts, bankConnections, bankSettings, transactions, users } from "../../db/schema.js";
+import { aiCategorizeUncategorized, loadCategorizer } from "../categorize/service.js";
+import {
+  getBankProvider,
+  isConfigured,
+  type BankProviderConfig,
+  type ConnectionRef,
+} from "./providers/index.js";
 
 export type BankSettingsRow = typeof bankSettings.$inferSelect;
 export type BankConnectionRow = typeof bankConnections.$inferSelect;
@@ -128,4 +135,36 @@ export async function syncConnection(
     .where(eq(bankConnections.id, connection.id));
 
   return { accountsLinked: provAccounts.length, imported, skippedDuplicates };
+}
+
+/**
+ * Sync every bank connection — used by the background scheduler and by the
+ * Plaid webhook. No-ops unless bank linking is on and configured. Runs the
+ * AI-leftovers categorization once at the end so freshly-imported rows are
+ * sorted. Never throws: one bad connection can't stop the rest.
+ */
+export async function syncAllConnections(
+  app: FastifyInstance,
+  config: AppConfig,
+): Promise<{ connections: number; imported: number }> {
+  const settings = await loadBankSettings(app.db);
+  const cfg = providerConfig(settings, config.plaidBaseUrl);
+  if (!settings.enabled || !isConfigured(cfg)) return { connections: 0, imported: 0 };
+
+  const conns = await app.db.select().from(bankConnections);
+  if (conns.length === 0) return { connections: 0, imported: 0 };
+  const owner = await app.db.query.users.findFirst({ where: eq(users.role, "owner") });
+  if (!owner) return { connections: 0, imported: 0 };
+
+  let imported = 0;
+  for (const c of conns) {
+    try {
+      const r = await syncConnection(app.db, cfg, c, owner.id);
+      imported += r.imported;
+    } catch (err) {
+      app.log.error({ err, connectionId: c.id }, "auto-sync failed for connection");
+    }
+  }
+  await aiCategorizeUncategorized(app, config).catch(() => {});
+  return { connections: conns.length, imported };
 }

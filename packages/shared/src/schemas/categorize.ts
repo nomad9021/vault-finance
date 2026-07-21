@@ -37,5 +37,7 @@ export const AutocategorizeResponse = z.object({
   /** Breakdown by source of the match. */
   byRule: z.number().int(),
   byHistory: z.number().int(),
+  /** Matched by the local AI fallback (0 unless AI is enabled). */
+  byAi: z.number().int(),
 });
 export type AutocategorizeResponse = z.infer<typeof AutocategorizeResponse>;

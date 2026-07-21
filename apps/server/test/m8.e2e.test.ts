@@ -124,4 +124,19 @@ describe("bank linking (mock provider)", () => {
     const accts = await req("GET", "/api/v1/accounts");
     expect(accts.json().accounts.length).toBeGreaterThanOrEqual(3);
   });
+
+  it("accepts Plaid webhooks unauthenticated and no-ops on unknown items", async () => {
+    // No auth header — Plaid calls this endpoint from the outside.
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/bank/webhook",
+      payload: {
+        webhook_type: "TRANSACTIONS",
+        webhook_code: "SYNC_UPDATES_AVAILABLE",
+        item_id: "nonexistent-item",
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ received: true });
+  });
 });

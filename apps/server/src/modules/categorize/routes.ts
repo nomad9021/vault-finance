@@ -2,9 +2,10 @@ import type { AutocategorizeResponse, CategorizationRule, RuleListResponse } fro
 import { CreateRuleRequest } from "@vault/shared";
 import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
+import type { AppConfig } from "../../config.js";
 import { categorizationRules } from "../../db/schema.js";
 import { notFound } from "../../errors.js";
-import { sweepUncategorized } from "./service.js";
+import { aiCategorizeUncategorized, sweepUncategorized } from "./service.js";
 
 function toApi(row: typeof categorizationRules.$inferSelect): CategorizationRule {
   return {
@@ -15,7 +16,10 @@ function toApi(row: typeof categorizationRules.$inferSelect): CategorizationRule
   };
 }
 
-export default async function categorizeRoutes(app: FastifyInstance) {
+export default async function categorizeRoutes(
+  app: FastifyInstance,
+  opts: { config: AppConfig },
+) {
   app.get("/categorization-rules", async (): Promise<RuleListResponse> => {
     const rows = await app.db
       .select()
@@ -47,6 +51,14 @@ export default async function categorizeRoutes(app: FastifyInstance) {
   });
 
   app.post("/transactions/autocategorize", async (): Promise<AutocategorizeResponse> => {
-    return sweepUncategorized(app.db);
+    // Rules + learned history first (instant, local), then the AI fallback for
+    // whatever's left — which only does anything when AI is enabled.
+    const swept = await sweepUncategorized(app.db);
+    const byAi = await aiCategorizeUncategorized(app, opts.config);
+    return {
+      ...swept,
+      categorized: swept.categorized + byAi,
+      byAi,
+    };
   });
 }

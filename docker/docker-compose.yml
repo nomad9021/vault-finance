@@ -49,6 +49,10 @@ services:
       OLLAMA_HOST: ${OLLAMA_HOST:-ollama}
       OLLAMA_PORT: ${OLLAMA_PORT:-11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      # Auto-sync linked banks every N minutes (0 disables). Keeps transactions
+      # updating on their own for a self-hosted server that isn't internet-
+      # reachable; Plaid webhooks give instant updates when it is.
+      BANK_AUTO_SYNC_MINUTES: ${BANK_AUTO_SYNC_MINUTES:-60}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     volumes:
       - vaultdata:/data

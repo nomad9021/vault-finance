@@ -3,8 +3,9 @@ import { UpdateBankSettingsRequest } from "@vault/shared";
 import { eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { AppConfig } from "../../config.js";
-import { accounts, bankConnections, bankSettings } from "../../db/schema.js";
+import { accounts, bankConnections, bankSettings, users } from "../../db/schema.js";
 import { AppError, notFound } from "../../errors.js";
+import { aiCategorizeUncategorized } from "../categorize/service.js";
 import { isConfigured } from "./providers/index.js";
 import {
   loadBankSettings,
@@ -48,8 +49,45 @@ export default async function bankRoutes(
   app: FastifyInstance,
   opts: { config: AppConfig },
 ): Promise<void> {
-  app.get("/bank/status", async (): Promise<BankStatus> => {
-    return statusFor(app, await loadBankSettings(app.db));
+  app.get(
+    "/bank/status",
+    { preHandler: [app.requireAuth] },
+    async (): Promise<BankStatus> => {
+      return statusFor(app, await loadBankSettings(app.db));
+    },
+  );
+
+  // Plaid calls this (unauthenticated) when new data is ready — the real-time
+  // push path. We only act on item_ids we already hold, so an unknown/forged
+  // payload just no-ops. Production should additionally verify Plaid's JWT
+  // (Plaid-Verification header); that's a hardening follow-up.
+  app.post("/bank/webhook", async (request, reply) => {
+    const body = (request.body ?? {}) as { item_id?: string };
+    const itemId = body.item_id;
+    if (itemId) {
+      const [connection] = await app.db
+        .select()
+        .from(bankConnections)
+        .where(eq(bankConnections.externalItemId, itemId))
+        .limit(1);
+      const settings = await loadBankSettings(app.db);
+      const owner = await app.db.query.users.findFirst({ where: eq(users.role, "owner") });
+      if (connection && settings.enabled && owner) {
+        try {
+          await syncConnection(
+            app.db,
+            providerConfig(settings, opts.config.plaidBaseUrl),
+            connection,
+            owner.id,
+          );
+          await aiCategorizeUncategorized(app, opts.config);
+        } catch (err) {
+          app.log.error({ err, itemId }, "webhook-triggered sync failed");
+        }
+      }
+    }
+    // Always 200 so Plaid doesn't retry-storm us.
+    return reply.status(200).send({ received: true });
   });
 
   app.patch(

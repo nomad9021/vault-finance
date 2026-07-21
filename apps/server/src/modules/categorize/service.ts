@@ -1,7 +1,17 @@
-import { eq, isNotNull, isNull } from "drizzle-orm";
+import { eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import type { FastifyInstance } from "fastify";
+import type { AppConfig } from "../../config.js";
 import type { Db } from "../../plugins/db.js";
-import { categorizationRules, transactions } from "../../db/schema.js";
-import { learnFromHistory, suggestCategory, type Rule, type Suggestion } from "./engine.js";
+import { categories, categorizationRules, transactions } from "../../db/schema.js";
+import { getProvider, isConfigured } from "../ai/providers/index.js";
+import { resolveSettings } from "../ai/settings.js";
+import {
+  learnFromHistory,
+  normalizeMerchant,
+  suggestCategory,
+  type Rule,
+  type Suggestion,
+} from "./engine.js";
 
 export interface Categorizer {
   suggest: (merchantName: string) => Suggestion;
@@ -67,4 +77,79 @@ export async function sweepUncategorized(db: Db): Promise<SweepResult> {
     else result.byHistory++;
   }
   return result;
+}
+
+/** Resolve an AI answer to one of the household's category ids, or null. */
+function matchCategory(answer: string, cats: { id: string; name: string }[]): string | null {
+  const a = answer.trim().toLowerCase();
+  if (!a || a === "unknown" || a === "none") return null;
+  // Exact name match first, then a contained-name match (models add words).
+  const exact = cats.find((c) => c.name.toLowerCase() === a);
+  if (exact) return exact.id;
+  const contained = cats.find((c) => a.includes(c.name.toLowerCase()));
+  return contained?.id ?? null;
+}
+
+/**
+ * The "leftovers" pass: for transactions that keyword rules and learned history
+ * couldn't place, ask the configured AI provider to pick a category. Runs only
+ * when AI is enabled AND configured — with Ollama that means everything stays
+ * on the user's own hardware. Merchants are de-duplicated so each distinct
+ * merchant costs at most one model call, and the result feeds history so the
+ * same merchant is free (and instant) next time.
+ */
+export async function aiCategorizeUncategorized(
+  app: FastifyInstance,
+  config: AppConfig,
+): Promise<number> {
+  const settings = await resolveSettings(app, config);
+  if (!settings.enabled || !isConfigured(settings.aiConfig)) return 0;
+
+  const pending = await app.db
+    .select({ id: transactions.id, merchantName: transactions.merchantName })
+    .from(transactions)
+    .where(isNull(transactions.categoryId));
+  if (pending.length === 0) return 0;
+
+  const cats = await app.db
+    .select({ id: categories.id, name: categories.name })
+    .from(categories);
+  if (cats.length === 0) return 0;
+
+  // Group the uncategorized transactions by normalized merchant.
+  const byMerchant = new Map<string, { display: string; ids: string[] }>();
+  for (const p of pending) {
+    const key = normalizeMerchant(p.merchantName);
+    if (!key) continue;
+    const entry = byMerchant.get(key) ?? { display: p.merchantName, ids: [] };
+    entry.ids.push(p.id);
+    byMerchant.set(key, entry);
+  }
+
+  const provider = getProvider(settings.provider);
+  const nameList = cats.map((c) => c.name).join(", ");
+  let categorized = 0;
+  // Cap the number of model calls per pass so a huge backlog can't stall a sync.
+  const merchants = [...byMerchant.values()].slice(0, 50);
+  for (const { display, ids } of merchants) {
+    const prompt =
+      `You are a strict personal-finance transaction categorizer. ` +
+      `Choose the single best category for a purchase, using EXACTLY one name from this list: ${nameList}. ` +
+      `If none clearly fit, reply "Unknown". Reply with only the category name, nothing else. ` +
+      `Merchant: "${display}"`;
+    let answer: string;
+    try {
+      answer = await provider.generateText(settings.aiConfig, prompt);
+    } catch {
+      continue; // provider hiccup on one merchant shouldn't abort the batch
+    }
+    const categoryId = matchCategory(answer, cats);
+    if (!categoryId) continue;
+    await app.db
+      .update(transactions)
+      .set({ categoryId, updatedAt: new Date() })
+      .where(inArray(transactions.id, ids));
+    categorized += ids.length;
+  }
+  return categorized;
 }

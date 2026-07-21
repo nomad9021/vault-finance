@@ -90,12 +90,17 @@ export function TransactionsPage({
     setAutocatMsg(null);
     try {
       const r = await client.autocategorize();
+      const parts = [
+        `${r.byRule} by rule`,
+        `${r.byHistory} learned from history`,
+        ...(r.byAi > 0 ? [`${r.byAi} by AI`] : []),
+      ];
       setAutocatMsg(
         r.categorized > 0
-          ? `Sorted ${r.categorized} of ${r.scanned} (${r.byRule} by rule, ${r.byHistory} learned from history).`
+          ? `Sorted ${r.categorized} of ${r.scanned} (${parts.join(", ")}).`
           : r.scanned === 0
             ? "Nothing uncategorized to sort."
-            : `No matches among ${r.scanned} uncategorized — add a rule in Settings → Categorization rules.`,
+            : `No matches among ${r.scanned} uncategorized — add a rule in Settings, or enable the AI assistant to sort the rest.`,
       );
       reload();
     } catch {

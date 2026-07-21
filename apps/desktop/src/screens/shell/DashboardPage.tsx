@@ -23,11 +23,22 @@ export function DashboardPage({
   onNavigate: (page: PageId, categoryId?: string) => void;
 }) {
   const client = useApp((s) => s.client);
-  const { data: accountData } = useData(() => client.accounts(), [client]);
-  const { data: sankeyData, loading } = useData<SankeyResponse>(
+  const { data: accountData, reload: reloadAccounts } = useData(() => client.accounts(), [client]);
+  const { data: sankeyData, loading, reload: reloadSankey } = useData<SankeyResponse>(
     () => client.sankey(),
     [client],
   );
+
+  // Poll so bank auto-sync / webhook imports show up live without a manual
+  // refresh. The spinner only appears when there's no data yet, so this is
+  // invisible once loaded.
+  useEffect(() => {
+    const id = setInterval(() => {
+      reloadSankey();
+      reloadAccounts();
+    }, 90_000);
+    return () => clearInterval(id);
+  }, [reloadSankey, reloadAccounts]);
 
   const accounts = accountData?.accounts ?? [];
   const netWorth = accounts.reduce((sum, a) => sum + a.balanceCents, 0);

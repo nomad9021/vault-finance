@@ -37,6 +37,10 @@ const EnvSchema = z.object({
   // When unset, the plaid provider derives it from the connection's env.
   PLAID_BASE_URL: z.string().optional(),
 
+  // Background auto-sync of bank connections, in minutes. 0 disables it (the
+  // default, and what tests use). The Docker compose sets a live value.
+  BANK_AUTO_SYNC_MINUTES: z.coerce.number().int().min(0).default(0),
+
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 });
 
@@ -50,6 +54,7 @@ export interface AppConfig {
   accessTokenTtlSeconds: number;
   ollama: { host: string; port: number; model: string };
   plaidBaseUrl?: string;
+  bankAutoSyncMinutes: number;
   logLevel: string;
   /** Shared semver for the version-compatibility check. */
   apiVersion: string;
@@ -89,6 +94,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       model: parsed.OLLAMA_MODEL,
     },
     ...(parsed.PLAID_BASE_URL ? { plaidBaseUrl: parsed.PLAID_BASE_URL } : {}),
+    bankAutoSyncMinutes: parsed.BANK_AUTO_SYNC_MINUTES,
     logLevel: parsed.LOG_LEVEL,
     apiVersion: "0.1.0",
     minClientVersion: "0.1.0",
