@@ -36,6 +36,13 @@
       "when": 1784557200000,
       "tag": "0004_bank_linking",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784560800000,
+      "tag": "0005_ai_quality_models",
+      "breakpoints": true
     }
   ]
 }

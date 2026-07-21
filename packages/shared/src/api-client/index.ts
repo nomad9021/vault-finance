@@ -38,6 +38,7 @@ import {
   type UpdateBudgetRequest,
 } from "../schemas/budgets.js";
 import {
+  AiModelsResponse,
   AiStatus,
   ChatStreamLine,
   ConversationDetail,
@@ -414,6 +415,9 @@ export class ApiClient {
   // ── AI ──
   aiStatus() {
     return this.request(AiStatus, "GET", "/ai/status");
+  }
+  aiModels() {
+    return this.request(AiModelsResponse, "GET", "/ai/models");
   }
   updateAiSettings(body: UpdateAiSettingsRequest) {
     return this.request(AiStatus, "POST", "/ai/settings", body);

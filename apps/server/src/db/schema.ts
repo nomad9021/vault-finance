@@ -293,6 +293,11 @@ export const aiSettings = pgTable("ai_settings", {
   // Ollama base URL; also an optional OpenAI-compatible endpoint override.
   baseUrl: text("base_url").notNull().default("http://ollama:11434"),
   enabled: boolean("enabled").notNull().default(false),
+  // Quality-level → model map as JSON, e.g. {"low":"llama3.2:1b",...}. The app
+  // requests a quality; the model manager resolves it to a model.
+  qualityModels: text("quality_models").notNull().default("{}"),
+  // Show the underlying model name next to the quality level in the UI.
+  showModelNames: boolean("show_model_names").notNull().default(false),
 });
 
 export const aiConversations = pgTable("ai_conversations", {

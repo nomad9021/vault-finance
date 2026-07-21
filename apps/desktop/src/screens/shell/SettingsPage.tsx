@@ -1,6 +1,8 @@
 import {
   AI_MODEL_SUGGESTIONS,
   AI_PROVIDER_LABELS,
+  AI_QUALITY_LABELS,
+  AI_QUALITY_LEVELS,
   AiProvider,
   BANK_PROVIDER_LABELS,
   BankProvider,
@@ -394,6 +396,10 @@ function AiSection() {
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [enabled, setEnabled] = useState(false);
+  const [qualityModels, setQualityModels] = useState<Record<string, string>>({});
+  const [showModelNames, setShowModelNames] = useState(false);
+  const [installedModels, setInstalledModels] = useState<string[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -405,6 +411,9 @@ function AiSection() {
       setModel(status.model);
       setBaseUrl(status.baseUrl);
       setEnabled(status.enabled);
+      setQualityModels(status.qualityModels ?? {});
+      setShowModelNames(status.showModelNames);
+      setInstalledModels(status.availableModels);
       setApiKey(""); // never populated — the key is write-only
     }
   }, [status, dirty]);
@@ -413,19 +422,41 @@ function AiSection() {
   const touch = () => setDirty(true);
   const isCloud = CLOUD_PROVIDERS.has(provider);
 
+  const refreshModels = async () => {
+    setRefreshing(true);
+    setError(null);
+    try {
+      const r = await client.aiModels();
+      setInstalledModels(r.models);
+      if (r.models.length === 0) setError("No installed models found — is Ollama running with a model pulled?");
+    } catch {
+      setError("Couldn't reach the provider to list models.");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   const save = async () => {
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
+      // For Ollama the concrete "model" is derived from the quality map (Normal
+      // tier is the sensible default the provider config falls back to).
+      const resolvedModel =
+        provider === "ollama"
+          ? qualityModels.normal || installedModels[0] || model || "llama3.2:3b"
+          : model;
       await client.updateAiSettings({
         enabled,
         provider,
-        model: model.trim(),
+        model: resolvedModel.trim(),
         // Only send the key when the user typed one — blank leaves the stored
         // key untouched (they can clear it with the button below).
         ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
         baseUrl: baseUrl.trim(),
+        ...(provider === "ollama" ? { qualityModels } : {}),
+        showModelNames,
       });
       setApiKey("");
       setDirty(false);
@@ -521,23 +552,25 @@ function AiSection() {
                     ))}
                   </Select>
                 </div>
-                <div style={{ flex: 1, minWidth: 160 }}>
-                  <Field
-                    label="Model"
-                    value={model}
-                    list="ai-model-suggestions"
-                    onChange={(e) => {
-                      setModel(e.target.value);
-                      touch();
-                    }}
-                    placeholder={AI_MODEL_SUGGESTIONS[provider][0]}
-                  />
-                  <datalist id="ai-model-suggestions">
-                    {AI_MODEL_SUGGESTIONS[provider].map((m) => (
-                      <option key={m} value={m} />
-                    ))}
-                  </datalist>
-                </div>
+                {isCloud && (
+                  <div style={{ flex: 1, minWidth: 160 }}>
+                    <Field
+                      label="Model"
+                      value={model}
+                      list="ai-model-suggestions"
+                      onChange={(e) => {
+                        setModel(e.target.value);
+                        touch();
+                      }}
+                      placeholder={AI_MODEL_SUGGESTIONS[provider][0]}
+                    />
+                    <datalist id="ai-model-suggestions">
+                      {AI_MODEL_SUGGESTIONS[provider].map((m) => (
+                        <option key={m} value={m} />
+                      ))}
+                    </datalist>
+                  </div>
+                )}
               </div>
 
               {provider === "ollama" ? (
@@ -590,6 +623,89 @@ function AiSection() {
                     )
                   }
                 />
+              )}
+
+              {provider === "ollama" && (
+                <div style={{ marginTop: 4 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                    }}
+                  >
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>Model quality levels</span>
+                    <Button
+                      variant="ghost"
+                      onClick={() => void refreshModels()}
+                      disabled={refreshing}
+                    >
+                      {refreshing ? "Refreshing…" : "Refresh installed models"}
+                    </Button>
+                  </div>
+                  <p className="card-meta" style={{ marginTop: 2 }}>
+                    Assign an installed model to each quality tier — the app requests a tier and you
+                    decide which model runs it.
+                  </p>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                      gap: 10,
+                      marginTop: 8,
+                    }}
+                  >
+                    {AI_QUALITY_LEVELS.map((level) => {
+                      const val = qualityModels[level] ?? "";
+                      const missing = val !== "" && !installedModels.includes(val);
+                      return (
+                        <div key={level}>
+                          <Select
+                            label={
+                              showModelNames && val
+                                ? `${AI_QUALITY_LABELS[level]} (${val})`
+                                : AI_QUALITY_LABELS[level]
+                            }
+                            value={val}
+                            onChange={(e) => {
+                              const m = e.target.value;
+                              setQualityModels((prev) => ({ ...prev, [level]: m }));
+                              touch();
+                            }}
+                          >
+                            <option value="">Not set</option>
+                            {installedModels.map((m) => (
+                              <option key={m} value={m}>
+                                {m}
+                              </option>
+                            ))}
+                            {missing && <option value={val}>{val} (not installed)</option>}
+                          </Select>
+                          {missing && (
+                            <div
+                              style={{ fontSize: 11.5, color: "var(--color-negative)", marginTop: 3 }}
+                            >
+                              Not installed — pull it or pick another.
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <label className="radio" style={{ fontSize: 13, marginTop: 10 }}>
+                    <input
+                      type="checkbox"
+                      checked={showModelNames}
+                      onChange={(e) => {
+                        setShowModelNames(e.target.checked);
+                        touch();
+                      }}
+                    />
+                    <span className="dot" style={{ borderRadius: 4 }} />
+                    Show technical model names
+                  </label>
+                </div>
               )}
 
               {isCloud && (

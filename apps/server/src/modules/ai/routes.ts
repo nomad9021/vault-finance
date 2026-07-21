@@ -1,5 +1,6 @@
 import { PassThrough } from "node:stream";
 import {
+  AI_FEATURE_QUALITY,
   ChatRequest,
   CLOUD_PROVIDERS,
   UpdateAiSettingsRequest,
@@ -12,6 +13,7 @@ import { aiConversations, aiMessages, aiSettings } from "../../db/schema.js";
 import { AppError, notFound } from "../../errors.js";
 import type { AppConfig } from "../../config.js";
 import { buildFinancialContext } from "./context.js";
+import { configForQuality } from "./model-manager.js";
 import { getProvider, isConfigured, type ChatMessage } from "./providers/index.js";
 import { resolveSettings, statusFor } from "./settings.js";
 
@@ -49,6 +51,15 @@ export default async function aiRoutes(
         apiKey,
         baseUrl: body.baseUrl?.trim() ?? "",
         enabled: body.enabled,
+        // Omitted → keep the stored map/flag.
+        qualityModels:
+          body.qualityModels !== undefined
+            ? JSON.stringify(body.qualityModels)
+            : (current?.qualityModels ?? "{}"),
+        showModelNames:
+          body.showModelNames !== undefined
+            ? body.showModelNames
+            : (current?.showModelNames ?? false),
       };
       await app.db
         .insert(aiSettings)
@@ -58,6 +69,18 @@ export default async function aiRoutes(
       return statusFor(await resolveSettings(app, opts.config));
     },
   );
+
+  // Refresh the provider's installed-model list without a restart — powers the
+  // quality-mapping dropdowns in Settings.
+  app.get("/ai/models", async () => {
+    const settings = await resolveSettings(app, opts.config);
+    if (!isConfigured(settings.aiConfig)) return { models: [] };
+    try {
+      return { models: await getProvider(settings.provider).listModels(settings.aiConfig) };
+    } catch {
+      return { models: [] };
+    }
+  });
 
   app.get("/ai/conversations", async (request) => {
     const rows = await app.db.query.aiConversations.findMany({
@@ -138,7 +161,7 @@ export default async function aiRoutes(
         "The AI assistant isn't fully configured yet. Add your provider details in Settings.",
       );
     }
-    const { aiConfig } = settings;
+    const aiConfig = configForQuality(settings, AI_FEATURE_QUALITY.chat);
     const provider = getProvider(aiConfig.provider);
     const isCloud = CLOUD_PROVIDERS.has(aiConfig.provider);
 
