@@ -1,9 +1,10 @@
 import {
   formatCentsWhole,
+  type Goal,
   type MonthlyReport,
   type YearlyReport,
 } from "@vault/shared";
-import { Button, Card, Spinner, Tag } from "@vault/ui";
+import { Button, Card, PieChart, Spinner, Tag } from "@vault/ui";
 import { useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
@@ -228,44 +229,22 @@ function MonthDetail({ month, onClose }: { month: string; onClose: () => void })
             <Ytd value={formatCentsWhole(report.savedCents)} label="saved" />
           </div>
           {report.topCategories.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 6 }}>
-              {report.topCategories.map((c) => {
-                const maxSpent = report.topCategories[0]!.spentCents;
-                return (
-                  <div key={c.categoryId ?? "none"} style={{ fontSize: 12.5 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                      <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                        <span
-                          style={{ width: 7, height: 7, borderRadius: "50%", background: c.color }}
-                        />
-                        {c.name}
-                      </span>
-                      <span style={{ color: "var(--color-neutral-500)" }}>
-                        {formatCentsWhole(c.spentCents)}
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        height: 5,
-                        borderRadius: 99,
-                        background: "var(--color-neutral-900)",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <div
-                        style={{
-                          height: "100%",
-                          width: `${(c.spentCents / maxSpent) * 100}%`,
-                          background: c.color,
-                          borderRadius: 99,
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>Spending breakdown</div>
+              <PieChart
+                data={report.topCategories.map((c) => ({
+                  label: c.name,
+                  value: c.spentCents,
+                  color: c.color,
+                }))}
+                format={formatCentsWhole}
+                centerLabel="spent"
+                ariaLabel={`${monthLabel(month)} spending by category`}
+              />
             </div>
           )}
+
+          <GoalsTracker />
           {report.aiSummary ? (
             <div
               style={{
@@ -296,5 +275,59 @@ function MonthDetail({ month, onClose }: { month: string; onClose: () => void })
         </Button>
       </div>
     </Card>
+  );
+}
+
+/** Goal progress with an on-track / behind read, driven by projected completion. */
+function GoalsTracker() {
+  const client = useApp((s) => s.client);
+  const { data } = useData(() => client.goals(), [client]);
+  const goals = data?.goals ?? [];
+  if (goals.length === 0) return null;
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>Goals — on track?</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {goals.map((g) => (
+          <GoalRow key={g.id} goal={g} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GoalRow({ goal }: { goal: Goal }) {
+  const pct =
+    goal.targetCents > 0 ? Math.min(100, Math.round((goal.savedCents / goal.targetCents) * 100)) : 0;
+  const targetMonth = goal.targetDate ? goal.targetDate.slice(0, 7) : null;
+  let status: { label: string; color: string };
+  if (pct >= 100) status = { label: "Reached 🎉", color: "var(--color-positive)" };
+  else if (!targetMonth) status = { label: "No deadline", color: "var(--color-neutral-400)" };
+  else if (!goal.projectedCompletion)
+    status = { label: "Add funds to project", color: "var(--color-neutral-400)" };
+  else if (goal.projectedCompletion <= targetMonth)
+    status = { label: "On track", color: "var(--color-positive)" };
+  else status = { label: "Behind", color: "var(--color-negative)" };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 3 }}>
+        <span style={{ display: "flex", gap: 7, alignItems: "center" }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: goal.color }} />
+          {goal.name}
+        </span>
+        <span style={{ color: status.color, fontWeight: 600 }}>{status.label}</span>
+      </div>
+      <div
+        style={{ height: 5, borderRadius: 99, background: "var(--color-neutral-900)", overflow: "hidden" }}
+      >
+        <div style={{ height: "100%", width: `${pct}%`, background: goal.color, borderRadius: 99 }} />
+      </div>
+      <div style={{ fontSize: 11.5, color: "var(--color-neutral-500)", marginTop: 3 }}>
+        {formatCentsWhole(goal.savedCents)} of {formatCentsWhole(goal.targetCents)} ({pct}%)
+        {targetMonth ? ` · target ${targetMonth}` : ""}
+        {goal.projectedCompletion ? ` · projected ${goal.projectedCompletion}` : ""}
+      </div>
+    </div>
   );
 }

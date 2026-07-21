@@ -9,3 +9,4 @@ export * from "./primitives/Segmented.js";
 export * from "./primitives/Banner.js";
 export * from "./primitives/Select.js";
 export * from "./charts/Sankey.js";
+export * from "./charts/PieChart.js";
