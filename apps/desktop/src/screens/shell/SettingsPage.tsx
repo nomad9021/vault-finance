@@ -13,7 +13,7 @@ import {
 } from "@vault/shared";
 import { THEMES, THEME_LABELS } from "@vault/design-tokens";
 import { Button, Card, Dialog, Field, Segmented, Select, Spinner, Tag } from "@vault/ui";
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useData } from "../../lib/useData.js";
 import { APP_VERSION, useApp } from "../../state/store.js";
 
@@ -21,7 +21,6 @@ export function SettingsPage() {
   return (
     <div style={{ maxWidth: 640, display: "flex", flexDirection: "column", gap: 16 }}>
       <AppearanceSection />
-      <CategoriesSection />
       <CategoryTreeSection />
       <CategorizationRulesSection />
       <BankSection />
@@ -30,164 +29,6 @@ export function SettingsPage() {
       <SessionsSection />
       <ServerSection />
     </div>
-  );
-}
-
-/**
- * Manage spending categories and nest them under a parent. Nesting is what
- * makes the dashboard's cash-flow Sankey branch (a parent category → its
- * children). Parent options are top-level categories only, which keeps the
- * tree acyclic without extra bookkeeping.
- */
-function CategoriesSection() {
-  const client = useApp((s) => s.client);
-  const { data, reload } = useData(() => client.categories(), [client]);
-  const categories = data?.categories ?? [];
-  const topLevel = categories.filter((c) => !c.parentCategoryId);
-  const childrenOf = (id: string) => categories.filter((c) => c.parentCategoryId === id);
-
-  const [name, setName] = useState("");
-  const [color, setColor] = useState("#7c5cff");
-  const [parentId, setParentId] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const add = async () => {
-    if (!name.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await client.createCategory({
-        name: name.trim(),
-        color,
-        parentCategoryId: parentId || null,
-      });
-      setName("");
-      setColor("#7c5cff");
-      setParentId("");
-      await reload();
-    } catch {
-      setError("Couldn't add that category.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const reparent = async (id: string, newParent: string) => {
-    setError(null);
-    await client.updateCategory(id, { parentCategoryId: newParent || null }).catch(() => {});
-    await reload();
-  };
-  const remove = async (id: string) => {
-    setError(null);
-    try {
-      await client.deleteCategory(id);
-      await reload();
-    } catch {
-      setError(
-        "That category is in use (has transactions or budgets) or is a system default — reassign those first.",
-      );
-    }
-  };
-
-  const row = (cat: (typeof categories)[number], indented: boolean) => (
-    <div
-      key={cat.id}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        padding: "7px 0",
-        paddingLeft: indented ? 22 : 0,
-        borderTop: "1px solid var(--color-divider)",
-      }}
-    >
-      <span
-        style={{
-          width: 12,
-          height: 12,
-          borderRadius: 3,
-          background: cat.color,
-          flex: "0 0 auto",
-        }}
-      />
-      <span style={{ fontWeight: 600, fontSize: 13 }}>
-        {indented ? "↳ " : ""}
-        {cat.name}
-      </span>
-      {cat.isSystem && <Tag>system</Tag>}
-      <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-        <Select
-          value={cat.parentCategoryId ?? ""}
-          onChange={(e) => reparent(cat.id, e.target.value)}
-          aria-label={`Parent category of ${cat.name}`}
-        >
-          <option value="">Top level</option>
-          {topLevel
-            .filter((p) => p.id !== cat.id)
-            .map((p) => (
-              <option key={p.id} value={p.id}>
-                under {p.name}
-              </option>
-            ))}
-        </Select>
-        {!cat.isSystem && (
-          <Button variant="ghost" onClick={() => remove(cat.id)}>
-            Delete
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-
-  return (
-    <Card kicker="Categories" title="Categories & sub-categories">
-      <p className="card-meta">
-        Nest a category under a parent to make the cash-flow diagram branch — e.g. an
-        “Investments” parent with “401(k)”, “House Fund”, and “Brokerage” beneath it.
-      </p>
-
-      <div style={{ margin: "12px 0" }}>
-        {topLevel.map((p) => (
-          <div key={p.id}>
-            {row(p, false)}
-            {childrenOf(p.id).map((ch) => row(ch, true))}
-          </div>
-        ))}
-      </div>
-
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-        <div style={{ flex: 2, minWidth: 150 }}>
-          <Field
-            label="New category"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Investments or 401(k)"
-          />
-        </div>
-        <div style={{ width: 84 }}>
-          <Field label="Color" type="color" value={color} onChange={(e) => setColor(e.target.value)} />
-        </div>
-        <div style={{ flex: 1, minWidth: 150 }}>
-          <Select label="Parent" value={parentId} onChange={(e) => setParentId(e.target.value)}>
-            <option value="">None (top level)</option>
-            {topLevel.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <Button variant="primary" onClick={add} disabled={busy || !name.trim()}>
-          Add
-        </Button>
-      </div>
-      {error && (
-        <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)", marginTop: 8 }}>
-          {error}
-        </div>
-      )}
-    </Card>
   );
 }
 
@@ -314,6 +155,8 @@ function CategoryTreeNode({
   onAdd,
   onRename,
   onRemove,
+  onDragStartNode,
+  onDropOnNode,
   busy,
 }: {
   cat: TreeCat;
@@ -321,24 +164,47 @@ function CategoryTreeNode({
   onAdd: (parentId: string | null) => void;
   onRename: (id: string, name: string) => void;
   onRemove: (id: string) => void;
+  onDragStartNode: (id: string) => void;
+  onDropOnNode: (targetId: string | null) => void;
   busy: boolean;
 }) {
   const kids = childrenOf(cat.id);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(cat.name);
+  const [over, setOver] = useState(false);
   return (
     <div style={{ display: "flex", alignItems: "center" }}>
       <div
+        draggable={!editing}
+        onDragStart={(e) => {
+          e.stopPropagation();
+          onDragStartNode(cat.id);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setOver(true);
+        }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setOver(false);
+          onDropOnNode(cat.id);
+        }}
+        title="Drag onto another category to move it there"
         style={{
           display: "flex",
           alignItems: "center",
           gap: 7,
           padding: "6px 9px",
-          border: "1px solid var(--color-divider)",
+          border: over ? "1px solid var(--color-accent)" : "1px solid var(--color-divider)",
           borderRadius: 8,
-          background: "var(--color-surface)",
+          background: over
+            ? "color-mix(in srgb, var(--color-accent) 12%, var(--color-surface))"
+            : "var(--color-surface)",
           whiteSpace: "nowrap",
           boxShadow: "var(--shadow-sm)",
+          cursor: "grab",
         }}
       >
         <span
@@ -422,6 +288,8 @@ function CategoryTreeNode({
                   onAdd={onAdd}
                   onRename={onRename}
                   onRemove={onRemove}
+                  onDragStartNode={onDragStartNode}
+                  onDropOnNode={onDropOnNode}
                   busy={busy}
                 />
               </div>
@@ -486,12 +354,44 @@ function CategoryTreeSection() {
     }
   };
 
+  // Drag-to-reparent. dragId is held in a ref (survives re-renders during drag).
+  const dragId = useRef<string | null>(null);
+  const isDescendant = (targetId: string, ancestorId: string): boolean => {
+    let cur = categories.find((c) => c.id === targetId);
+    while (cur?.parentCategoryId) {
+      if (cur.parentCategoryId === ancestorId) return true;
+      cur = categories.find((c) => c.id === cur!.parentCategoryId);
+    }
+    return false;
+  };
+  const onDropOn = async (targetId: string | null) => {
+    const src = dragId.current;
+    dragId.current = null;
+    if (!src || src === targetId) return;
+    // Can't move a node under itself or one of its own descendants.
+    if (targetId && isDescendant(targetId, src)) {
+      setError("Can't move a category under one of its own branches.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await client.updateCategory(src, { parentCategoryId: targetId });
+      await reload();
+    } catch {
+      setError("Couldn't move that category.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const roots = childrenOf(null);
   return (
     <Card kicker="Categories" title="Category tree">
       <p className="card-meta">
-        Shape the cash-flow Sankey here. The tree grows to the right — a category’s sub-branches sit to
-        its right. Click a name to rename, ＋ to add a branch, × to delete.
+        The one place to shape the cash-flow Sankey. The tree grows to the right — a category’s
+        sub-branches sit to its right. Click a name to rename, ＋ to add a branch, × to delete, and
+        drag a node onto another to move it (or onto “Top level” to un-nest it).
       </p>
       <div style={{ overflowX: "auto", padding: "10px 2px" }}>
         {roots.length === 0 ? (
@@ -508,16 +408,34 @@ function CategoryTreeSection() {
                 onAdd={addChild}
                 onRename={rename}
                 onRemove={remove}
+                onDragStartNode={(id) => (dragId.current = id)}
+                onDropOnNode={onDropOn}
                 busy={busy}
               />
             ))}
           </div>
         )}
       </div>
-      <div style={{ marginTop: 8 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
         <Button variant="secondary" onClick={() => void addChild(null)} disabled={busy}>
           ＋ Add top-level category
         </Button>
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            void onDropOn(null);
+          }}
+          style={{
+            fontSize: 12,
+            color: "var(--color-neutral-500)",
+            border: "1px dashed var(--color-divider)",
+            borderRadius: 8,
+            padding: "6px 12px",
+          }}
+        >
+          ↳ Drop here for “Top level”
+        </div>
       </div>
       {error && (
         <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)", marginTop: 8 }}>
