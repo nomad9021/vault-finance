@@ -41,13 +41,16 @@ export interface SankeyProps {
   ariaLabel?: string;
 }
 
-const H = 640;
+// The viewBox height is computed per-render (see layout): the diagram grows to
+// fit its tallest column so nothing is clipped, using BASE_H as a floor.
+const BASE_H = 640;
 const W = 1040;
 const NW = 4;
 const PAD = 30;
 const X0 = 176; // x of the leftmost (depth 0) column
 const X1 = 858; // x of the rightmost column
 const GAP = 12;
+const MIN_NODE = 4;
 
 interface PlacedNode extends SankeyNodeDatum {
   x: number;
@@ -104,7 +107,16 @@ function layout(nodes: SankeyNodeDatum[], links: SankeyLinkDatum[]) {
   for (const ns of byDepth.values()) {
     maxColSum = Math.max(maxColSum, ns.reduce((s, n) => s + magnitude(n), 0));
   }
-  const scale = (H - 2 * PAD) / maxColSum;
+  const scale = (BASE_H - 2 * PAD) / maxColSum;
+
+  // Grow the viewBox so the tallest column (bars + gaps + min-height nodes)
+  // always fits — otherwise it overflows and gets clipped top and bottom.
+  const columnHeight = (ns: SankeyNodeDatum[]) =>
+    ns.reduce((s, n) => s + Math.max(MIN_NODE, magnitude(n) * scale), 0) +
+    Math.max(0, ns.length - 1) * GAP;
+  let contentH = 0;
+  for (const ns of byDepth.values()) contentH = Math.max(contentH, columnHeight(ns));
+  const H = Math.max(BASE_H, Math.ceil(contentH + 2 * PAD));
 
   const placed = new Map<string, PlacedNode>();
   const parentsOf = new Map<string, string[]>();
@@ -131,10 +143,10 @@ function layout(nodes: SankeyNodeDatum[], links: SankeyLinkDatum[]) {
       ns.sort((a, b) => bary(a) - bary(b));
     }
 
-    const totalH = ns.reduce((s, n) => s + magnitude(n) * scale, 0) + (ns.length - 1) * GAP;
+    const totalH = columnHeight(ns);
     let y = (H - totalH) / 2;
     for (const n of ns) {
-      const h = Math.max(3, magnitude(n) * scale);
+      const h = Math.max(MIN_NODE, magnitude(n) * scale);
       placed.set(n.id, { ...n, x: xFor(d), y, h });
       y += h + GAP;
     }
@@ -164,7 +176,7 @@ function layout(nodes: SankeyNodeDatum[], links: SankeyLinkDatum[]) {
     inCursor.set(l.to, ty + h);
   }
 
-  return { nodes: [...placed.values()], links: placedLinks, maxDepth };
+  return { nodes: [...placed.values()], links: placedLinks, maxDepth, height: H };
 }
 
 export function Sankey({
@@ -230,7 +242,7 @@ export function Sankey({
 
   return (
     <svg
-      viewBox={`0 0 ${W} ${H}`}
+      viewBox={`0 0 ${W} ${geo.height}`}
       style={{ width: "100%", height: "auto", display: "block" }}
       role="img"
       aria-label={ariaLabel}
