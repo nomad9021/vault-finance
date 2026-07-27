@@ -386,6 +386,64 @@ describe("categories", () => {
     });
     expect(delUnused.statusCode).toBe(204);
   });
+
+  it("reorders siblings with move up/down (and clamps at the ends)", async () => {
+    // Isolate the siblings under a fresh parent so seeded top-level cats don't
+    // interfere with the ordering assertions.
+    const parent = await app.inject({
+      method: "POST",
+      url: "/api/v1/categories",
+      headers: auth,
+      payload: { name: "ZZ Order Parent", color: "#43cfc0" },
+    });
+    const parentId = parent.json().id as string;
+    const mk = async (name: string) => {
+      const r = await app.inject({
+        method: "POST",
+        url: "/api/v1/categories",
+        headers: auth,
+        payload: { name, color: "#43cfc0", parentCategoryId: parentId },
+      });
+      return r.json().id as string;
+    };
+    const a = await mk("A");
+    const b = await mk("B");
+    const c = await mk("C");
+    // Ordered ids of this parent's children, by sortOrder.
+    const order = (cats: { id: string; parentCategoryId: string | null; sortOrder: number }[]) =>
+      cats
+        .filter((x) => x.parentCategoryId === parentId)
+        .sort((x, y) => x.sortOrder - y.sortOrder)
+        .map((x) => x.id);
+
+    const move = (id: string, direction: "up" | "down") =>
+      app.inject({
+        method: "POST",
+        url: `/api/v1/categories/${id}/move`,
+        headers: auth,
+        payload: { direction },
+      });
+
+    // Created in append order.
+    let list = (await move(c, "down")).json().categories; // C already last → no-op
+    expect(order(list)).toEqual([a, b, c]);
+
+    // Move B up → [B, A, C].
+    list = (await move(b, "up")).json().categories;
+    expect(order(list)).toEqual([b, a, c]);
+
+    // Move B up again is clamped (already first) → unchanged.
+    list = (await move(b, "up")).json().categories;
+    expect(order(list)).toEqual([b, a, c]);
+
+    // Move B down → [A, B, C].
+    list = (await move(b, "down")).json().categories;
+    expect(order(list)).toEqual([a, b, c]);
+
+    for (const id of [a, b, c, parentId]) {
+      await app.inject({ method: "DELETE", url: `/api/v1/categories/${id}`, headers: auth });
+    }
+  });
 });
 
 describe("budgets", () => {

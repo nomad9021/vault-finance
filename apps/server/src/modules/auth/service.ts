@@ -4,12 +4,16 @@ import { and, eq, isNull } from "drizzle-orm";
 import type { Platform, User } from "@vault/shared";
 import { deviceSessions, users } from "../../db/schema.js";
 import type { Db } from "../../plugins/db.js";
+import { AppError } from "../../errors.js";
 import {
   invalidCredentials,
   notFound,
   refreshTokenReused,
   sessionRevoked,
+  totpInvalid,
+  totpRequired,
 } from "../../errors.js";
+import { generateTotpSecret, otpauthUri, verifyTotp } from "./totp.js";
 
 /**
  * Refresh tokens are `<sessionId>.<secret>`: the session id makes lookup O(1)
@@ -69,6 +73,7 @@ export async function login(
     deviceName: string;
     platform: Platform;
     ipAddress: string | null;
+    totpCode?: string | undefined;
   },
 ): Promise<LoginResult> {
   const user = input.userId
@@ -84,6 +89,14 @@ export async function login(
     .verify(user?.passwordHash ?? DUMMY_HASH, input.password)
     .catch(() => false);
   if (!user || !ok) throw invalidCredentials();
+
+  // Two-factor gate: once enabled, a valid current code is required. Password
+  // is verified first (above) so a missing/expired code never reveals whether
+  // the password was right.
+  if (user.totpEnabled) {
+    if (!input.totpCode) throw totpRequired();
+    if (!verifyTotp(user.totpSecret ?? "", input.totpCode)) throw totpInvalid();
+  }
 
   const [session] = await db
     .insert(deviceSessions)
@@ -104,6 +117,51 @@ export async function login(
     .where(eq(deviceSessions.id, session.id));
 
   return { user, sessionId: session.id, refreshToken: token };
+}
+
+// ── Two-factor authentication (TOTP) ──
+
+export async function totpStatus(db: Db, userId: string): Promise<{ enabled: boolean }> {
+  const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  return { enabled: user?.totpEnabled ?? false };
+}
+
+/** Generate + store a pending secret and return it for enrollment. */
+export async function startTotpSetup(
+  db: Db,
+  userId: string,
+): Promise<{ secret: string; otpauthUri: string }> {
+  const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  if (!user) throw notFound("User");
+  if (user.totpEnabled) {
+    throw new AppError("VALIDATION_ERROR", 409, "Two-factor is already on — turn it off to re-enroll.");
+  }
+  const secret = generateTotpSecret();
+  await db.update(users).set({ totpSecret: secret, updatedAt: new Date() }).where(eq(users.id, userId));
+  return { secret, otpauthUri: otpauthUri(secret, user.email) };
+}
+
+/** Confirm a code against the pending secret and turn 2FA on. */
+export async function enableTotp(db: Db, userId: string, code: string): Promise<void> {
+  const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  if (!user?.totpSecret) {
+    throw new AppError("VALIDATION_ERROR", 400, "Start two-factor setup first.");
+  }
+  if (user.totpEnabled) return;
+  if (!verifyTotp(user.totpSecret, code)) throw totpInvalid();
+  await db.update(users).set({ totpEnabled: true, updatedAt: new Date() }).where(eq(users.id, userId));
+}
+
+/** Turn 2FA off — re-auth with the account password. */
+export async function disableTotp(db: Db, userId: string, password: string): Promise<void> {
+  const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  if (!user) throw notFound("User");
+  const ok = await argon2.verify(user.passwordHash, password).catch(() => false);
+  if (!ok) throw invalidCredentials();
+  await db
+    .update(users)
+    .set({ totpEnabled: false, totpSecret: null, updatedAt: new Date() })
+    .where(eq(users.id, userId));
 }
 
 export interface RefreshResult {

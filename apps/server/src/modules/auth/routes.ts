@@ -3,10 +3,14 @@ import {
   LoginRequest,
   LogoutRequest,
   RefreshRequest,
+  TotpDisableRequest,
+  TotpEnableRequest,
   type LoginResponse,
   type ProfilesResponse,
   type SessionListResponse,
   type TokenPair,
+  type TotpSetupResponse,
+  type TotpStatusResponse,
 } from "@vault/shared";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
@@ -59,6 +63,7 @@ export default async function authRoutes(app: FastifyInstance) {
       deviceName: body.deviceName,
       platform: body.platform,
       ipAddress: request.ip ?? null,
+      ...(body.totpCode ? { totpCode: body.totpCode } : {}),
     });
 
     const accessToken = await app.signAccessToken({
@@ -121,6 +126,31 @@ export default async function authRoutes(app: FastifyInstance) {
       return reply.status(204).send();
     },
   );
+
+  // ── Two-factor authentication (TOTP) ──
+  app.get(
+    "/auth/2fa/status",
+    { preHandler: [app.requireAuth] },
+    async (request): Promise<TotpStatusResponse> => authService.totpStatus(app.db, request.auth!.userId),
+  );
+
+  app.post(
+    "/auth/2fa/setup",
+    { preHandler: [app.requireAuth] },
+    async (request): Promise<TotpSetupResponse> => authService.startTotpSetup(app.db, request.auth!.userId),
+  );
+
+  app.post("/auth/2fa/enable", { preHandler: [app.requireAuth] }, async (request, reply) => {
+    const body = TotpEnableRequest.parse(request.body);
+    await authService.enableTotp(app.db, request.auth!.userId, body.code);
+    return reply.status(204).send();
+  });
+
+  app.post("/auth/2fa/disable", { preHandler: [app.requireAuth] }, async (request, reply) => {
+    const body = TotpDisableRequest.parse(request.body);
+    await authService.disableTotp(app.db, request.auth!.userId, body.password);
+    return reply.status(204).send();
+  });
 
   app.get("/me", { preHandler: [app.requireAuth] }, async (request) => {
     const auth = request.auth!;

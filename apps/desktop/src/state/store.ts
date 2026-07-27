@@ -82,7 +82,7 @@ export const useApp = create<AppState>((set, get) => ({
   priorAddress: null,
   connection: "online",
   user: null,
-  theme: "automatic",
+  theme: "light",
   aiVisible: false,
 
   async connectTo(rawAddress) {
@@ -264,7 +264,9 @@ export async function bootstrap(): Promise<void> {
 
   try {
     const storedTheme = await platform.loadValue(THEME_KEY);
-    const theme: Theme = isTheme(storedTheme) ? storedTheme : "automatic";
+    // Default to the light "premium" look (matches the design references); users
+    // can switch to automatic/dark/oled/contrast in Settings.
+    const theme: Theme = isTheme(storedTheme) ? storedTheme : "light";
     applyTheme(theme);
     useApp.setState({ theme });
   } catch (err) {

@@ -14,6 +14,8 @@ export const ErrorCode = z.enum([
   "FORBIDDEN",
   "NOT_FOUND",
   "RATE_LIMITED",
+  "TOTP_REQUIRED",
+  "TOTP_INVALID",
   "CLIENT_VERSION_TOO_OLD",
   "CATEGORY_IN_USE",
   "AI_UNAVAILABLE",

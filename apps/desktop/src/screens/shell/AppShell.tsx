@@ -4,11 +4,14 @@ import { useApp } from "../../state/store.js";
 import { AppMark } from "../AuthLayout.js";
 import { AccountsPage } from "./AccountsPage.js";
 import { AssistantPage } from "./AssistantPage.js";
+import { BudgetPlannerPage } from "./BudgetPlannerPage.js";
 import { BudgetsPage } from "./BudgetsPage.js";
 import { CashFlowPage } from "./CashFlowPage.js";
 import { DashboardPage } from "./DashboardPage.js";
+import { BillsPage } from "./BillsPage.js";
 import { GoalsPage } from "./GoalsPage.js";
 import { Header } from "./Header.js";
+import { IncomePage } from "./IncomePage.js";
 import { InvestmentsPage } from "./InvestmentsPage.js";
 import { ReportsPage } from "./ReportsPage.js";
 import { SettingsPage } from "./SettingsPage.js";
@@ -18,7 +21,10 @@ export type PageId =
   | "dashboard"
   | "accounts"
   | "transactions"
+  | "income"
   | "budgets"
+  | "budget-planner"
+  | "bills"
   | "cashflow"
   | "investments"
   | "goals"
@@ -26,25 +32,40 @@ export type PageId =
   | "assistant"
   | "settings";
 
+/**
+ * Optional pre-applied filter carried by a cross-page navigation — e.g. click a
+ * category or account anywhere and land on Transactions already filtered to it.
+ */
+export type NavFilter = { categoryId?: string; accountId?: string };
+export type Navigate = (target: PageId, filter?: NavFilter) => void;
+
 /** `ai: true` items only appear once the assistant is enabled and configured. */
-export const NAV_ITEMS: Array<{ id: PageId; label: string; ai?: boolean }> = [
-  { id: "dashboard", label: "Dashboard" },
-  { id: "accounts", label: "Accounts" },
-  { id: "transactions", label: "Transactions" },
-  { id: "budgets", label: "Budgets" },
-  { id: "cashflow", label: "Cash Flow" },
-  { id: "investments", label: "Investments" },
-  { id: "goals", label: "Savings Goals" },
-  { id: "reports", label: "Reports" },
-  { id: "assistant", label: "AI Assistant", ai: true },
-  { id: "settings", label: "Settings" },
+export const NAV_ITEMS: Array<{ id: PageId; label: string; icon: string; ai?: boolean }> = [
+  { id: "dashboard", label: "Dashboard", icon: "🏠" },
+  { id: "accounts", label: "Accounts", icon: "🏦" },
+  { id: "transactions", label: "Transactions", icon: "💳" },
+  { id: "income", label: "Income", icon: "💵" },
+  { id: "budgets", label: "Budgets", icon: "🎯" },
+  { id: "budget-planner", label: "Budget Planner", icon: "🗂️" },
+  { id: "bills", label: "Bills", icon: "🧾" },
+  { id: "cashflow", label: "Cash Flow", icon: "📈" },
+  { id: "investments", label: "Investments", icon: "📊" },
+  { id: "goals", label: "Savings Goals", icon: "🚩" },
+  { id: "reports", label: "Reports", icon: "📑" },
+  { id: "assistant", label: "AI Assistant", icon: "✦", ai: true },
+  { id: "settings", label: "Settings", icon: "⚙️" },
 ];
+
+const SIDEBAR_KEY = "sidebar-open";
 
 const PAGE_TITLES: Record<PageId, string> = {
   dashboard: "Dashboard",
   accounts: "Accounts",
   transactions: "Transactions",
+  income: "Income",
   budgets: "Budgets",
+  "budget-planner": "Budget Planner",
+  bills: "Bills",
   cashflow: "Cash Flow",
   investments: "Investments",
   goals: "Savings Goals",
@@ -58,12 +79,29 @@ export function AppShell() {
   const user = useApp((s) => s.user);
   const aiVisible = useApp((s) => s.aiVisible);
   const [page, setPage] = useState<PageId>("dashboard");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  // Set by Sankey drill-in ("View in Transactions"); consumed once on navigate.
-  const [txnCategoryFilter, setTxnCategoryFilter] = useState<string | undefined>();
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_KEY) !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const toggleSidebar = () =>
+    setSidebarOpen((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  // Filter carried into Transactions by a cross-page link (Sankey drill-in,
+  // account row, category row, stat card…); consumed once on navigate.
+  const [txnFilter, setTxnFilter] = useState<NavFilter>({});
 
-  const navigate = (target: PageId, categoryId?: string) => {
-    setTxnCategoryFilter(categoryId);
+  const navigate: Navigate = (target, filter) => {
+    setTxnFilter(filter ?? {});
     setPage(target);
   };
 
@@ -134,40 +172,13 @@ export function AppShell() {
                   key={item.id}
                   onClick={() => setPage(item.id)}
                   aria-current={active ? "page" : undefined}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "8px 12px",
-                    border: 0,
-                    borderRadius: 8,
-                    cursor: "pointer",
-                    fontFamily: "var(--font-body)",
-                    fontWeight: 500,
-                    fontSize: 13.5,
-                    background: active
-                      ? "color-mix(in srgb, var(--color-accent) 14%, transparent)"
-                      : "transparent",
-                    color: active ? "var(--color-accent-200)" : "var(--color-text)",
-                    transition: "background .15s",
-                    whiteSpace: "nowrap",
-                  }}
+                  className="nav-item"
+                  data-active={active ? "true" : undefined}
                 >
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      width: 6,
-                      height: 6,
-                      borderRadius: "50%",
-                      background: active
-                        ? "var(--color-accent)"
-                        : "var(--color-neutral-700)",
-                      flex: "none",
-                    }}
-                  />
-                  {item.label}
+                  <span aria-hidden="true" className="nav-item-icon">
+                    {item.icon}
+                  </span>
+                  <span className="nav-item-label">{item.label}</span>
                 </button>
               );
             })}
@@ -206,29 +217,36 @@ export function AppShell() {
         )}
         <Header
           title={PAGE_TITLES[page]}
-          onToggleSidebar={() => setSidebarOpen((v) => !v)}
+          onToggleSidebar={toggleSidebar}
           onNavigate={setPage}
         />
         <div style={{ flex: 1, overflow: "auto", padding: 24 }}>
           {page === "dashboard" ? (
             <DashboardPage onNavigate={navigate} />
           ) : page === "accounts" ? (
-            <AccountsPage />
+            <AccountsPage onNavigate={navigate} />
           ) : page === "transactions" ? (
             <TransactionsPage
-              key={txnCategoryFilter ?? "all"}
-              {...(txnCategoryFilter ? { initialCategoryId: txnCategoryFilter } : {})}
+              key={txnFilter.categoryId ?? txnFilter.accountId ?? "all"}
+              {...(txnFilter.categoryId ? { initialCategoryId: txnFilter.categoryId } : {})}
+              {...(txnFilter.accountId ? { initialAccountId: txnFilter.accountId } : {})}
             />
+          ) : page === "income" ? (
+            <IncomePage onNavigate={navigate} />
           ) : page === "budgets" ? (
-            <BudgetsPage />
+            <BudgetsPage onNavigate={navigate} />
+          ) : page === "budget-planner" ? (
+            <BudgetPlannerPage onNavigate={navigate} />
+          ) : page === "bills" ? (
+            <BillsPage />
           ) : page === "cashflow" ? (
             <CashFlowPage />
           ) : page === "investments" ? (
             <InvestmentsPage onNavigate={navigate} />
           ) : page === "goals" ? (
-            <GoalsPage />
+            <GoalsPage onNavigate={navigate} />
           ) : page === "reports" ? (
-            <ReportsPage />
+            <ReportsPage onNavigate={navigate} />
           ) : page === "assistant" && aiVisible ? (
             <AssistantPage onNavigate={setPage} />
           ) : (

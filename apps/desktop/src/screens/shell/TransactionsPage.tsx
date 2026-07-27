@@ -1,21 +1,44 @@
 import {
   formatCents,
+  formatCentsWhole,
   parseAmountToCents,
   type Account,
   type Category,
   type ImportResponse,
   type Transaction,
 } from "@vault/shared";
-import { Button, Dialog, Field, Select, Spinner } from "@vault/ui";
+import { Button, Dialog, Field, Panel, Select, Spinner } from "@vault/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 
+type Period = "all" | "month" | "3m" | "12m";
+const PERIOD_LABELS: Record<Period, string> = {
+  all: "All time",
+  month: "This month",
+  "3m": "Last 3 months",
+  "12m": "Last 12 months",
+};
+function periodRange(period: Period): { from?: string; to?: string } {
+  if (period === "all") return {};
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const iso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const to = iso(now);
+  if (period === "month") return { from: iso(new Date(now.getFullYear(), now.getMonth(), 1)), to };
+  const d = new Date(now);
+  d.setMonth(d.getMonth() - (period === "3m" ? 3 : 12));
+  return { from: iso(d), to };
+}
+
 export function TransactionsPage({
   initialCategoryId,
+  initialAccountId,
 }: {
-  /** Pre-applied category filter (Sankey drill-in → "View in Transactions"). */
+  /** Pre-applied category filter (from a category link elsewhere in the app). */
   initialCategoryId?: string;
+  /** Pre-applied account filter (from an account/income link elsewhere). */
+  initialAccountId?: string;
 } = {}) {
   const client = useApp((s) => s.client);
 
@@ -30,16 +53,20 @@ export function TransactionsPage({
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState(initialCategoryId ?? "");
-  const [accountFilter, setAccountFilter] = useState("");
+  const [accountFilter, setAccountFilter] = useState(initialAccountId ?? "");
+  const [period, setPeriod] = useState<Period>("all");
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 250);
     return () => clearTimeout(t);
   }, [search]);
+  const range = periodRange(period);
 
   // Paged list state
   const [rows, setRows] = useState<Transaction[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [totalCount, setTotalCount] = useState(0);
+  const [sumIn, setSumIn] = useState(0);
+  const [sumOut, setSumOut] = useState(0);
   const [loading, setLoading] = useState(true);
   const generation = useRef(0);
 
@@ -49,21 +76,27 @@ export function TransactionsPage({
         ...(debouncedSearch ? { search: debouncedSearch } : {}),
         ...(categoryFilter ? { categoryId: categoryFilter } : {}),
         ...(accountFilter ? { accountId: accountFilter } : {}),
+        ...(range.from ? { from: range.from } : {}),
+        ...(range.to ? { to: range.to } : {}),
         ...(cursor ? { cursor } : {}),
         limit: 50,
       }),
-    [client, debouncedSearch, categoryFilter, accountFilter],
+    [client, debouncedSearch, categoryFilter, accountFilter, range.from, range.to],
   );
 
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const reload = useCallback(() => {
     const gen = ++generation.current;
     setLoading(true);
+    setSelected(new Set());
     query()
       .then((res) => {
         if (gen !== generation.current) return;
         setRows(res.transactions);
         setNextCursor(res.nextCursor);
         setTotalCount(res.totalCount);
+        setSumIn(res.sumInCents);
+        setSumOut(res.sumOutCents);
       })
       .finally(() => {
         if (gen === generation.current) setLoading(false);
@@ -77,13 +110,42 @@ export function TransactionsPage({
     const res = await query(nextCursor);
     setRows((prev) => [...prev, ...res.transactions]);
     setNextCursor(res.nextCursor);
-    setTotalCount(res.totalCount);
   };
 
   const [editing, setEditing] = useState<Transaction | "new" | null>(null);
   const [importing, setImporting] = useState(false);
   const [autocatting, setAutocatting] = useState(false);
   const [autocatMsg, setAutocatMsg] = useState<string | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkCat, setBulkCat] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const toggleRow = (id: string) =>
+    setSelected((prev) => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.id)));
+  const applyBulkCategory = async () => {
+    if (selected.size === 0) return;
+    setBulkBusy(true);
+    const categoryId = bulkCat === "__none__" ? null : bulkCat;
+    await Promise.all(
+      [...selected].map((id) => client.updateTransaction(id, { categoryId }).catch(() => {})),
+    );
+    setBulkBusy(false);
+    setBulkCat("");
+    reload();
+  };
+  const doBulkDelete = async () => {
+    setBulkBusy(true);
+    await Promise.all([...selected].map((id) => client.deleteTransaction(id).catch(() => {})));
+    setBulkBusy(false);
+    setConfirmDelete(false);
+    reload();
+  };
 
   const runAutocategorize = async () => {
     setAutocatting(true);
@@ -110,175 +172,206 @@ export function TransactionsPage({
     }
   };
 
+  const net = sumIn - sumOut;
+
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 14,
-        maxWidth: 1100,
-        margin: "0 auto",
-        animation: "fadeUp .3s both",
-      }}
-    >
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <input
-          className="input"
-          style={{ flex: 1, minWidth: 180, maxWidth: 340, borderRadius: 8 }}
-          placeholder="Search merchants…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          aria-label="Search merchants"
-        />
-        <Select
-          aria-label="Filter by category"
-          style={{ width: "auto", minWidth: 170, borderRadius: 8 }}
-          value={categoryFilter}
-          onChange={(e) => setCategoryFilter(e.target.value)}
-        >
-          <option value="">All categories</option>
-          <option value="none">Uncategorized</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </Select>
-        <Select
-          aria-label="Filter by account"
-          style={{ width: "auto", minWidth: 160, borderRadius: 8 }}
-          value={accountFilter}
-          onChange={(e) => setAccountFilter(e.target.value)}
-        >
-          <option value="">All accounts</option>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </Select>
-        <Button
-          variant="secondary"
-          onClick={() => void runAutocategorize()}
-          disabled={autocatting}
-          title="Sort uncategorized transactions using your keyword rules and past categorizations — all local, nothing leaves your server."
-        >
-          {autocatting ? "Sorting…" : "Auto-categorize"}
-        </Button>
-        <Button variant="secondary" onClick={() => setImporting(true)}>
-          Import CSV
-        </Button>
-        <Button variant="primary" onClick={() => setEditing("new")}>
-          + Add
-        </Button>
-        <span style={{ fontSize: 12, color: "var(--color-neutral-500)", marginLeft: "auto" }}>
-          {totalCount} transaction{totalCount === 1 ? "" : "s"}
-        </span>
+    <div className="page" style={{ gap: "var(--space-4)" }}>
+      {/* Sticky toolbar — filters stay put while the table scrolls. */}
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 5,
+          background: "var(--color-bg)",
+          paddingTop: 2,
+          paddingBottom: 10,
+          marginTop: -2,
+          borderBottom: "1px solid var(--hairline)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+        }}
+      >
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <input
+            className="input"
+            style={{ flex: 1, minWidth: 170, maxWidth: 300, borderRadius: 8 }}
+            placeholder="Search merchants…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Search merchants"
+          />
+          <Select aria-label="Filter by category" style={{ width: "auto", minWidth: 155, borderRadius: 8 }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+            <option value="">All categories</option>
+            <option value="none">Uncategorized</option>
+            {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+          </Select>
+          <Select aria-label="Filter by account" style={{ width: "auto", minWidth: 145, borderRadius: 8 }} value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)}>
+            <option value="">All accounts</option>
+            {accounts.map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
+          </Select>
+          <Select aria-label="Filter by date" style={{ width: "auto", minWidth: 140, borderRadius: 8 }} value={period} onChange={(e) => setPeriod(e.target.value as Period)}>
+            {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (<option key={p} value={p}>{PERIOD_LABELS[p]}</option>))}
+          </Select>
+          <div style={{ display: "flex", gap: 10, marginLeft: "auto", flexWrap: "wrap" }}>
+            <Button
+              variant="secondary"
+              onClick={() => void runAutocategorize()}
+              disabled={autocatting}
+              title="Sort uncategorized transactions using your keyword rules and past categorizations — all local, nothing leaves your server."
+            >
+              {autocatting ? "Sorting…" : "Auto-categorize"}
+            </Button>
+            <Button variant="secondary" onClick={() => setImporting(true)}>Import CSV</Button>
+            <Button variant="primary" onClick={() => setEditing("new")}>+ Add</Button>
+          </div>
+        </div>
+
+        {selected.size > 0 && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              flexWrap: "wrap",
+              padding: "8px 12px",
+              borderRadius: 10,
+              background: "color-mix(in srgb, var(--color-accent) 12%, var(--color-surface))",
+              border: "1px solid color-mix(in srgb, var(--color-accent) 35%, transparent)",
+            }}
+          >
+            <strong style={{ fontSize: 13 }}>{selected.size} selected</strong>
+            <Select aria-label="Recategorize selected" style={{ width: "auto", minWidth: 160, borderRadius: 8 }} value={bulkCat} onChange={(e) => setBulkCat(e.target.value)}>
+              <option value="">Set category…</option>
+              <option value="__none__">Uncategorized</option>
+              {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
+            </Select>
+            <Button variant="secondary" onClick={() => void applyBulkCategory()} disabled={bulkBusy || !bulkCat}>
+              {bulkBusy ? "Applying…" : "Apply"}
+            </Button>
+            <Button variant="ghost" onClick={() => setConfirmDelete(true)} disabled={bulkBusy} style={{ color: "var(--color-negative)" }}>
+              Delete
+            </Button>
+            <Button variant="ghost" onClick={() => setSelected(new Set())} style={{ marginLeft: "auto" }}>
+              Clear
+            </Button>
+          </div>
+        )}
       </div>
 
       {autocatMsg && (
-        <div
-          role="status"
-          style={{
-            fontSize: 13,
-            color: "var(--color-neutral-300)",
-            background: "var(--color-surface)",
-            border: "1px solid var(--color-divider)",
-            borderRadius: 8,
-            padding: "8px 12px",
-          }}
-        >
+        <div role="status" style={{ fontSize: 13, color: "var(--color-neutral-300)", background: "var(--color-surface)", border: "1px solid var(--color-divider)", borderRadius: 8, padding: "8px 12px" }}>
           {autocatMsg}
         </div>
       )}
 
-      <div
-        style={{
-          background: "var(--color-surface)",
-          border: "1px solid var(--color-divider)",
-          borderRadius: 12,
-          overflowX: "auto",
-          boxShadow: "var(--shadow-sm)",
-        }}
-      >
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr style={{ textAlign: "left" }}>
-              <Th>Date</Th>
-              <Th>Merchant</Th>
-              <Th>Category</Th>
-              <Th>Account</Th>
-              <Th align="right">Amount</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && rows.length === 0 ? (
-              <tr>
-                <td colSpan={5} style={{ padding: 24, textAlign: "center" }}>
-                  <Spinner label="Loading transactions" />
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={5}
-                  style={{ padding: 24, textAlign: "center" }}
-                  className="text-muted"
-                >
-                  {totalCount === 0 && !debouncedSearch && !categoryFilter && !accountFilter
-                    ? "No transactions yet — add one or import a CSV from your bank."
-                    : "Nothing matches these filters."}
-                </td>
-              </tr>
-            ) : (
-              rows.map((t) => {
-                const category = t.categoryId ? categoryById.get(t.categoryId) : undefined;
-                return (
-                  <tr
-                    key={t.id}
-                    onClick={() => setEditing(t)}
-                    style={{
-                      borderTop:
-                        "1px solid color-mix(in srgb, var(--color-text) 7%, transparent)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <Td muted nowrap>
-                      {t.postedAt}
-                    </Td>
-                    <Td style={{ fontWeight: 500 }}>{t.merchantName}</Td>
-                    <Td>
-                      <CategoryPill category={category} />
-                    </Td>
-                    <Td muted nowrap>
-                      {accountById.get(t.accountId)?.name ?? "—"}
-                    </Td>
-                    <Td
-                      nowrap
-                      style={{
-                        textAlign: "right",
-                        fontWeight: 600,
-                        color:
-                          t.amountCents > 0 ? "var(--color-positive)" : "var(--color-text)",
-                      }}
-                    >
-                      {formatCents(t.amountCents, { signed: true })}
-                    </Td>
+      <div className="grid">
+        <div style={{ gridColumn: "span 9", minWidth: 0 }}>
+          <div style={{ background: "var(--color-surface)", border: "1px solid var(--color-divider)", borderRadius: 12, overflowX: "auto", boxShadow: "var(--shadow-sm)" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <thead>
+                <tr style={{ textAlign: "left" }}>
+                  <th style={{ width: 38, padding: "10px 0 10px 16px" }}>
+                    <input type="checkbox" aria-label="Select all shown" checked={allSelected} onChange={toggleAll} style={{ cursor: "pointer" }} />
+                  </th>
+                  <Th>Date</Th>
+                  <Th>Merchant</Th>
+                  <Th>Category</Th>
+                  <Th>Account</Th>
+                  <Th align="right">Amount</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ padding: 24, textAlign: "center" }}>
+                      <Spinner label="Loading transactions" />
+                    </td>
                   </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+                ) : rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} style={{ padding: 24, textAlign: "center" }} className="text-muted">
+                      {totalCount === 0 && !debouncedSearch && !categoryFilter && !accountFilter && period === "all"
+                        ? "No transactions yet — add one or import a CSV from your bank."
+                        : "Nothing matches these filters."}
+                    </td>
+                  </tr>
+                ) : (
+                  rows.map((t) => {
+                    const category = t.categoryId ? categoryById.get(t.categoryId) : undefined;
+                    const isSel = selected.has(t.id);
+                    return (
+                      <tr
+                        key={t.id}
+                        onClick={() => setEditing(t)}
+                        className="txn-row"
+                        style={{
+                          borderTop: "1px solid color-mix(in srgb, var(--color-text) 7%, transparent)",
+                          cursor: "pointer",
+                          ...(isSel ? { background: "color-mix(in srgb, var(--color-accent) 9%, transparent)" } : {}),
+                        }}
+                      >
+                        <td style={{ padding: "8px 0 8px 16px" }} onClick={(e) => e.stopPropagation()}>
+                          <input type="checkbox" aria-label={`Select ${t.merchantName}`} checked={isSel} onChange={() => toggleRow(t.id)} style={{ cursor: "pointer" }} />
+                        </td>
+                        <Td muted nowrap>{t.postedAt}</Td>
+                        <Td style={{ fontWeight: 500 }}>{t.merchantName}</Td>
+                        <Td><CategoryPill category={category} /></Td>
+                        <Td muted nowrap>{accountById.get(t.accountId)?.name ?? "—"}</Td>
+                        <Td nowrap style={{ textAlign: "right", fontWeight: 600, color: t.amountCents > 0 ? "var(--color-positive)" : "var(--color-text)" }}>
+                          {formatCents(t.amountCents, { signed: true })}
+                        </Td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {nextCursor && (
+            <div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}>
+              <Button variant="secondary" onClick={() => void loadMore()}>Load more</Button>
+            </div>
+          )}
+        </div>
+
+        <div style={{ gridColumn: "span 3", minWidth: 0 }}>
+          <Panel title="Summary" subtitle={PERIOD_LABELS[period]} style={{ position: "sticky", top: 96 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <div className="eyebrow">Transactions</div>
+                <div className="metric-value" style={{ fontSize: 22 }}>{totalCount.toLocaleString()}</div>
+              </div>
+              <div style={{ height: 1, background: "var(--hairline)" }} />
+              <SummaryRow label="Money in" value={formatCentsWhole(sumIn)} color="var(--color-positive)" />
+              <SummaryRow label="Money out" value={formatCentsWhole(sumOut)} color="var(--color-text)" />
+              <SummaryRow
+                label="Net"
+                value={`${net >= 0 ? "+" : "−"}${formatCentsWhole(Math.abs(net))}`}
+                color={net >= 0 ? "var(--color-positive)" : "var(--color-negative)"}
+                strong
+              />
+            </div>
+          </Panel>
+        </div>
       </div>
 
-      {nextCursor && (
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <Button variant="secondary" onClick={() => void loadMore()}>
-            Load more
-          </Button>
-        </div>
-      )}
+      <Dialog
+        open={confirmDelete}
+        title={`Delete ${selected.size} transaction${selected.size === 1 ? "" : "s"}?`}
+        onClose={() => setConfirmDelete(false)}
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setConfirmDelete(false)} disabled={bulkBusy}>Cancel</Button>
+            <Button variant="primary" onClick={() => void doBulkDelete()} disabled={bulkBusy} style={{ background: "var(--color-negative)", borderColor: "var(--color-negative)", color: "#fff" }}>
+              {bulkBusy ? <Spinner label="Deleting" /> : "Delete"}
+            </Button>
+          </>
+        }
+      >
+        This permanently removes the selected transactions. Account balances aren't affected.
+      </Dialog>
 
       {editing && (
         <TransactionDialog
@@ -302,6 +395,17 @@ export function TransactionsPage({
           }}
         />
       )}
+    </div>
+  );
+}
+
+function SummaryRow({ label, value, color, strong }: { label: string; value: string; color: string; strong?: boolean }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+      <span style={{ fontSize: 12.5, color: "var(--color-neutral-500)" }}>{label}</span>
+      <span className="num" style={{ fontWeight: strong ? 700 : 600, fontSize: strong ? 16 : 14, color }}>
+        {value}
+      </span>
     </div>
   );
 }

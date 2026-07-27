@@ -53,6 +53,10 @@ export const TransactionListResponse = z.object({
   nextCursor: z.string().nullable(),
   /** Total matching the filters (for the "n transactions" summary line). */
   totalCount: z.number().int(),
+  /** Sum of positive amounts across ALL matches (not just this page). */
+  sumInCents: z.number().int(),
+  /** Sum of |negative amounts| across ALL matches. */
+  sumOutCents: z.number().int(),
 });
 export type TransactionListResponse = z.infer<typeof TransactionListResponse>;
 

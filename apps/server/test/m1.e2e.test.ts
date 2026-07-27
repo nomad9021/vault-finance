@@ -6,6 +6,7 @@ import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
+import { currentTotpCode } from "../src/modules/auth/totp.js";
 
 /**
  * M1 exit criteria, end to end against a real Postgres:
@@ -352,5 +353,94 @@ describe("auth", () => {
       payload: { refreshToken: rt },
     });
     expect(refresh.statusCode).toBe(401);
+  });
+});
+
+describe("two-factor (TOTP)", () => {
+  let accessToken: string;
+  let userId: string;
+
+  it("enrolls, then gates login on a valid code", async () => {
+    const profiles = await app.inject({ method: "GET", url: "/api/v1/auth/profiles" });
+    userId = profiles.json().profiles[0].id;
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { userId, password: OWNER.ownerPassword, deviceName: "2FA setup", platform: "linux" },
+    });
+    expect(login.statusCode).toBe(200);
+    accessToken = login.json().accessToken;
+
+    const setup = await app.inject({ method: "POST", url: "/api/v1/auth/2fa/setup", headers: authHeader(accessToken) });
+    expect(setup.statusCode).toBe(200);
+    const secret = setup.json().secret as string;
+    expect(setup.json().otpauthUri).toContain("otpauth://totp/");
+
+    const enable = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/2fa/enable",
+      headers: authHeader(accessToken),
+      payload: { code: currentTotpCode(secret) },
+    });
+    expect(enable.statusCode).toBe(204);
+    expect(
+      (await app.inject({ method: "GET", url: "/api/v1/auth/2fa/status", headers: authHeader(accessToken) })).json(),
+    ).toEqual({ enabled: true });
+
+    // Right password, no code → TOTP_REQUIRED (never reveals it was the code that failed vs password).
+    const noCode = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { userId, password: OWNER.ownerPassword, deviceName: "x", platform: "linux" },
+    });
+    expect(noCode.statusCode).toBe(401);
+    expect(noCode.json().error.code).toBe("TOTP_REQUIRED");
+
+    // Wrong code → TOTP_INVALID.
+    const wrong = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { userId, password: OWNER.ownerPassword, deviceName: "x", platform: "linux", totpCode: "000000" },
+    });
+    expect(wrong.statusCode).toBe(401);
+    expect(wrong.json().error.code).toBe("TOTP_INVALID");
+
+    // Correct password + code → in.
+    const ok = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { userId, password: OWNER.ownerPassword, deviceName: "x", platform: "linux", totpCode: currentTotpCode(secret) },
+    });
+    expect(ok.statusCode).toBe(200);
+  });
+
+  it("disables 2FA only with the account password", async () => {
+    const badPw = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/2fa/disable",
+      headers: authHeader(accessToken),
+      payload: { password: "not-the-password" },
+    });
+    expect(badPw.statusCode).toBe(401);
+
+    const disable = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/2fa/disable",
+      headers: authHeader(accessToken),
+      payload: { password: OWNER.ownerPassword },
+    });
+    expect(disable.statusCode).toBe(204);
+    expect(
+      (await app.inject({ method: "GET", url: "/api/v1/auth/2fa/status", headers: authHeader(accessToken) })).json(),
+    ).toEqual({ enabled: false });
+
+    // With 2FA off, a code is no longer needed.
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { userId, password: OWNER.ownerPassword, deviceName: "post-2fa", platform: "linux" },
+    });
+    expect(login.statusCode).toBe(200);
   });
 });

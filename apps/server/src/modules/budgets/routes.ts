@@ -1,12 +1,14 @@
 import {
+  type BudgetPlan,
   BudgetListQuery,
   CreateBudgetRequest,
+  UpdateBudgetPlanRequest,
   UpdateBudgetRequest,
   type Budget as ApiBudget,
 } from "@vault/shared";
 import { and, eq, gte, lt, lte, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { budgets, categories, transactions } from "../../db/schema.js";
+import { budgetPlan, budgets, categories, transactions } from "../../db/schema.js";
 import { AppError, notFound } from "../../errors.js";
 
 function toApi(row: typeof budgets.$inferSelect): ApiBudget {
@@ -131,5 +133,24 @@ export default async function budgetRoutes(app: FastifyInstance) {
       .returning({ id: budgets.id });
     if (!deleted) throw notFound("Budget");
     return reply.status(204).send();
+  });
+
+  // ── Budget planner: the single fixed monthly income (id = 1 singleton) the
+  // planner Sankey allocates across category budgets. ──
+  app.get("/budget-plan", async (): Promise<BudgetPlan> => {
+    const row = await app.db.query.budgetPlan.findFirst({ where: eq(budgetPlan.id, 1) });
+    return { plannedIncomeCents: row?.plannedIncomeCents ?? 0 };
+  });
+
+  app.put("/budget-plan", async (request): Promise<BudgetPlan> => {
+    const body = UpdateBudgetPlanRequest.parse(request.body);
+    await app.db
+      .insert(budgetPlan)
+      .values({ id: 1, plannedIncomeCents: body.plannedIncomeCents, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: budgetPlan.id,
+        set: { plannedIncomeCents: body.plannedIncomeCents, updatedAt: new Date() },
+      });
+    return body;
   });
 }

@@ -13,8 +13,14 @@ export const DEFAULT_CATEGORIES: ReadonlyArray<{
   name: string;
   icon: string;
   color: string;
+  kind?: "income" | "expense";
 }> = [
-  { name: "Income", icon: "coins", color: "#3ecf8e" },
+  // Income sources (kind: income) — itemized on the Income page.
+  { name: "Salary", icon: "coins", color: "#3ecf8e", kind: "income" },
+  { name: "Side Income", icon: "briefcase", color: "#43cfc0", kind: "income" },
+  { name: "Gifts", icon: "gift", color: "#ec6a9c", kind: "income" },
+  { name: "Interest", icon: "percent", color: "#6f8ef2", kind: "income" },
+  // Expense categories (kind: expense) — shape the spending Sankey.
   { name: "Mortgage & Rent", icon: "house", color: "#ef8354" },
   { name: "Groceries", icon: "shopping-cart", color: "#3ecf8e" },
   { name: "Dining Out", icon: "fork-knife", color: "#ec6a9c" },
@@ -31,8 +37,22 @@ export const DEFAULT_CATEGORIES: ReadonlyArray<{
 ];
 
 export async function seedDefaultCategories(db: Insertable): Promise<void> {
+  // sortOrder is per-kind, so income and expense each start their own sequence.
+  const perKind: Record<string, number> = { income: 0, expense: 0 };
   await db
     .insert(categories)
-    .values(DEFAULT_CATEGORIES.map((c) => ({ ...c, isSystem: true })))
+    .values(
+      DEFAULT_CATEGORIES.map((c) => {
+        const kind = c.kind ?? "expense";
+        return {
+          name: c.name,
+          icon: c.icon,
+          color: c.color,
+          kind,
+          sortOrder: perKind[kind]!++,
+          isSystem: true,
+        };
+      }),
+    )
     .onConflictDoNothing();
 }

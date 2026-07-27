@@ -9,6 +9,7 @@ import { Button, Card, Dialog, Field, Select, Spinner, Tag } from "@vault/ui";
 import { useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
+import type { Navigate } from "./AppShell.js";
 
 function currentMonth(): string {
   return new Date().toISOString().slice(0, 7);
@@ -29,7 +30,7 @@ function monthLabel(month: string): string {
   });
 }
 
-export function BudgetsPage() {
+export function BudgetsPage({ onNavigate }: { onNavigate: Navigate }) {
   const client = useApp((s) => s.client);
   const [month, setMonth] = useState(currentMonth());
 
@@ -47,16 +48,7 @@ export function BudgetsPage() {
   const pctUsed = totalBudgeted > 0 ? Math.round((totalSpent / totalBudgeted) * 100) : 0;
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 16,
-        maxWidth: 860,
-        margin: "0 auto",
-        animation: "fadeUp .3s both",
-      }}
-    >
+    <div className="page" style={{ maxWidth: 920 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <Button variant="ghost" onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month">
           ←
@@ -156,6 +148,9 @@ export function BudgetsPage() {
                 budget={b}
                 category={categoryById.get(b.categoryId)}
                 onClick={() => setEditing(b)}
+                onViewTransactions={() =>
+                  onNavigate("transactions", { categoryId: b.categoryId })
+                }
               />
             ))
           )}
@@ -183,18 +178,23 @@ function BudgetBar({
   budget,
   category,
   onClick,
+  onViewTransactions,
 }: {
   budget: BudgetWithSpend;
   category: Category | undefined;
   onClick: () => void;
+  onViewTransactions: () => void;
 }) {
   const pct = budget.amountCents > 0 ? budget.spentCents / budget.amountCents : 0;
   const over = pct > 1;
   const color = category?.color ?? "var(--color-accent)";
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onClick()}
       style={{
         display: "block",
         width: "100%",
@@ -229,13 +229,34 @@ function BudgetBar({
           />
           {category?.name ?? "Unknown category"}
         </span>
-        <span
-          style={{
-            color: over ? "var(--color-negative)" : "var(--color-neutral-500)",
-          }}
-        >
-          {formatCents(budget.spentCents)} of {formatCents(budget.amountCents)}
-          {over && " — over"}
+        <span style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+          <span
+            style={{
+              color: over ? "var(--color-negative)" : "var(--color-neutral-500)",
+            }}
+          >
+            {formatCents(budget.spentCents)} of {formatCents(budget.amountCents)}
+            {over && " — over"}
+          </span>
+          <button
+            title="View this category's transactions"
+            onClick={(e) => {
+              e.stopPropagation();
+              onViewTransactions();
+            }}
+            style={{
+              border: 0,
+              background: "none",
+              cursor: "pointer",
+              font: "inherit",
+              fontSize: 12,
+              fontWeight: 600,
+              color: "var(--color-neutral-500)",
+              padding: 0,
+            }}
+          >
+            Transactions →
+          </button>
         </span>
       </div>
       <div
@@ -256,7 +277,7 @@ function BudgetBar({
           }}
         />
       </div>
-    </button>
+    </div>
   );
 }
 

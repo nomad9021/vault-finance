@@ -5,6 +5,8 @@ import {
   ProfilesResponse,
   SessionListResponse,
   TokenPair,
+  TotpSetupResponse,
+  TotpStatusResponse,
   type LoginByIdRequest,
   type LoginRequest,
 } from "../schemas/auth.js";
@@ -34,7 +36,9 @@ import {
 import {
   Budget,
   BudgetListResponse,
+  BudgetPlan,
   type CreateBudgetRequest,
+  type UpdateBudgetPlanRequest,
   type UpdateBudgetRequest,
 } from "../schemas/budgets.js";
 import {
@@ -46,7 +50,7 @@ import {
   type ChatRequest,
   type UpdateAiSettingsRequest,
 } from "../schemas/ai.js";
-import { CashflowSummaryResponse, SankeyResponse } from "../schemas/cashflow.js";
+import { CashflowSummaryResponse, SankeyResponse, TrendsResponse } from "../schemas/cashflow.js";
 import {
   AutocategorizeResponse,
   CategorizationRule,
@@ -70,6 +74,13 @@ import {
   type CreateGoalRequest,
   type UpdateGoalRequest,
 } from "../schemas/goals.js";
+import {
+  Bill,
+  BillListResponse,
+  type CreateBillRequest,
+  type UpdateBillRequest,
+} from "../schemas/bills.js";
+import { DebtPlan, type UpdateDebtPlanRequest } from "../schemas/debts.js";
 import { MonthlyReport, YearlyReport } from "../schemas/reports.js";
 
 /**
@@ -319,6 +330,20 @@ export class ApiClient {
     return this.request(z.undefined(), "DELETE", `/auth/sessions/${id}`);
   }
 
+  // ── Two-factor auth ──
+  totpStatus() {
+    return this.request(TotpStatusResponse, "GET", "/auth/2fa/status");
+  }
+  totpSetup() {
+    return this.request(TotpSetupResponse, "POST", "/auth/2fa/setup");
+  }
+  totpEnable(code: string) {
+    return this.request(z.undefined(), "POST", "/auth/2fa/enable", { code });
+  }
+  totpDisable(password: string) {
+    return this.request(z.undefined(), "POST", "/auth/2fa/disable", { password });
+  }
+
   // ── Accounts ──
   accounts(includeArchived = false) {
     return this.request(
@@ -349,6 +374,9 @@ export class ApiClient {
   }
   deleteCategory(id: string) {
     return this.request(z.undefined(), "DELETE", `/categories/${id}`);
+  }
+  moveCategory(id: string, direction: "up" | "down") {
+    return this.request(CategoryListResponse, "POST", `/categories/${id}/move`, { direction });
   }
 
   // ── Auto-categorization (local rules) ──
@@ -515,6 +543,9 @@ export class ApiClient {
   cashflowSummary(months = 6) {
     return this.request(CashflowSummaryResponse, "GET", `/cashflow/summary?months=${months}`);
   }
+  trends(months = 6) {
+    return this.request(TrendsResponse, "GET", `/cashflow/trends?months=${months}`);
+  }
   sankey(month?: string) {
     return this.request(
       SankeyResponse,
@@ -549,6 +580,31 @@ export class ApiClient {
   }
   deleteGoal(id: string) {
     return this.request(z.undefined(), "DELETE", `/goals/${id}`);
+  }
+
+  // ── Bills ──
+  bills() {
+    return this.request(BillListResponse, "GET", "/bills");
+  }
+  createBill(body: CreateBillRequest) {
+    return this.request(Bill, "POST", "/bills", body);
+  }
+  updateBill(id: string, body: UpdateBillRequest) {
+    return this.request(Bill, "PATCH", `/bills/${id}`, body);
+  }
+  contributeBill(id: string, deltaCents: number) {
+    return this.request(Bill, "POST", `/bills/${id}/contribute`, { deltaCents });
+  }
+  deleteBill(id: string) {
+    return this.request(z.undefined(), "DELETE", `/bills/${id}`);
+  }
+
+  // ── Debt plan ──
+  debtPlan() {
+    return this.request(DebtPlan, "GET", "/debt-plan");
+  }
+  updateDebtPlan(body: UpdateDebtPlanRequest) {
+    return this.request(DebtPlan, "PUT", "/debt-plan", body);
   }
 
   // ── Reports ──
@@ -606,5 +662,11 @@ export class ApiClient {
   }
   deleteBudget(id: string) {
     return this.request(z.undefined(), "DELETE", `/budgets/${id}`);
+  }
+  budgetPlan() {
+    return this.request(BudgetPlan, "GET", "/budget-plan");
+  }
+  updateBudgetPlan(body: UpdateBudgetPlanRequest) {
+    return this.request(BudgetPlan, "PUT", "/budget-plan", body);
   }
 }
