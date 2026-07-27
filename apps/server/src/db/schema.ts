@@ -6,6 +6,7 @@ import {
   index,
   inet,
   integer,
+  jsonb,
   numeric,
   pgTable,
   text,
@@ -31,6 +32,10 @@ export const users = pgTable("users", {
   displayName: text("display_name").notNull(),
   avatarColor: text("avatar_color").notNull(),
   role: text("role", { enum: ["owner", "member"] }).notNull(),
+  /** Base32 TOTP secret. Set during 2FA setup; kept even while pending enable. */
+  totpSecret: text("totp_secret"),
+  /** True once the user has confirmed a code — login then requires TOTP. */
+  totpEnabled: boolean("totp_enabled").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -70,6 +75,10 @@ export const categories = pgTable("categories", {
     (): AnyPgColumn => categories.id,
     { onDelete: "set null" },
   ),
+  /** Manual display order among siblings (same parent + kind); lower sorts first. */
+  sortOrder: integer("sort_order").notNull().default(0),
+  /** "expense" categories shape the spending Sankey; "income" ones are income sources. */
+  kind: text("kind").notNull().default("expense"),
   isSystem: boolean("is_system").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -259,6 +268,55 @@ export const savingsGoals = pgTable("savings_goals", {
   note: text("note"),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── bills ──
+// Recurring bills the household tracks: when each is due, its amount, and how
+// much has been set aside for it (a sinking fund). savedCents is tracked
+// manually via contributions.
+
+export const bills = pgTable("bills", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
+  savedCents: bigint("saved_cents", { mode: "number" }).notNull().default(0),
+  /** Day of month the bill is due (1–31). */
+  dueDay: integer("due_day").notNull().default(1),
+  /** monthly | quarterly | yearly | weekly */
+  cadence: text("cadence").notNull().default("monthly"),
+  autopay: boolean("autopay").notNull().default(false),
+  accountId: uuid("account_id").references(() => accounts.id, { onDelete: "set null" }),
+  categoryId: uuid("category_id").references(() => categories.id, { onDelete: "set null" }),
+  color: text("color").notNull().default("#6f8ef2"),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── debt plan ──
+// Single-row (id = 1) persisted state for the "Get out of debt" planner so the
+// gear-window edits survive reloads and the cash-flow Sankey can read the same
+// numbers. `overrides` is keyed by liability accountId; `manual` holds debts the
+// user typed in that aren't backed by an account.
+
+type DebtOverride = { name?: string; balanceCents?: number; apr?: number; minCents?: number };
+type ManualDebt = { id: string; name: string; balanceCents: number; apr: number; minCents: number };
+
+export const debtPlan = pgTable("debt_plan", {
+  id: integer("id").primaryKey().default(1),
+  extraCents: bigint("extra_cents", { mode: "number" }).notNull().default(20000),
+  strategy: text("strategy").notNull().default("avalanche"),
+  overrides: jsonb("overrides").$type<Record<string, DebtOverride>>().notNull().default({}),
+  manual: jsonb("manual").$type<ManualDebt[]>().notNull().default([]),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Single-row (id = 1) budget-planner state: the fixed monthly income the user
+// allocates across category budgets on the budget-planner Sankey.
+export const budgetPlan = pgTable("budget_plan", {
+  id: integer("id").primaryKey().default(1),
+  plannedIncomeCents: bigint("planned_income_cents", { mode: "number" }).notNull().default(0),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -78,7 +78,7 @@ beforeAll(async () => {
   const byName = new Map(
     cats.json().categories.map((c: { name: string; id: string }) => [c.name, c.id]),
   );
-  incomeCatId = byName.get("Income") as string;
+  incomeCatId = byName.get("Salary") as string; // seeded income-kind source
   groceriesId = byName.get("Groceries") as string;
 
   const checking = await app.inject({
@@ -140,7 +140,7 @@ describe("cashflow", () => {
     expect(months[1]).toMatchObject({ month: THIS_MONTH, spendingCents: 30_000 });
   });
 
-  it("builds balanced multi-level sankey data with a Saved leaf", async () => {
+  it("builds multi-level sankey data grouped by income source", async () => {
     const res = await app.inject({
       method: "GET",
       url: `/api/v1/cashflow/sankey?month=${THIS_MONTH}`,
@@ -150,15 +150,22 @@ describe("cashflow", () => {
     expect(body.totalIncomeCents).toBe(400_000);
     expect(body.totalSpendingCents).toBe(30_000);
 
-    // Income is grouped by the account it landed in (here, "Checking").
+    // Income is grouped by its source (income-kind category, here "Salary").
     const income = body.nodes.find((n: { kind: string }) => n.kind === "income");
-    expect(income).toMatchObject({ label: "Checking", valueCents: 400_000, depth: 0 });
-    expect(income.accountId).toBeTruthy();
+    expect(income).toMatchObject({
+      id: `incat:${incomeCatId}`,
+      label: "Salary",
+      valueCents: 400_000,
+      depth: 0,
+      categoryId: incomeCatId,
+    });
     const hub = body.nodes.find((n: { kind: string }) => n.kind === "hub");
     expect(hub).toMatchObject({ valueCents: 400_000, depth: 1 });
 
+    // Unspent income (income − spending) is drawn as a "saved" node so the hub
+    // balances: here 400k in − 30k spent = 370k saved.
     const saved = body.nodes.find((n: { id: string }) => n.id === "saved");
-    expect(saved).toMatchObject({ valueCents: 370_000, depth: 2 }); // diagram balances
+    expect(saved).toMatchObject({ valueCents: 370_000, kind: "saved", depth: 2 });
     const groceries = body.nodes.find((n: { id: string }) => n.id === `cat:${groceriesId}`);
     expect(groceries).toMatchObject({ valueCents: 30_000, categoryId: groceriesId, depth: 2 });
 
@@ -223,6 +230,187 @@ describe("cashflow", () => {
     await app.inject({ method: "DELETE", url: `/api/v1/transactions/${txnId}`, headers: auth });
     await app.inject({ method: "DELETE", url: `/api/v1/categories/${childId}`, headers: auth });
     await app.inject({ method: "DELETE", url: `/api/v1/categories/${parentId}`, headers: auth });
+  });
+
+  it("adds recurring bills and debt minimums as their own branches", async () => {
+    const bill = await app.inject({
+      method: "POST",
+      url: "/api/v1/bills",
+      headers: auth,
+      payload: { name: "Rent", amountCents: 120_000, dueDay: 1, cadence: "monthly", color: "#6f8ef2" },
+    });
+    expect(bill.statusCode).toBe(201);
+    const billId = bill.json().id;
+
+    // A credit card with a $3,000 balance → min payment = max($25, 2%) = $60.
+    const card = await app.inject({
+      method: "POST",
+      url: "/api/v1/accounts",
+      headers: auth,
+      payload: { name: "Visa", type: "credit_card", balanceCents: -300_000 },
+    });
+    const cardId = card.json().id;
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/v1/cashflow/sankey?month=${THIS_MONTH}`,
+      headers: auth,
+    });
+    const body = res.json();
+
+    // Bills branch: hub → "Bills" → one leaf per bill (monthly-normalized).
+    expect(body.nodes.find((n: { id: string }) => n.id === "bills:hub")).toMatchObject({
+      label: "Bills",
+      valueCents: 120_000,
+      depth: 2,
+    });
+    expect(body.nodes.find((n: { id: string }) => n.id === `bill:${billId}`)).toMatchObject({
+      label: "Rent",
+      valueCents: 120_000,
+      depth: 3,
+    });
+    // Debt branch: leaf carries its accountId for drill-in.
+    expect(body.nodes.find((n: { id: string }) => n.id === "debt:hub")).toMatchObject({
+      label: "Debt payments",
+      valueCents: 6_000,
+      depth: 2,
+    });
+    expect(body.nodes.find((n: { id: string }) => n.id === `debtacct:${cardId}`)).toMatchObject({
+      label: "Visa",
+      valueCents: 6_000,
+      accountId: cardId,
+      depth: 3,
+    });
+    expect(body.links).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ from: "hub", to: "bills:hub", valueCents: 120_000 }),
+        expect.objectContaining({ from: "bills:hub", to: `bill:${billId}`, valueCents: 120_000 }),
+        expect.objectContaining({ from: "hub", to: "debt:hub", valueCents: 6_000 }),
+        expect.objectContaining({ from: "debt:hub", to: `debtacct:${cardId}`, valueCents: 6_000 }),
+      ]),
+    );
+    // Planned outflows are additive branches — they don't inflate actual spending.
+    expect(body.totalSpendingCents).toBe(30_000);
+
+    // Clean up (DELETE archives, then removes) so later fixtures stay intact.
+    await app.inject({ method: "DELETE", url: `/api/v1/bills/${billId}`, headers: auth });
+    await app.inject({ method: "DELETE", url: `/api/v1/accounts/${cardId}`, headers: auth });
+    await app.inject({ method: "DELETE", url: `/api/v1/accounts/${cardId}`, headers: auth });
+  });
+});
+
+describe("debt plan", () => {
+  it("persists planner settings and reflects overrides + manual debts in the sankey", async () => {
+    // Defaults before anything is saved.
+    const initial = await app.inject({ method: "GET", url: "/api/v1/debt-plan", headers: auth });
+    expect(initial.json()).toMatchObject({
+      extraCents: 20000,
+      strategy: "avalanche",
+      overrides: {},
+      manual: [],
+    });
+
+    const card = await app.inject({
+      method: "POST",
+      url: "/api/v1/accounts",
+      headers: auth,
+      payload: { name: "Amex", type: "credit_card", balanceCents: -500_000 },
+    });
+    const cardId = card.json().id;
+
+    const saved = await app.inject({
+      method: "PUT",
+      url: "/api/v1/debt-plan",
+      headers: auth,
+      payload: {
+        extraCents: 30000,
+        strategy: "snowball",
+        overrides: { [cardId]: { name: "Amex Gold", minCents: 15000 } },
+        manual: [{ id: "m1", name: "Family loan", balanceCents: 200_000, apr: 0, minCents: 10000 }],
+      },
+    });
+    expect(saved.statusCode).toBe(200);
+
+    // Reloads the saved state verbatim.
+    const reload = await app.inject({ method: "GET", url: "/api/v1/debt-plan", headers: auth });
+    expect(reload.json()).toMatchObject({
+      extraCents: 30000,
+      strategy: "snowball",
+      overrides: { [cardId]: { name: "Amex Gold", minCents: 15000 } },
+      manual: [{ id: "m1", name: "Family loan", minCents: 10000 }],
+    });
+
+    // The Sankey debt branch uses the overridden minimum (not the estimate) and
+    // includes the manual debt — the two views share one source of truth.
+    const sankey = await app.inject({
+      method: "GET",
+      url: `/api/v1/cashflow/sankey?month=${THIS_MONTH}`,
+      headers: auth,
+    });
+    const body = sankey.json();
+    expect(body.nodes.find((n: { id: string }) => n.id === `debtacct:${cardId}`)).toMatchObject({
+      label: "Amex Gold",
+      valueCents: 15000,
+      accountId: cardId,
+    });
+    expect(body.nodes.find((n: { id: string }) => n.id === "debtmanual:m1")).toMatchObject({
+      label: "Family loan",
+      valueCents: 10000,
+    });
+    expect(body.nodes.find((n: { id: string }) => n.id === "debt:hub")).toMatchObject({
+      valueCents: 25000,
+    });
+
+    // Reset so later fixtures/tests see a clean plan and account list.
+    await app.inject({
+      method: "PUT",
+      url: "/api/v1/debt-plan",
+      headers: auth,
+      payload: { extraCents: 20000, strategy: "avalanche", overrides: {}, manual: [] },
+    });
+    await app.inject({ method: "DELETE", url: `/api/v1/accounts/${cardId}`, headers: auth });
+    await app.inject({ method: "DELETE", url: `/api/v1/accounts/${cardId}`, headers: auth });
+  });
+});
+
+describe("budget plan", () => {
+  it("defaults to zero and persists the planned monthly income", async () => {
+    const initial = await app.inject({ method: "GET", url: "/api/v1/budget-plan", headers: auth });
+    expect(initial.json()).toEqual({ plannedIncomeCents: 0 });
+
+    const saved = await app.inject({
+      method: "PUT",
+      url: "/api/v1/budget-plan",
+      headers: auth,
+      payload: { plannedIncomeCents: 500_000 },
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json()).toEqual({ plannedIncomeCents: 500_000 });
+
+    const reload = await app.inject({ method: "GET", url: "/api/v1/budget-plan", headers: auth });
+    expect(reload.json()).toEqual({ plannedIncomeCents: 500_000 });
+
+    await app.inject({
+      method: "PUT",
+      url: "/api/v1/budget-plan",
+      headers: auth,
+      payload: { plannedIncomeCents: 0 },
+    });
+  });
+});
+
+describe("trends", () => {
+  it("returns monthly income/spending and a reconstructed net-worth series", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/v1/cashflow/trends?months=2", headers: auth });
+    expect(res.statusCode).toBe(200);
+    const pts = res.json().points;
+    expect(pts).toHaveLength(2);
+    const [last, cur] = pts;
+    expect(last).toMatchObject({ month: LAST_MONTH, incomeCents: 400_000, spendingCents: 50_000 });
+    expect(cur).toMatchObject({ month: THIS_MONTH, incomeCents: 400_000, spendingCents: 30_000 });
+    // Net worth rises from one month to the next by that month's net flow
+    // (income − spending), independent of the absolute balance.
+    expect(cur.netWorthCents - last.netWorthCents).toBe(370_000);
   });
 });
 

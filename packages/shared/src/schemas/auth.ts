@@ -7,6 +7,8 @@ export const LoginRequest = z.object({
   password: z.string().min(1),
   deviceName: z.string().min(1).max(100),
   platform: Platform,
+  /** 6-digit TOTP code, required only when the account has 2FA enabled. */
+  totpCode: z.string().optional(),
 });
 export type LoginRequest = z.infer<typeof LoginRequest>;
 
@@ -68,8 +70,35 @@ export const LoginByIdRequest = z.object({
   password: z.string().min(1),
   deviceName: z.string().min(1).max(100),
   platform: Platform,
+  /** 6-digit TOTP code, required only when the account has 2FA enabled. */
+  totpCode: z.string().optional(),
 });
 export type LoginByIdRequest = z.infer<typeof LoginByIdRequest>;
+
+// ── Two-factor authentication (TOTP) ──
+
+export const TotpStatusResponse = z.object({
+  enabled: z.boolean(),
+});
+export type TotpStatusResponse = z.infer<typeof TotpStatusResponse>;
+
+/** Returned by setup: the base32 secret + an otpauth:// URI for the app/QR. */
+export const TotpSetupResponse = z.object({
+  secret: z.string(),
+  otpauthUri: z.string(),
+});
+export type TotpSetupResponse = z.infer<typeof TotpSetupResponse>;
+
+export const TotpEnableRequest = z.object({
+  code: z.string().min(6).max(10),
+});
+export type TotpEnableRequest = z.infer<typeof TotpEnableRequest>;
+
+export const TotpDisableRequest = z.object({
+  /** Re-auth: confirm the account password to turn 2FA off. */
+  password: z.string().min(1),
+});
+export type TotpDisableRequest = z.infer<typeof TotpDisableRequest>;
 
 /** Claims carried in the access JWT. */
 export const AccessTokenClaims = z.object({

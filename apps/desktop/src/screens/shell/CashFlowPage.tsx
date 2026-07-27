@@ -1,5 +1,5 @@
 import { formatCentsWhole, type CashflowSummaryResponse } from "@vault/shared";
-import { Spinner } from "@vault/ui";
+import { MetricCard, Panel, Spinner } from "@vault/ui";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 
@@ -33,37 +33,12 @@ export function CashFlowPage() {
   const totalSaved = withData.reduce((s, m) => s + Math.max(0, m.netCents), 0);
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 16,
-        maxWidth: 980,
-        margin: "0 auto",
-        animation: "fadeUp .3s both",
-      }}
-    >
-      <div
-        style={{
-          background: "var(--color-surface)",
-          border: "1px solid var(--color-divider)",
-          borderRadius: 12,
-          boxShadow: "var(--shadow-sm)",
-        }}
-      >
-        <div
-          style={{
-            padding: "14px 18px 4px",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "baseline",
-            flexWrap: "wrap",
-            gap: 8,
-          }}
-        >
-          <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 14 }}>
-            Income vs. spending — last 6 months
-          </div>
+    <div className="page">
+      <Panel
+        flush
+        title="Income vs. spending"
+        subtitle="Last 6 months"
+        actions={
           <div style={{ display: "flex", gap: 14, fontSize: 11.5, color: "var(--color-neutral-500)" }}>
             <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
               <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-positive)" }} />
@@ -74,10 +49,11 @@ export function CashFlowPage() {
               Out
             </span>
           </div>
-        </div>
+        }
+      >
         <div
           style={{
-            padding: 18,
+            padding: "8px 18px 18px",
             display: "flex",
             gap: 14,
             alignItems: "flex-end",
@@ -145,53 +121,23 @@ export function CashFlowPage() {
             </div>
           ))}
         </div>
-      </div>
+      </Panel>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: 14,
-        }}
-      >
-        <Stat label="Avg monthly net" value={formatCentsWhole(avgNet)} sub="months with activity" />
-        <Stat
-          label="Avg savings rate"
-          value={avgRate !== null ? `${Math.round(avgRate * 100)}%` : "—"}
-          sub="of income kept"
-        />
-        <Stat label="Saved over period" value={formatCentsWhole(totalSaved)} sub="sum of positive months" />
+      <div className="grid">
+        <div style={{ gridColumn: "span 4" }}>
+          <MetricCard label="Avg monthly net" value={formatCentsWhole(avgNet)} hint="months with activity" />
+        </div>
+        <div style={{ gridColumn: "span 4" }}>
+          <MetricCard
+            label="Avg savings rate"
+            value={avgRate !== null ? `${Math.round(avgRate * 100)}%` : "—"}
+            hint="of income kept"
+          />
+        </div>
+        <div style={{ gridColumn: "span 4" }}>
+          <MetricCard label="Saved over period" value={formatCentsWhole(totalSaved)} hint="sum of positive months" />
+        </div>
       </div>
-    </div>
-  );
-}
-
-function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
-  return (
-    <div
-      style={{
-        background: "var(--color-surface)",
-        border: "1px solid var(--color-divider)",
-        borderRadius: 12,
-        padding: "16px 18px",
-        boxShadow: "var(--shadow-sm)",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          letterSpacing: ".04em",
-          textTransform: "uppercase",
-          color: "var(--color-neutral-500)",
-          fontWeight: 600,
-        }}
-      >
-        {label}
-      </div>
-      <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 22, marginTop: 2 }}>
-        {value}
-      </div>
-      <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>{sub}</div>
     </div>
   );
 }

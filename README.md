@@ -16,12 +16,14 @@ nothing ever leaves your hardware.
 
 | Doc | What it covers |
 |---|---|
+| [how-it-works.md](docs/how-it-works.md) | Feature tour — what each screen does and how the pieces fit |
 | [architecture.md](docs/architecture.md) | System overview, network diagram, where the future iOS client fits |
 | [folder-structure.md](docs/folder-structure.md) | Monorepo layout |
 | [database-schema.md](docs/database-schema.md) | PostgreSQL schema |
 | [api-design.md](docs/api-design.md) | REST API, auth flows, streaming |
 | [roadmap.md](docs/roadmap.md) | Milestones M1–M6 |
 | [self-hosting.md](docs/self-hosting.md) | Deploying and operating your server |
+| [operations.md](docs/operations.md) | Data location, 2FA, backups, lockout recovery, rebuild/deploy |
 | [docs/adr/](docs/adr/) | Architecture decision records |
 
 ## Development

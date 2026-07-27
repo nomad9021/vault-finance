@@ -43,14 +43,16 @@ export interface SankeyProps {
 
 // The viewBox height is computed per-render (see layout): the diagram grows to
 // fit its tallest column so nothing is clipped, using BASE_H as a floor.
-const BASE_H = 640;
-const W = 1040;
-const NW = 4;
-const PAD = 30;
-const X0 = 176; // x of the leftmost (depth 0) column
-const X1 = 858; // x of the rightmost column
-const GAP = 12;
-const MIN_NODE = 4;
+const BASE_H = 600;
+const W = 1240;
+const NW = 6;
+const PAD = 40;
+const X0 = 64; // x of the leftmost (depth 0) column bar
+const X1 = 1176; // x of the rightmost column bar (labels sit to its left)
+const GAP = 14; // vertical gap between node slots
+const MIN_NODE = 4; // min bar height (thin sliver for tiny/$0 nodes)
+const ROW_MIN = 34; // min slot height so a two-line label always fits without overlap
+const MIN_LINK = 2; // hairline connector for $0 links so empty categories stay attached
 
 interface PlacedNode extends SankeyNodeDatum {
   x: number;
@@ -109,11 +111,13 @@ function layout(nodes: SankeyNodeDatum[], links: SankeyLinkDatum[]) {
   }
   const scale = (BASE_H - 2 * PAD) / maxColSum;
 
-  // Grow the viewBox so the tallest column (bars + gaps + min-height nodes)
-  // always fits — otherwise it overflows and gets clipped top and bottom.
+  // Each node occupies a slot at least ROW_MIN tall so its two-line label always
+  // has room — the value-proportional bar is centered inside that slot. Grow the
+  // viewBox so the tallest column always fits instead of clipping top/bottom.
+  const barHeight = (n: SankeyNodeDatum) => Math.max(MIN_NODE, magnitude(n) * scale);
+  const slotHeight = (n: SankeyNodeDatum) => Math.max(ROW_MIN, barHeight(n));
   const columnHeight = (ns: SankeyNodeDatum[]) =>
-    ns.reduce((s, n) => s + Math.max(MIN_NODE, magnitude(n) * scale), 0) +
-    Math.max(0, ns.length - 1) * GAP;
+    ns.reduce((s, n) => s + slotHeight(n), 0) + Math.max(0, ns.length - 1) * GAP;
   let contentH = 0;
   for (const ns of byDepth.values()) contentH = Math.max(contentH, columnHeight(ns));
   const H = Math.max(BASE_H, Math.ceil(contentH + 2 * PAD));
@@ -146,9 +150,11 @@ function layout(nodes: SankeyNodeDatum[], links: SankeyLinkDatum[]) {
     const totalH = columnHeight(ns);
     let y = (H - totalH) / 2;
     for (const n of ns) {
-      const h = Math.max(MIN_NODE, magnitude(n) * scale);
-      placed.set(n.id, { ...n, x: xFor(d), y, h });
-      y += h + GAP;
+      const slot = slotHeight(n);
+      const h = barHeight(n);
+      // Center the bar within its (possibly taller) label slot.
+      placed.set(n.id, { ...n, x: xFor(d), y: y + (slot - h) / 2, h });
+      y += slot + GAP;
     }
   }
 
@@ -168,7 +174,9 @@ function layout(nodes: SankeyNodeDatum[], links: SankeyLinkDatum[]) {
     const s = placed.get(l.from);
     const t = placed.get(l.to);
     if (!s || !t) continue;
-    const h = l.value * scale;
+    // Empty ($0) categories still get a hairline connector so the link between
+    // the hub and the zero-value node is visible.
+    const h = l.value > 0 ? l.value * scale : MIN_LINK;
     const sy = outCursor.get(l.from) ?? s.y;
     const ty = inCursor.get(l.to) ?? t.y;
     placedLinks.push({ from: l.from, to: l.to, sx: s.x + NW, sy, tx: t.x, ty, t: h });
@@ -197,6 +205,15 @@ export function Sankey({
     const map = new Map<string, string>();
     for (const n of nodes) map.set(n.id, n.color);
     return map;
+  }, [nodes]);
+
+  // Percentages read as each node's share of total income (the hub = 100%),
+  // falling back to the summed income sources if there is no hub node.
+  const rootTotal = useMemo(() => {
+    const hub = nodes.find((n) => n.kind === "hub");
+    if (hub && hub.value > 0) return hub.value;
+    const incomeSum = nodes.filter((n) => n.depth === 0).reduce((s, n) => s + n.value, 0);
+    return incomeSum > 0 ? incomeSum : nodes.reduce((m, n) => Math.max(m, n.value), 0);
   }, [nodes]);
 
   // A flow is tinted by the more specific (deeper) of its two endpoints.
@@ -287,8 +304,15 @@ export function Sankey({
       })}
 
       {geo.nodes.map((n) => {
-        const leftLabel = n.depth === 0;
-        const isHub = n.kind === "hub";
+        // Income sources (leftmost) and the hub label to the RIGHT of their bar;
+        // every spending node labels to the LEFT so the deepest column's captions
+        // grow inward and never run off the right edge.
+        const right = n.depth === 0 || n.kind === "hub";
+        const anchor = right ? "start" : "end";
+        const lx = right ? n.x + NW + 10 : n.x - 10;
+        const cy = n.y + n.h / 2;
+        const pct = rootTotal > 0 ? (n.value / rootTotal) * 100 : 0;
+        const caption = rootTotal > 0 ? `${format(n.value)} (${pct.toFixed(1)}%)` : format(n.value);
         return (
           <g
             key={n.id}
@@ -296,33 +320,13 @@ export function Sankey({
             style={{ cursor: "pointer" }}
             onClick={() => onFocus(focus === n.id ? null : n.id)}
           >
-            <rect x={n.x} y={n.y} width={NW} height={n.h} fill={linkColor(n.id)} />
-            {isHub ? (
-              <text
-                x={n.x + NW / 2}
-                y={n.y - 12}
-                textAnchor="middle"
-                style={{ ...labelStyle, fontSize: 11.5, letterSpacing: ".06em" }}
-              >
-                {n.label.toUpperCase()} · {format(n.value)}
-              </text>
-            ) : leftLabel ? (
-              <>
-                <text x={n.x - 12} y={n.y + n.h / 2 - 3} textAnchor="end" style={labelStyle}>
-                  {n.label}
-                </text>
-                <text x={n.x - 12} y={n.y + n.h / 2 + 13} textAnchor="end" style={mutedStyle}>
-                  {format(n.value)}
-                </text>
-              </>
-            ) : (
-              <text x={n.x + 12} y={n.y + n.h / 2 + 4.5} textAnchor="start" style={labelStyle}>
-                {n.label}
-                <tspan dx={8} style={mutedStyle}>
-                  {format(n.value)}
-                </tspan>
-              </text>
-            )}
+            <rect x={n.x} y={n.y} width={NW} height={n.h} rx={1.5} fill={linkColor(n.id)} />
+            <text x={lx} y={cy - 3} textAnchor={anchor} style={labelStyle}>
+              {n.label}
+            </text>
+            <text x={lx} y={cy + 12} textAnchor={anchor} style={mutedStyle}>
+              {caption}
+            </text>
           </g>
         );
       })}

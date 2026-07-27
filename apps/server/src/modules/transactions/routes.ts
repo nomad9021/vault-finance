@@ -81,10 +81,15 @@ export default async function transactionRoutes(app: FastifyInstance) {
 
     const whereBase = filters.length ? and(...filters) : undefined;
 
-    const [{ count: totalCount }] = (await app.db
-      .select({ count: sql<number>`count(*)::int` })
+    const [agg] = (await app.db
+      .select({
+        count: sql<number>`count(*)::int`,
+        sumIn: sql<string>`coalesce(sum(${transactions.amountCents}) filter (where ${transactions.amountCents} > 0), 0)`,
+        sumOut: sql<string>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)`,
+      })
       .from(transactions)
-      .where(whereBase)) as [{ count: number }];
+      .where(whereBase)) as [{ count: number; sumIn: string; sumOut: string }];
+    const totalCount = agg.count;
 
     let whereWithCursor = whereBase;
     if (query.cursor) {
@@ -112,6 +117,8 @@ export default async function transactionRoutes(app: FastifyInstance) {
       nextCursor:
         rows.length > query.limit && last ? encodeCursor(last.postedAt, last.id) : null,
       totalCount,
+      sumInCents: Number(agg.sumIn),
+      sumOutCents: Number(agg.sumOut),
     };
   });
 

@@ -6,10 +6,12 @@ import {
   parseAmountToCents,
   type Account,
 } from "@vault/shared";
-import { Button, Card, Dialog, Field, Select, Spinner } from "@vault/ui";
+import { Button, Card, Dialog, Field, MetricCard, Panel, Select, Spinner } from "@vault/ui";
 import { useMemo, useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
+import type { Navigate } from "./AppShell.js";
+import { TrendChart, project } from "./TrendChart.js";
 
 const TYPE_ICONS: Record<AccountType, string> = {
   checking: "💳",
@@ -21,56 +23,114 @@ const TYPE_ICONS: Record<AccountType, string> = {
   other: "📁",
 };
 
-const GROUPS: Array<{ title: string; types: AccountType[] }> = [
-  { title: "Cash", types: ["checking", "savings"] },
-  { title: "Credit cards", types: ["credit_card"] },
-  { title: "Investments", types: ["investment"] },
-  { title: "Loans & mortgages", types: ["loan", "mortgage"] },
-  { title: "Other", types: ["other"] },
+const GROUPS: Array<{ title: string; types: AccountType[]; color: string; liability: boolean }> = [
+  { title: "Cash", types: ["checking", "savings"], color: "#3ecf8e", liability: false },
+  { title: "Investments", types: ["investment"], color: "#6f8ef2", liability: false },
+  { title: "Other assets", types: ["other"], color: "#d8b23c", liability: false },
+  { title: "Credit cards", types: ["credit_card"], color: "#ec6a9c", liability: true },
+  { title: "Loans & mortgages", types: ["loan", "mortgage"], color: "#e25c5c", liability: true },
 ];
 
-export function AccountsPage() {
+const COLLAPSE_KEY = "accounts-collapsed";
+function loadCollapsed(): Set<string> {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? "[]") as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
+export function AccountsPage({ onNavigate }: { onNavigate: Navigate }) {
   const client = useApp((s) => s.client);
   const { data, loading, reload } = useData(() => client.accounts(), [client]);
+  const { data: trendData } = useData(() => client.trends(6), [client]);
   const [editing, setEditing] = useState<Account | "new" | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
+
+  const toggleGroup = (title: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      next.has(title) ? next.delete(title) : next.add(title);
+      try {
+        localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...next]));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
 
   const accounts = data?.accounts ?? [];
+  const visibleAccounts = accounts.filter((a) => a.balanceCents !== 0);
   const stats = useMemo(() => {
-    const assets = accounts
-      .filter((a) => !a.isLiability)
-      .reduce((sum, a) => sum + a.balanceCents, 0);
-    const liabilities = accounts
-      .filter((a) => a.isLiability)
-      .reduce((sum, a) => sum + a.balanceCents, 0);
+    const assets = accounts.filter((a) => !a.isLiability).reduce((sum, a) => sum + a.balanceCents, 0);
+    const liabilities = accounts.filter((a) => a.isLiability).reduce((sum, a) => sum + a.balanceCents, 0);
     return { assets, liabilities, netWorth: assets + liabilities };
   }, [accounts]);
+
+  // Per-group subtotals, split into asset and liability allocation bars.
+  const alloc = useMemo(() => {
+    const rows = GROUPS.map((g) => ({
+      ...g,
+      subtotal: accounts.filter((a) => g.types.includes(a.type)).reduce((s, a) => s + a.balanceCents, 0),
+    }));
+    return {
+      assets: rows.filter((r) => !r.liability && r.subtotal > 0),
+      liabilities: rows.filter((r) => r.liability && r.subtotal < 0),
+    };
+  }, [accounts]);
+
+  const nwHistory = (trendData?.points ?? []).map((p) => p.netWorthCents);
+  const nwProjected = project(nwHistory, 3);
+  const nwChange = nwHistory.length >= 2 ? (nwHistory[nwHistory.length - 1] ?? 0) - (nwHistory[0] ?? 0) : 0;
+  const nwPct = nwHistory.length >= 2 ? (nwChange / (Math.abs(nwHistory[0] ?? 0) || 1)) * 100 : 0;
 
   if (loading && !data) {
     return <Spinner label="Loading accounts" />;
   }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 16,
-        maxWidth: 980,
-        margin: "0 auto",
-        animation: "fadeUp .3s both",
-      }}
-    >
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-          gap: 14,
-        }}
-      >
-        <StatCard label="Assets" value={formatCentsWhole(stats.assets)} />
-        <StatCard label="Liabilities" value={formatCentsWhole(stats.liabilities)} />
-        <StatCard label="Net worth" value={formatCentsWhole(stats.netWorth)} />
+    <div className="page">
+      {/* Net-worth hero + assets / liabilities */}
+      <div className="grid">
+        <div style={{ gridColumn: "span 6", minWidth: 0 }}>
+          <MetricCard large label="Net worth" value={formatCentsWhole(stats.netWorth)} hint="assets − liabilities" />
+        </div>
+        <div style={{ gridColumn: "span 3", minWidth: 0 }}>
+          <MetricCard label="Assets" value={formatCentsWhole(stats.assets)} deltaTone="up" />
+        </div>
+        <div style={{ gridColumn: "span 3", minWidth: 0 }}>
+          <MetricCard label="Liabilities" value={formatCentsWhole(stats.liabilities)} deltaTone="down" />
+        </div>
       </div>
+
+      {/* Net-worth performance chart */}
+      {accounts.length > 0 && (
+        <Panel
+          title="Net worth trend"
+          subtitle="Last 6 months · dashed = projected"
+          actions={
+            nwHistory.length >= 2 ? (
+              <span className={`num ${nwChange >= 0 ? "pos" : "neg"}`} style={{ fontWeight: 600, fontSize: 13.5 }}>
+                {nwChange >= 0 ? "▲" : "▼"} {formatCentsWhole(Math.abs(nwChange))} ({nwPct >= 0 ? "+" : ""}{nwPct.toFixed(0)}%)
+              </span>
+            ) : undefined
+          }
+        >
+          <TrendChart history={nwHistory} projected={nwProjected} color="var(--color-positive)" height={150} emptyLabel="Not enough history yet — add transactions to build the trend." />
+        </Panel>
+      )}
+
+      {/* Allocation + liabilities */}
+      {(alloc.assets.length > 0 || alloc.liabilities.length > 0) && (
+        <div className="grid">
+          <div style={{ gridColumn: "span 6", minWidth: 0 }}>
+            <AllocationPanel title="Asset allocation" rows={alloc.assets} total={stats.assets} />
+          </div>
+          <div style={{ gridColumn: "span 6", minWidth: 0 }}>
+            <AllocationPanel title="Liabilities" rows={alloc.liabilities.map((r) => ({ ...r, subtotal: Math.abs(r.subtotal) }))} total={Math.abs(stats.liabilities)} emptyLabel="No debts — you're all assets. 🎉" />
+          </div>
+        </div>
+      )}
 
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <Button variant="primary" onClick={() => setEditing("new")}>
@@ -81,102 +141,102 @@ export function AccountsPage() {
       {accounts.length === 0 ? (
         <Card title="No accounts yet">
           <p className="card-body">
-            Add your checking account, savings, credit cards, and loans to see
-            your full financial picture.
+            Add your checking account, savings, credit cards, and loans to see your full financial picture.
+          </p>
+        </Card>
+      ) : visibleAccounts.length === 0 ? (
+        <Card title="All accounts are at $0">
+          <p className="card-body">
+            Accounts with a zero balance are hidden here. Record a transaction or edit a balance and the account reappears.
           </p>
         </Card>
       ) : (
         GROUPS.map((group) => {
-          const rows = accounts.filter((a) => group.types.includes(a.type));
+          const rows = visibleAccounts.filter((a) => group.types.includes(a.type));
           if (rows.length === 0) return null;
+          const subtotal = rows.reduce((s, a) => s + a.balanceCents, 0);
+          const isCollapsed = collapsed.has(group.title);
           return (
-            <div
+            <Panel
               key={group.title}
-              style={{
-                background: "var(--color-surface)",
-                border: "1px solid var(--color-divider)",
-                borderRadius: 12,
-                boxShadow: "var(--shadow-sm)",
-              }}
-            >
-              <div
-                style={{
-                  padding: "14px 18px 8px",
-                  fontFamily: "var(--font-heading)",
-                  fontWeight: 600,
-                  fontSize: 14,
-                }}
-              >
-                {group.title}
-              </div>
-              <div style={{ padding: "0 18px 10px" }}>
-                {rows.map((account) => (
-                  <button
-                    key={account.id}
-                    onClick={() => setEditing(account)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                      padding: "11px 0",
-                      borderTop:
-                        "1px solid color-mix(in srgb, var(--color-text) 7%, transparent)",
-                      width: "100%",
-                      background: "none",
-                      border: "none",
-                      borderTopStyle: "solid",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      font: "inherit",
-                      color: "inherit",
-                    }}
+              flush
+              title={
+                <button
+                  onClick={() => toggleGroup(group.title)}
+                  aria-expanded={!isCollapsed}
+                  style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: 0, font: "inherit", color: "inherit", cursor: "pointer", padding: 0 }}
+                >
+                  <span
+                    aria-hidden
+                    style={{ display: "inline-flex", transition: "transform var(--dur) var(--ease)", transform: isCollapsed ? "rotate(-90deg)" : "none", color: "var(--color-neutral-500)", fontSize: 11 }}
                   >
-                    <span
-                      aria-hidden="true"
+                    ▼
+                  </span>
+                  <span aria-hidden style={{ width: 8, height: 8, borderRadius: 2, background: group.color }} />
+                  {group.title}
+                  <span style={{ fontSize: 12, color: "var(--color-neutral-500)", fontWeight: 500 }}>· {rows.length}</span>
+                </button>
+              }
+              actions={
+                <span className="num" style={{ fontWeight: 600, fontSize: 14, color: subtotal < 0 ? "var(--color-negative)" : "var(--color-text)" }}>
+                  {formatCentsWhole(subtotal)}
+                </span>
+              }
+            >
+              {!isCollapsed && (
+                <div style={{ padding: "0 var(--card-pad) 10px", animation: "fadeUp var(--dur) var(--ease) both" }}>
+                  {rows.map((account) => (
+                    <div
+                      key={account.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setEditing(account)}
+                      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setEditing(account)}
                       style={{
-                        width: 34,
-                        height: 34,
-                        borderRadius: 9,
-                        background: "var(--color-accent-900)",
                         display: "flex",
                         alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 14,
-                        flex: "none",
+                        gap: 12,
+                        padding: "11px 0",
+                        borderTop: "1px solid color-mix(in srgb, var(--color-text) 7%, transparent)",
+                        width: "100%",
+                        background: "none",
+                        border: "none",
+                        borderTopStyle: "solid",
+                        cursor: "pointer",
+                        textAlign: "left",
+                        font: "inherit",
+                        color: "inherit",
                       }}
                     >
-                      {TYPE_ICONS[account.type]}
-                    </span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 500, fontSize: 13.5 }}>{account.name}</div>
-                      <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
-                        {[
-                          ACCOUNT_TYPE_LABELS[account.type],
-                          account.institution,
-                          account.mask ? `••${account.mask}` : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
+                      <span aria-hidden="true" style={{ width: 34, height: 34, borderRadius: 9, background: "var(--color-accent-900)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flex: "none" }}>
+                        {TYPE_ICONS[account.type]}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 500, fontSize: 13.5 }}>{account.name}</div>
+                        <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
+                          {[ACCOUNT_TYPE_LABELS[account.type], account.institution, account.mask ? `••${account.mask}` : null].filter(Boolean).join(" · ")}
+                        </div>
                       </div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div
-                        style={{
-                          fontWeight: 600,
-                          fontSize: 14,
-                          color:
-                            account.balanceCents < 0
-                              ? "var(--color-negative)"
-                              : "var(--color-text)",
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontWeight: 600, fontSize: 14, color: account.balanceCents < 0 ? "var(--color-negative)" : "var(--color-text)" }}>
+                          {formatCents(account.balanceCents, { currency: account.currency })}
+                        </div>
+                      </div>
+                      <button
+                        title="View this account's transactions"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onNavigate("transactions", { accountId: account.id });
                         }}
+                        style={{ flex: "none", border: "1px solid var(--color-divider)", background: "var(--color-surface)", borderRadius: 7, padding: "4px 9px", fontSize: 11.5, fontWeight: 600, color: "var(--color-neutral-500)", cursor: "pointer", whiteSpace: "nowrap" }}
                       >
-                        {formatCents(account.balanceCents, { currency: account.currency })}
-                      </div>
+                        Transactions →
+                      </button>
                     </div>
-                  </button>
-                ))}
-              </div>
-            </div>
+                  ))}
+                </div>
+              )}
+            </Panel>
           );
         })
       )}
@@ -195,40 +255,46 @@ export function AccountsPage() {
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+/** Horizontal share bars for asset or liability groups. */
+function AllocationPanel({
+  title,
+  rows,
+  total,
+  emptyLabel = "Nothing here yet.",
+}: {
+  title: string;
+  rows: { title: string; color: string; subtotal: number }[];
+  total: number;
+  emptyLabel?: string;
+}) {
   return (
-    <div
-      style={{
-        background: "var(--color-surface)",
-        border: "1px solid var(--color-divider)",
-        borderRadius: 12,
-        padding: "16px 18px",
-        boxShadow: "var(--shadow-sm)",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          letterSpacing: ".04em",
-          textTransform: "uppercase",
-          color: "var(--color-neutral-500)",
-          fontWeight: 600,
-        }}
-      >
-        {label}
-      </div>
-      <div
-        style={{
-          fontFamily: "var(--font-heading)",
-          fontWeight: 600,
-          fontSize: 24,
-          letterSpacing: "-.02em",
-          marginTop: 2,
-        }}
-      >
-        {value}
-      </div>
-    </div>
+    <Panel title={title} subtitle={total > 0 ? formatCentsWhole(total) : undefined}>
+      {rows.length === 0 || total <= 0 ? (
+        <p className="card-meta">{emptyLabel}</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+          {rows.map((r) => {
+            const share = total > 0 ? r.subtotal / total : 0;
+            return (
+              <div key={r.title}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 5 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+                    <span aria-hidden style={{ width: 8, height: 8, borderRadius: 2, background: r.color, flex: "none" }} />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.title}</span>
+                  </span>
+                  <span className="num" style={{ color: "var(--color-neutral-500)", flex: "none" }}>
+                    {formatCentsWhole(r.subtotal)} · {Math.round(share * 100)}%
+                  </span>
+                </div>
+                <div style={{ height: 8, borderRadius: 99, background: "color-mix(in srgb, var(--color-text) 8%, transparent)", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${share * 100}%`, borderRadius: 99, background: r.color, transition: "width .4s var(--ease)" }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Panel>
   );
 }
 

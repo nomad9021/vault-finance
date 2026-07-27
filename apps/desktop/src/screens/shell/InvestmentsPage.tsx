@@ -49,16 +49,7 @@ export function InvestmentsPage({ onNavigate }: { onNavigate: (page: PageId) => 
   }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 16,
-        maxWidth: 980,
-        margin: "0 auto",
-        animation: "fadeUp .3s both",
-      }}
-    >
+    <div className="page">
       <div
         style={{
           display: "grid",

@@ -8,6 +8,8 @@ import { Button, Card, Dialog, Field, Select, Spinner, Tag } from "@vault/ui";
 import { useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
+import type { Navigate } from "./AppShell.js";
+import { DebtCalculator } from "./DebtCalculator.js";
 
 const GOAL_COLORS = ["#3ecf8e", "#43cfc0", "#6f8ef2", "#b47ef0", "#ec6a9c", "#d8b23c"];
 
@@ -20,18 +22,19 @@ function monthLabel(month: string): string {
   });
 }
 
-export function GoalsPage() {
+export function GoalsPage({ onNavigate }: { onNavigate: Navigate }) {
   const client = useApp((s) => s.client);
   const { data, loading, reload } = useData(() => client.goals(), [client]);
-  const { data: accountData } = useData(() => client.accounts(), [client]);
+  const { data: accountData } = useData(() => client.accounts(true), [client]);
   const [editing, setEditing] = useState<Goal | "new" | null>(null);
 
   if (loading && !data) return <Spinner label="Loading goals" />;
   const goals = data?.goals ?? [];
   const accounts = accountData?.accounts ?? [];
+  const accountById = new Map(accounts.map((a) => [a.id, a]));
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", animation: "fadeUp .3s both" }}>
+    <div className="page">
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
         <Button variant="primary" onClick={() => setEditing("new")}>
           + Add goal
@@ -55,10 +58,24 @@ export function GoalsPage() {
           }}
         >
           {goals.map((g) => (
-            <GoalCard key={g.id} goal={g} onClick={() => setEditing(g)} />
+            <GoalCard
+              key={g.id}
+              goal={g}
+              linkedAccountName={g.linkedAccountId ? accountById.get(g.linkedAccountId)?.name : undefined}
+              onClick={() => setEditing(g)}
+              {...(g.linkedAccountId
+                ? {
+                    onViewAccount: () =>
+                      onNavigate("transactions", { accountId: g.linkedAccountId! }),
+                  }
+                : {})}
+            />
           ))}
         </div>
       )}
+
+      <DebtCalculator />
+
       {editing && (
         <GoalDialog
           goal={editing === "new" ? null : editing}
@@ -74,7 +91,17 @@ export function GoalsPage() {
   );
 }
 
-function GoalCard({ goal, onClick }: { goal: Goal; onClick: () => void }) {
+function GoalCard({
+  goal,
+  linkedAccountName,
+  onClick,
+  onViewAccount,
+}: {
+  goal: Goal;
+  linkedAccountName?: string | undefined;
+  onClick: () => void;
+  onViewAccount?: () => void;
+}) {
   const pct = goal.targetCents > 0 ? Math.min(1, goal.savedCents / goal.targetCents) : 0;
   const funded = goal.savedCents >= goal.targetCents;
   const eta = funded
@@ -86,8 +113,11 @@ function GoalCard({ goal, onClick }: { goal: Goal; onClick: () => void }) {
         : "no timeline";
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onClick()}
       style={{
         background: "var(--color-surface)",
         border: "1px solid var(--color-divider)",
@@ -152,7 +182,29 @@ function GoalCard({ goal, onClick }: { goal: Goal; onClick: () => void }) {
       {goal.note && (
         <div style={{ fontSize: 12.5, color: "var(--color-neutral-400)" }}>{goal.note}</div>
       )}
-    </button>
+      {onViewAccount && (
+        <button
+          title="View the linked account's transactions"
+          onClick={(e) => {
+            e.stopPropagation();
+            onViewAccount();
+          }}
+          style={{
+            marginTop: 10,
+            border: "1px solid var(--color-divider)",
+            background: "var(--color-surface)",
+            borderRadius: 7,
+            padding: "4px 9px",
+            fontSize: 11.5,
+            fontWeight: 600,
+            color: "var(--color-neutral-500)",
+            cursor: "pointer",
+          }}
+        >
+          🔗 {linkedAccountName ?? "Linked account"} →
+        </button>
+      )}
+    </div>
   );
 }
 

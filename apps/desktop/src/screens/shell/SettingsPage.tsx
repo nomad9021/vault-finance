@@ -18,13 +18,17 @@ import { useData } from "../../lib/useData.js";
 import { APP_VERSION, useApp } from "../../state/store.js";
 
 export function SettingsPage() {
+  // Uses the shared `.page` wrapper (centered, max-width, consistent rhythm)
+  // like every other screen — a narrower cap keeps settings forms readable while
+  // staying centered instead of hugging the left edge.
   return (
-    <div style={{ maxWidth: 640, display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="page" style={{ maxWidth: 780 }}>
       <AppearanceSection />
       <CategoryTreeSection />
       <CategorizationRulesSection />
       <BankSection />
       <AiSection />
+      <TwoFactorSection />
       <UpdatesSection />
       <SessionsSection />
       <ServerSection />
@@ -135,6 +139,8 @@ type TreeCat = {
   name: string;
   color: string;
   parentCategoryId: string | null;
+  sortOrder: number;
+  kind: "income" | "expense";
   isSystem: boolean;
 };
 
@@ -155,8 +161,11 @@ function CategoryTreeNode({
   onAdd,
   onRename,
   onRemove,
+  onMove,
   onDragStartNode,
   onDropOnNode,
+  isFirst,
+  isLast,
   busy,
 }: {
   cat: TreeCat;
@@ -164,8 +173,11 @@ function CategoryTreeNode({
   onAdd: (parentId: string | null) => void;
   onRename: (id: string, name: string) => void;
   onRemove: (id: string) => void;
+  onMove: (id: string, direction: "up" | "down") => void;
   onDragStartNode: (id: string) => void;
   onDropOnNode: (targetId: string | null) => void;
+  isFirst: boolean;
+  isLast: boolean;
   busy: boolean;
 }) {
   const kids = childrenOf(cat.id);
@@ -250,6 +262,22 @@ function CategoryTreeNode({
           </button>
         )}
         {cat.isSystem && <Tag>system</Tag>}
+        <button
+          title="Move up"
+          disabled={isFirst}
+          onClick={() => onMove(cat.id, "up")}
+          style={{ ...treeIconBtn, opacity: isFirst ? 0.25 : 1, cursor: isFirst ? "default" : "pointer" }}
+        >
+          ▲
+        </button>
+        <button
+          title="Move down"
+          disabled={isLast}
+          onClick={() => onMove(cat.id, "down")}
+          style={{ ...treeIconBtn, opacity: isLast ? 0.25 : 1, cursor: isLast ? "default" : "pointer" }}
+        >
+          ▼
+        </button>
         <button title="Add branch" onClick={() => onAdd(cat.id)} style={treeIconBtn}>
           ＋
         </button>
@@ -277,7 +305,7 @@ function CategoryTreeNode({
               borderLeft: "1px solid var(--color-divider)",
             }}
           >
-            {kids.map((k) => (
+            {kids.map((k, i) => (
               <div key={k.id} style={{ display: "flex", alignItems: "center" }}>
                 <div
                   style={{ width: 14, height: 1, background: "var(--color-divider)", flex: "0 0 auto" }}
@@ -288,8 +316,11 @@ function CategoryTreeNode({
                   onAdd={onAdd}
                   onRename={onRename}
                   onRemove={onRemove}
+                  onMove={onMove}
                   onDragStartNode={onDragStartNode}
                   onDropOnNode={onDropOnNode}
+                  isFirst={i === 0}
+                  isLast={i === kids.length - 1}
                   busy={busy}
                 />
               </div>
@@ -310,14 +341,18 @@ function CategoryTreeNode({
 function CategoryTreeSection() {
   const client = useApp((s) => s.client);
   const { data, reload } = useData(() => client.categories(), [client]);
-  const categories = (data?.categories ?? []) as TreeCat[];
+  // Spending tree = expense categories only; income sources are managed on the
+  // Income page.
+  const categories = (data?.categories ?? []).filter(
+    (c) => (c as TreeCat).kind !== "income",
+  ) as TreeCat[];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const childrenOf = (id: string | null) =>
     categories
       .filter((c) => (c.parentCategoryId ?? null) === id)
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
 
   const addChild = async (parentId: string | null) => {
     setBusy(true);
@@ -352,6 +387,11 @@ function CategoryTreeSection() {
     } finally {
       setBusy(false);
     }
+  };
+  const move = async (id: string, direction: "up" | "down") => {
+    setError(null);
+    await client.moveCategory(id, direction).catch(() => setError("Couldn't reorder that category."));
+    await reload();
   };
 
   // Drag-to-reparent. dragId is held in a ref (survives re-renders during drag).
@@ -389,9 +429,10 @@ function CategoryTreeSection() {
   return (
     <Card kicker="Categories" title="Category tree">
       <p className="card-meta">
-        The one place to shape the cash-flow Sankey. The tree grows to the right — a category’s
-        sub-branches sit to its right. Click a name to rename, ＋ to add a branch, × to delete, and
-        drag a node onto another to move it (or onto “Top level” to un-nest it).
+        The one place to shape both the cash-flow and budget-planner Sankeys. The tree grows to the
+        right — a category’s sub-branches sit to its right. Click a name to rename, ▲▼ to reorder
+        among siblings, ＋ to add a branch, × to delete, and drag a node onto another to move it (or
+        onto “Top level” to un-nest it).
       </p>
       <div style={{ overflowX: "auto", padding: "10px 2px" }}>
         {roots.length === 0 ? (
@@ -400,7 +441,7 @@ function CategoryTreeSection() {
           <div
             style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: "max-content" }}
           >
-            {roots.map((c) => (
+            {roots.map((c, i) => (
               <CategoryTreeNode
                 key={c.id}
                 cat={c}
@@ -408,8 +449,11 @@ function CategoryTreeSection() {
                 onAdd={addChild}
                 onRename={rename}
                 onRemove={remove}
+                onMove={move}
                 onDragStartNode={(id) => (dragId.current = id)}
                 onDropOnNode={onDropOn}
+                isFirst={i === 0}
+                isLast={i === roots.length - 1}
                 busy={busy}
               />
             ))}
@@ -1204,6 +1248,196 @@ function AppearanceSection() {
         value={theme}
         onChange={(t) => void setTheme(t)}
       />
+    </Card>
+  );
+}
+
+/**
+ * TOTP two-factor authentication. Off by default. Setup shows the secret + an
+ * otpauth URI for an authenticator app; a confirmed code turns it on. Disabling
+ * requires the account password (re-auth).
+ */
+function TwoFactorSection() {
+  const client = useApp((s) => s.client);
+  const { data, reload } = useData(() => client.totpStatus(), [client]);
+  const enabled = data?.enabled ?? false;
+
+  const [setup, setSetup] = useState<{ secret: string; otpauthUri: string } | null>(null);
+  const [code, setCode] = useState("");
+  const [disabling, setDisabling] = useState(false);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const startSetup = async () => {
+    setBusy(true);
+    setError(null);
+    setCode("");
+    try {
+      setSetup(await client.totpSetup());
+    } catch {
+      setError("Couldn't start setup. Is the server reachable?");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const confirmEnable = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await client.totpEnable(code.replace(/\s/g, ""));
+      setSetup(null);
+      reload();
+    } catch {
+      setError("That code isn't valid — enter the current one.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const confirmDisable = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await client.totpDisable(password);
+      setDisabling(false);
+      setPassword("");
+      reload();
+    } catch {
+      setError("That password isn't right.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const groupedSecret = setup ? setup.secret.replace(/(.{4})/g, "$1 ").trim() : "";
+
+  return (
+    <Card kicker="Security" title="Two-factor authentication">
+      <p className="card-body">
+        Add a second step at sign-in: a rotating 6-digit code from an authenticator app
+        (Google Authenticator, Authy, 1Password…), on top of your password.
+      </p>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span
+          aria-hidden="true"
+          style={{ width: 8, height: 8, borderRadius: "50%", background: enabled ? "var(--color-positive)" : "var(--color-neutral-600)" }}
+        />
+        <span style={{ fontSize: 13 }}>{enabled ? "On — a code is required to sign in" : "Off"}</span>
+        <div style={{ marginLeft: "auto" }}>
+          {enabled ? (
+            <Button variant="ghost" onClick={() => { setDisabling(true); setError(null); setPassword(""); }}>
+              Turn off
+            </Button>
+          ) : (
+            <Button variant="primary" onClick={() => void startSetup()} disabled={busy}>
+              {busy ? <Spinner label="Starting" /> : "Set up"}
+            </Button>
+          )}
+        </div>
+      </div>
+      {error && !setup && !disabling && (
+        <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)", marginTop: 8 }}>
+          {error}
+        </div>
+      )}
+
+      {setup && (
+        <Dialog
+          open
+          title="Set up two-factor authentication"
+          onClose={() => setSetup(null)}
+          actions={
+            <>
+              <Button variant="secondary" onClick={() => setSetup(null)} disabled={busy}>Cancel</Button>
+              <Button variant="primary" onClick={() => void confirmEnable()} disabled={busy || code.length < 6}>
+                {busy ? <Spinner label="Enabling" /> : "Turn on"}
+              </Button>
+            </>
+          }
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <p className="card-body" style={{ margin: 0 }}>
+              In your authenticator app, add an account by entering this key manually
+              (or paste the setup link), then type the current 6-digit code below.
+            </p>
+            <div>
+              <div className="eyebrow" style={{ marginBottom: 4 }}>Setup key</div>
+              <div
+                style={{
+                  fontFamily: "ui-monospace, monospace",
+                  fontSize: 15,
+                  letterSpacing: "0.08em",
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  background: "var(--color-neutral-900)",
+                  border: "1px solid var(--color-divider)",
+                  userSelect: "all",
+                  wordBreak: "break-all",
+                }}
+              >
+                {groupedSecret}
+              </div>
+            </div>
+            <details>
+              <summary style={{ fontSize: 12, color: "var(--color-neutral-500)", cursor: "pointer" }}>
+                Setup link (for apps that accept a pasted otpauth URI)
+              </summary>
+              <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, wordBreak: "break-all", marginTop: 6, userSelect: "all", color: "var(--color-neutral-400)" }}>
+                {setup.otpauthUri}
+              </div>
+            </details>
+            <Field
+              label="6-digit code"
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/[^0-9]/g, ""))}
+              inputMode="numeric"
+              maxLength={7}
+              autoFocus
+              placeholder="123456"
+            />
+            {error && (
+              <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>{error}</div>
+            )}
+          </div>
+        </Dialog>
+      )}
+
+      {disabling && (
+        <Dialog
+          open
+          title="Turn off two-factor?"
+          onClose={() => setDisabling(false)}
+          actions={
+            <>
+              <Button variant="secondary" onClick={() => setDisabling(false)} disabled={busy}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={() => void confirmDisable()}
+                disabled={busy || !password}
+                style={{ background: "var(--color-negative)", borderColor: "var(--color-negative)", color: "#fff" }}
+              >
+                {busy ? <Spinner label="Disabling" /> : "Turn off"}
+              </Button>
+            </>
+          }
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <p className="card-body" style={{ margin: 0 }}>
+              Enter your account password to disable two-factor authentication.
+            </p>
+            <Field
+              label="Password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoFocus
+            />
+            {error && (
+              <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>{error}</div>
+            )}
+          </div>
+        </Dialog>
+      )}
     </Card>
   );
 }

@@ -18,9 +18,12 @@ export function LoginScreen() {
   const [profiles, setProfiles] = useState<PublicProfile[] | null>(null);
   const [selected, setSelected] = useState<PublicProfile | null>(null);
   const [password, setPassword] = useState("");
+  const [needsTotp, setNeedsTotp] = useState(false);
+  const [totpCode, setTotpCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+  const totpRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,9 +43,13 @@ export function LoginScreen() {
   useEffect(() => {
     if (selected) passwordRef.current?.focus();
   }, [selected]);
+  useEffect(() => {
+    if (needsTotp) totpRef.current?.focus();
+  }, [needsTotp]);
 
   const doLogin = async () => {
     if (!selected || !password || busy) return;
+    if (needsTotp && totpCode.replace(/\s/g, "").length < 6) return;
     setBusy(true);
     setError(null);
     try {
@@ -51,16 +58,27 @@ export function LoginScreen() {
         password,
         deviceName: platform.deviceName,
         platform: platform.platformName,
+        ...(needsTotp && totpCode ? { totpCode: totpCode.replace(/\s/g, "") } : {}),
       });
       signedIn(result.user);
     } catch (err) {
-      setError(
-        err instanceof ApiRequestError
-          ? err.code === "RATE_LIMITED"
-            ? "Too many attempts — wait a few minutes and try again."
-            : "That password isn't right."
-          : "Lost the connection to the server.",
-      );
+      if (err instanceof ApiRequestError && err.code === "TOTP_REQUIRED") {
+        // Password was right; now ask for the authenticator code.
+        setNeedsTotp(true);
+        setError(null);
+      } else if (err instanceof ApiRequestError && err.code === "TOTP_INVALID") {
+        setNeedsTotp(true);
+        setError("That authentication code isn't right — try the current one.");
+      } else {
+        setNeedsTotp(false);
+        setError(
+          err instanceof ApiRequestError
+            ? err.code === "RATE_LIMITED"
+              ? "Too many attempts — wait a few minutes and try again."
+              : "That password isn't right."
+            : "Lost the connection to the server.",
+        );
+      }
     } finally {
       setBusy(false);
     }
@@ -93,6 +111,8 @@ export function LoginScreen() {
               onClick={() => {
                 setSelected(p);
                 setPassword("");
+                setNeedsTotp(false);
+                setTotpCode("");
                 setError(null);
               }}
               style={{
@@ -138,14 +158,39 @@ export function LoginScreen() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             aria-label="Password"
+            readOnly={needsTotp}
           />
+          {needsTotp && (
+            <>
+              <input
+                ref={totpRef}
+                className="input"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={7}
+                style={{ borderRadius: 9, letterSpacing: "0.3em", textAlign: "center", fontVariantNumeric: "tabular-nums" }}
+                placeholder="6-digit code"
+                value={totpCode}
+                onChange={(e) => setTotpCode(e.target.value.replace(/[^0-9]/g, ""))}
+                aria-label="Authentication code"
+              />
+              <div style={{ fontSize: 12, color: "var(--color-neutral-500)", lineHeight: 1.5 }}>
+                Enter the current 6-digit code from your authenticator app.
+              </div>
+            </>
+          )}
           {error && (
             <div role="alert" style={{ fontSize: 12.5, color: "var(--color-negative)" }}>
               {error}
             </div>
           )}
-          <Button variant="primary" block type="submit" disabled={busy || !password}>
-            {busy ? <Spinner label="Signing in" /> : "Sign in"}
+          <Button
+            variant="primary"
+            block
+            type="submit"
+            disabled={busy || !password || (needsTotp && totpCode.length < 6)}
+          >
+            {busy ? <Spinner label="Signing in" /> : needsTotp ? "Verify & sign in" : "Sign in"}
           </Button>
         </form>
       )}

@@ -45,3 +45,9 @@ export const notFound = (what = "Resource") =>
 
 export const rateLimited = () =>
   new AppError("RATE_LIMITED", 429, "Too many attempts. Try again shortly.");
+
+export const totpRequired = () =>
+  new AppError("TOTP_REQUIRED", 401, "This account has two-factor authentication. Enter your code.");
+
+export const totpInvalid = () =>
+  new AppError("TOTP_INVALID", 401, "That authentication code isn't valid. Try again.");

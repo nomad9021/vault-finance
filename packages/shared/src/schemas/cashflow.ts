@@ -17,6 +17,25 @@ export const CashflowSummaryResponse = z.object({
 export type CashflowSummaryResponse = z.infer<typeof CashflowSummaryResponse>;
 
 /**
+ * One month on the trend charts. Net worth is reconstructed from current
+ * account balances minus the transaction flows that happened after that month,
+ * so it's an estimate of end-of-month net worth (asset re-pricing that isn't a
+ * transaction — e.g. market moves — isn't captured).
+ */
+export const TrendPoint = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/),
+  netWorthCents: z.number().int(),
+  incomeCents: z.number().int(),
+  spendingCents: z.number().int(),
+});
+export type TrendPoint = z.infer<typeof TrendPoint>;
+
+export const TrendsResponse = z.object({
+  points: z.array(TrendPoint),
+});
+export type TrendsResponse = z.infer<typeof TrendsResponse>;
+
+/**
  * Multi-level Sankey flow data for one month, as a general graph. Columns are
  * given by `depth`: income sources (0) → total-income hub (1) → top-level
  * spending categories plus a synthetic "Saved" leaf (2) → subcategories

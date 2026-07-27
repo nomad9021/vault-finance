@@ -8,6 +8,7 @@ import { Button, Card, PieChart, Spinner, Tag } from "@vault/ui";
 import { useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
+import type { Navigate } from "./AppShell.js";
 
 function monthLabel(month: string): string {
   const [y, m] = month.split("-").map(Number) as [number, number];
@@ -18,7 +19,7 @@ function monthLabel(month: string): string {
   });
 }
 
-export function ReportsPage() {
+export function ReportsPage({ onNavigate }: { onNavigate: Navigate }) {
   const client = useApp((s) => s.client);
   const year = new Date().getUTCFullYear();
   const { data: yearly, loading } = useData<YearlyReport>(
@@ -52,16 +53,7 @@ export function ReportsPage() {
   };
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 16,
-        maxWidth: 860,
-        margin: "0 auto",
-        animation: "fadeUp .3s both",
-      }}
-    >
+    <div className="page">
       <div
         style={{
           background:
@@ -174,7 +166,11 @@ export function ReportsPage() {
       </div>
 
       {selectedMonth && (
-        <MonthDetail month={selectedMonth} onClose={() => setSelectedMonth(null)} />
+        <MonthDetail
+          month={selectedMonth}
+          onClose={() => setSelectedMonth(null)}
+          onNavigate={onNavigate}
+        />
       )}
     </div>
   );
@@ -210,7 +206,15 @@ function Th({ children, align }: { children: React.ReactNode; align?: "right" })
 }
 
 /** Month drill-in: top categories + AI commentary (cached server-side). */
-function MonthDetail({ month, onClose }: { month: string; onClose: () => void }) {
+function MonthDetail({
+  month,
+  onClose,
+  onNavigate,
+}: {
+  month: string;
+  onClose: () => void;
+  onNavigate: Navigate;
+}) {
   const client = useApp((s) => s.client);
   const { data: report, loading } = useData<MonthlyReport>(
     () => client.monthlyReport(month),
@@ -241,6 +245,41 @@ function MonthDetail({ month, onClose }: { month: string; onClose: () => void })
                 centerLabel="spent"
                 ariaLabel={`${monthLabel(month)} spending by category`}
               />
+              <div style={{ display: "flex", flexDirection: "column", marginTop: 8 }}>
+                {report.topCategories.map((c) => (
+                  <button
+                    key={c.categoryId ?? c.name}
+                    title="View this category's transactions"
+                    onClick={() =>
+                      onNavigate("transactions", { categoryId: c.categoryId ?? "none" })
+                    }
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "6px 4px",
+                      border: 0,
+                      borderTop: "1px solid color-mix(in srgb, var(--color-text) 7%, transparent)",
+                      background: "none",
+                      font: "inherit",
+                      color: "inherit",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      width: "100%",
+                    }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      style={{ width: 9, height: 9, borderRadius: 2, background: c.color, flex: "none" }}
+                    />
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 13 }}>{c.name}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                      {formatCentsWhole(c.spentCents)}
+                    </span>
+                    <span style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>→</span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 

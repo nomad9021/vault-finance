@@ -43,3 +43,12 @@ export const BudgetListResponse = z.object({
   totalSpentCents: z.number().int(),
 });
 export type BudgetListResponse = z.infer<typeof BudgetListResponse>;
+
+/** The single fixed monthly income figure the budget planner allocates. */
+export const BudgetPlan = z.object({
+  plannedIncomeCents: z.number().int().nonnegative(),
+});
+export type BudgetPlan = z.infer<typeof BudgetPlan>;
+
+export const UpdateBudgetPlanRequest = BudgetPlan;
+export type UpdateBudgetPlanRequest = z.infer<typeof UpdateBudgetPlanRequest>;
