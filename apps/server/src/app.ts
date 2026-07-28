@@ -20,6 +20,7 @@ import goalRoutes from "./modules/goals/routes.js";
 import investmentRoutes from "./modules/investments/routes.js";
 import reportRoutes from "./modules/reports/routes.js";
 import metaRoutes from "./modules/meta/routes.js";
+import mobileRoutes from "./modules/mobile/routes.js";
 import setupRoutes from "./modules/setup/routes.js";
 import transactionRoutes from "./modules/transactions/routes.js";
 
@@ -75,6 +76,9 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     },
     { prefix: "/api/v1" },
   );
+
+  // Read-only phone viewer at the site root (same origin as the API).
+  await app.register(mobileRoutes);
 
   startBankAutoSync(app, opts.config);
 
