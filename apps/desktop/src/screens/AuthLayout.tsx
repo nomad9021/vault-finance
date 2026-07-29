@@ -37,17 +37,20 @@ export function AuthLayout({ children, width = 380 }: { children: ReactNode; wid
   );
 }
 
-/** The gradient app mark used on the login card and sidebar. */
+/** The app logo mark used on the login card and sidebar. */
 export function AppMark({ size = 40 }: { size?: number }) {
   return (
-    <span
+    <img
+      src="/app-logo.png"
+      alt=""
       aria-hidden="true"
+      width={size}
+      height={size}
       style={{
         width: size,
         height: size,
         borderRadius: size * 0.3,
-        background:
-          "linear-gradient(135deg, var(--color-accent) 0%, var(--color-section-glow) 100%)",
+        objectFit: "cover",
         boxShadow: "0 0 20px color-mix(in srgb, var(--color-accent) 45%, transparent)",
         display: "inline-block",
         flex: "none",
