@@ -90,8 +90,8 @@ const PAGE = /* html */ `<!doctype html>
   body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
     padding:max(env(safe-area-inset-top),12px) 14px calc(env(safe-area-inset-bottom) + 28px);-webkit-tap-highlight-color:transparent}
   .head{display:flex;align-items:center;gap:10px;margin:4px 2px 14px}
-  .mark{width:26px;height:26px;border-radius:7px;overflow:hidden;flex:none}
-  .mark img{width:100%;height:100%;display:block;object-fit:cover}
+  .mark{width:26px;height:26px;border-radius:7px;flex:none;
+    background:linear-gradient(135deg,#9184d9 0%,#353b80 100%);box-shadow:0 0 20px rgba(145,132,217,.45)}
   .brand{font-weight:700;font-size:16px;letter-spacing:-.01em}
   .sp{margin-left:auto}
   button{font:inherit;color:inherit;cursor:pointer}
@@ -132,9 +132,7 @@ const PAGE = /* html */ `<!doctype html>
 <body>
 <div id="login" class="center">
   <div style="text-align:center;margin-bottom:18px">
-    <div class="mark" style="width:56px;height:56px;border-radius:14px;margin:0 auto 10px">
-      <img src="/app-icon.png" alt="Vault Finance" width="56" height="56">
-    </div>
+    <div class="mark" style="width:40px;height:40px;border-radius:12px;margin:0 auto 10px"></div>
     <div class="brand" style="font-size:19px">Vault Finance</div>
     <div class="mut" style="font-size:12.5px;margin-top:3px">Read-only viewer</div>
   </div>
@@ -150,7 +148,7 @@ const PAGE = /* html */ `<!doctype html>
 
 <div id="app" hidden>
   <div class="head">
-    <div class="mark"><img src="/app-icon.png" alt="" width="26" height="26"></div>
+    <div class="mark"></div>
     <div class="brand">Vault</div>
     <div class="sp"></div>
     <button id="out" class="ghost">Sign out</button>
@@ -159,7 +157,7 @@ const PAGE = /* html */ `<!doctype html>
 </div>
 
 <div id="lock" hidden>
-  <div class="mark" style="width:76px;height:76px;border-radius:18px"><img src="/app-icon.png" alt="Vault Finance" width="76" height="76"></div>
+  <div class="mark" style="width:52px;height:52px;border-radius:15px"></div>
   <div class="l1">Locked</div>
   <div class="l2">Tap to view your finances</div>
 </div>
