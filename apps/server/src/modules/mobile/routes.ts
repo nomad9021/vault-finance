@@ -6,6 +6,9 @@ import type { FastifyInstance } from "fastify";
 // stays lean and the home-screen / manifest icons are real raster art.
 const ICON_PNG = readFileSync(new URL("./app-icon.png", import.meta.url));
 const ICON_MASKABLE_PNG = readFileSync(new URL("./app-icon-maskable.png", import.meta.url));
+// Bump this whenever the icon art changes — it cache-busts the URL so phones
+// that already added the app to their home screen pick up the new icon.
+const ICON_VER = "3";
 
 /**
  * A tiny, dependency-free, **read-only** phone viewer served on the same origin
@@ -25,15 +28,15 @@ export default async function mobileRoutes(app: FastifyInstance) {
       .send(
         JSON.stringify({
           name: "Vault Finance",
-          short_name: "Vault",
+          short_name: "Vault Finance",
           display: "standalone",
           background_color: "#14161f",
           theme_color: "#14161f",
           start_url: "/",
           icons: [
-            { src: "/app-icon.png", sizes: "512x512", type: "image/png", purpose: "any" },
+            { src: "/app-icon.png?v=" + ICON_VER, sizes: "512x512", type: "image/png", purpose: "any" },
             {
-              src: "/app-icon-maskable.png",
+              src: "/app-icon-maskable.png?v=" + ICON_VER,
               sizes: "512x512",
               type: "image/png",
               purpose: "maskable",
@@ -46,14 +49,14 @@ export default async function mobileRoutes(app: FastifyInstance) {
   app.get("/app-icon.png", async (_req, reply) => {
     reply
       .header("content-type", "image/png")
-      .header("cache-control", "public, max-age=604800, immutable")
+      .header("cache-control", "public, max-age=86400")
       .send(ICON_PNG);
   });
 
   app.get("/app-icon-maskable.png", async (_req, reply) => {
     reply
       .header("content-type", "image/png")
-      .header("cache-control", "public, max-age=604800, immutable")
+      .header("cache-control", "public, max-age=86400")
       .send(ICON_MASKABLE_PNG);
   });
 
@@ -80,9 +83,9 @@ const PAGE = /* html */ `<!doctype html>
 <meta name="theme-color" content="#14161f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Vault">
+<meta name="apple-mobile-web-app-title" content="Vault Finance">
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="apple-touch-icon" href="/app-icon.png">
+<link rel="apple-touch-icon" href="/app-icon.png?v=${ICON_VER}">
 <title>Vault Finance</title>
 <style>
   :root{--bg:#14161f;--surface:#1b1e29;--line:#2a2e3b;--text:#e7e9ee;--muted:#9aa0ab;--pos:#3ecf8e;--neg:#e25c5c;--accent:#6f8ef2}
