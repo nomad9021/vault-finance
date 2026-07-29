@@ -20,6 +20,34 @@ Compose.
 
 ## 2. Quick start
 
+### Easiest: the guided installer
+
+Clone the repo, then run the installer for your OS. It asks where to store
+your data, which port to use, whether to enable local AI, and (optionally)
+creates your owner account — then writes `docker/.env` and starts everything.
+
+```bash
+# Linux / macOS
+git clone <your-fork-or-release-tarball> vault-finance
+cd vault-finance
+bash scripts/install-server.sh
+```
+
+```powershell
+# Windows (Docker Desktop + PowerShell)
+git clone <your-fork-or-release-tarball> vault-finance
+cd vault-finance
+pwsh -File scripts\install-server.ps1
+```
+
+Re-running the installer is safe — it reads your existing answers as defaults.
+Pass `--dry-run` (`-DryRun` on Windows) to preview the config without touching
+Docker.
+
+### Manual alternative
+
+If you'd rather configure by hand:
+
 ```bash
 git clone <your-fork-or-release-tarball> vault-finance
 cd vault-finance/docker

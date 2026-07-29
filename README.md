@@ -3,8 +3,11 @@
 Self-hosted, AI-powered personal finance. Your data, your AI, your server —
 nothing ever leaves your hardware.
 
-- **Server**: Fastify + PostgreSQL, deployed with a single `docker compose up`
-  on your own machine ([self-hosting guide](docs/self-hosting.md)).
+- **Server**: Fastify + PostgreSQL. Run the guided installer
+  (`bash scripts/install-server.sh`, or `scripts\install-server.ps1` on
+  Windows) — it asks where to store your data and which port to use, then
+  brings up the Docker stack. Manual `docker compose up` also works
+  ([self-hosting guide](docs/self-hosting.md)).
 - **Desktop apps**: Windows / macOS / Linux (Tauri 2 + React), connecting to
   your server over LAN or Tailscale. *(in progress — see the
   [roadmap](docs/roadmap.md))*
