@@ -4,6 +4,8 @@ import type { AppConfig } from "./config.js";
 import authPlugin from "./plugins/auth.js";
 import dbPlugin from "./plugins/db.js";
 import errorHandlerPlugin from "./plugins/error-handler.js";
+import rateLimitPlugin from "./plugins/rate-limit.js";
+import securityHeadersPlugin from "./plugins/security-headers.js";
 import versionGatePlugin from "./plugins/version-gate.js";
 import accountRoutes from "./modules/accounts/routes.js";
 import aiRoutes from "./modules/ai/routes.js";
@@ -42,7 +44,9 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   // hostile origin gains nothing — and the Tauri clients bypass CORS anyway.
   // This exists for browser-based dev of the frontend.
   await app.register(cors, { origin: true });
+  await app.register(securityHeadersPlugin, { tls: Boolean(opts.https) });
   await app.register(errorHandlerPlugin);
+  await app.register(rateLimitPlugin);
   await app.register(versionGatePlugin, {
     minClientVersion: opts.config.minClientVersion,
   });
