@@ -1,4 +1,14 @@
+import { readFileSync } from "node:fs";
 import type { FastifyInstance } from "fastify";
+
+// Brand icon, shipped as PNG next to this module (copied into dist by the build
+// script). Read once at startup and served from same-origin routes so the HTML
+// stays lean and the home-screen / manifest icons are real raster art.
+const ICON_PNG = readFileSync(new URL("./app-icon.png", import.meta.url));
+const ICON_MASKABLE_PNG = readFileSync(new URL("./app-icon-maskable.png", import.meta.url));
+// Bump this whenever the icon art changes — it cache-busts the URL so phones
+// that already added the app to their home screen pick up the new icon.
+const ICON_VER = "3";
 
 /**
  * A tiny, dependency-free, **read-only** phone viewer served on the same origin
@@ -18,14 +28,36 @@ export default async function mobileRoutes(app: FastifyInstance) {
       .send(
         JSON.stringify({
           name: "Vault Finance",
-          short_name: "Vault",
+          short_name: "Vault Finance",
           display: "standalone",
           background_color: "#14161f",
           theme_color: "#14161f",
           start_url: "/",
-          icons: [{ src: ICON, sizes: "any", type: "image/svg+xml", purpose: "any" }],
+          icons: [
+            { src: "/app-icon.png?v=" + ICON_VER, sizes: "512x512", type: "image/png", purpose: "any" },
+            {
+              src: "/app-icon-maskable.png?v=" + ICON_VER,
+              sizes: "512x512",
+              type: "image/png",
+              purpose: "maskable",
+            },
+          ],
         }),
       );
+  });
+
+  app.get("/app-icon.png", async (_req, reply) => {
+    reply
+      .header("content-type", "image/png")
+      .header("cache-control", "public, max-age=86400")
+      .send(ICON_PNG);
+  });
+
+  app.get("/app-icon-maskable.png", async (_req, reply) => {
+    reply
+      .header("content-type", "image/png")
+      .header("cache-control", "public, max-age=86400")
+      .send(ICON_MASKABLE_PNG);
   });
 
   app.get("/", async (_req, reply) => {
@@ -43,12 +75,6 @@ export default async function mobileRoutes(app: FastifyInstance) {
   });
 }
 
-const ICON =
-  "data:image/svg+xml," +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#14161f"/><path d="M20 20l12 26 12-26" fill="none" stroke="#3ecf8e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-  );
-
 const PAGE = /* html */ `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
@@ -57,9 +83,9 @@ const PAGE = /* html */ `<!doctype html>
 <meta name="theme-color" content="#14161f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Vault">
+<meta name="apple-mobile-web-app-title" content="Vault Finance">
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="apple-touch-icon" href="${ICON}">
+<link rel="apple-touch-icon" href="/app-icon.png?v=${ICON_VER}">
 <title>Vault Finance</title>
 <style>
   :root{--bg:#14161f;--surface:#1b1e29;--line:#2a2e3b;--text:#e7e9ee;--muted:#9aa0ab;--pos:#3ecf8e;--neg:#e25c5c;--accent:#6f8ef2}
@@ -67,7 +93,8 @@ const PAGE = /* html */ `<!doctype html>
   body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
     padding:max(env(safe-area-inset-top),12px) 14px calc(env(safe-area-inset-bottom) + 28px);-webkit-tap-highlight-color:transparent}
   .head{display:flex;align-items:center;gap:10px;margin:4px 2px 14px}
-  .mark{width:26px;height:26px;border-radius:7px;background:#0f111a;display:grid;place-items:center;flex:none}
+  .mark{width:26px;height:26px;border-radius:7px;flex:none;
+    background:linear-gradient(135deg,#9184d9 0%,#353b80 100%);box-shadow:0 0 20px rgba(145,132,217,.45)}
   .brand{font-weight:700;font-size:16px;letter-spacing:-.01em}
   .sp{margin-left:auto}
   button{font:inherit;color:inherit;cursor:pointer}
@@ -108,9 +135,7 @@ const PAGE = /* html */ `<!doctype html>
 <body>
 <div id="login" class="center">
   <div style="text-align:center;margin-bottom:18px">
-    <div class="mark" style="width:40px;height:40px;margin:0 auto 10px">
-      <svg width="24" height="24" viewBox="0 0 64 64"><path d="M20 20l12 26 12-26" fill="none" stroke="#3ecf8e" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </div>
+    <div class="mark" style="width:40px;height:40px;border-radius:12px;margin:0 auto 10px"></div>
     <div class="brand" style="font-size:19px">Vault Finance</div>
     <div class="mut" style="font-size:12.5px;margin-top:3px">Read-only viewer</div>
   </div>
@@ -126,7 +151,7 @@ const PAGE = /* html */ `<!doctype html>
 
 <div id="app" hidden>
   <div class="head">
-    <div class="mark"><svg width="16" height="16" viewBox="0 0 64 64"><path d="M20 20l12 26 12-26" fill="none" stroke="#3ecf8e" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    <div class="mark"></div>
     <div class="brand">Vault</div>
     <div class="sp"></div>
     <button id="out" class="ghost">Sign out</button>
@@ -135,7 +160,7 @@ const PAGE = /* html */ `<!doctype html>
 </div>
 
 <div id="lock" hidden>
-  <div class="mark" style="width:52px;height:52px"><svg width="30" height="30" viewBox="0 0 64 64"><path d="M20 20l12 26 12-26" fill="none" stroke="#3ecf8e" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+  <div class="mark" style="width:52px;height:52px;border-radius:15px"></div>
   <div class="l1">Locked</div>
   <div class="l2">Tap to view your finances</div>
 </div>
