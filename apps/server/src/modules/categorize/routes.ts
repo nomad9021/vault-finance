@@ -20,6 +20,11 @@ export default async function categorizeRoutes(
   app: FastifyInstance,
   opts: { config: AppConfig },
 ) {
+  // Every route here reads or mutates shared household data (and
+  // /transactions/autocategorize can invoke the AI provider), so the whole
+  // module is authenticated — matching every other data module.
+  app.addHook("preHandler", app.requireAuth);
+
   app.get("/categorization-rules", async (): Promise<RuleListResponse> => {
     const rows = await app.db
       .select()

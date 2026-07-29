@@ -33,7 +33,13 @@ function monthBounds(month: string): { first: string; nextFirst: string } {
 }
 
 function csvEscape(value: string): string {
-  return /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  // Spreadsheet formula-injection defense (OWASP): a field beginning with
+  // = + - @ or a control char is interpreted as a formula by Excel/Sheets.
+  // Prefix a single quote so the cell renders as literal text. Do this before
+  // quoting so the guard character lands inside the quotes.
+  let v = value;
+  if (/^[=+\-@\t\r]/.test(v)) v = `'${v}`;
+  return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
 }
 
 export default async function reportRoutes(

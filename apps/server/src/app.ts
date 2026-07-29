@@ -4,6 +4,8 @@ import type { AppConfig } from "./config.js";
 import authPlugin from "./plugins/auth.js";
 import dbPlugin from "./plugins/db.js";
 import errorHandlerPlugin from "./plugins/error-handler.js";
+import rateLimitPlugin from "./plugins/rate-limit.js";
+import securityHeadersPlugin from "./plugins/security-headers.js";
 import versionGatePlugin from "./plugins/version-gate.js";
 import accountRoutes from "./modules/accounts/routes.js";
 import aiRoutes from "./modules/ai/routes.js";
@@ -20,6 +22,7 @@ import goalRoutes from "./modules/goals/routes.js";
 import investmentRoutes from "./modules/investments/routes.js";
 import reportRoutes from "./modules/reports/routes.js";
 import metaRoutes from "./modules/meta/routes.js";
+import mobileRoutes from "./modules/mobile/routes.js";
 import setupRoutes from "./modules/setup/routes.js";
 import transactionRoutes from "./modules/transactions/routes.js";
 
@@ -41,7 +44,9 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   // hostile origin gains nothing — and the Tauri clients bypass CORS anyway.
   // This exists for browser-based dev of the frontend.
   await app.register(cors, { origin: true });
+  await app.register(securityHeadersPlugin, { tls: Boolean(opts.https) });
   await app.register(errorHandlerPlugin);
+  await app.register(rateLimitPlugin);
   await app.register(versionGatePlugin, {
     minClientVersion: opts.config.minClientVersion,
   });
@@ -75,6 +80,9 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     },
     { prefix: "/api/v1" },
   );
+
+  // Read-only phone viewer at the site root (same origin as the API).
+  await app.register(mobileRoutes);
 
   startBankAutoSync(app, opts.config);
 
