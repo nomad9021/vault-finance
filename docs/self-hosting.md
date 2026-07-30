@@ -30,14 +30,14 @@ creates your owner account — then writes `docker/.env` and starts everything.
 # Linux / macOS
 git clone <your-fork-or-release-tarball> vault-finance
 cd vault-finance
-bash scripts/install-server.sh
+bash installers/server/install-server.sh
 ```
 
 ```powershell
 # Windows (Docker Desktop + PowerShell)
 git clone <your-fork-or-release-tarball> vault-finance
 cd vault-finance
-pwsh -File scripts\install-server.ps1
+pwsh -File installers\server\install-server.ps1
 ```
 
 Re-running the installer is safe — it reads your existing answers as defaults.
