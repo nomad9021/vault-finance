@@ -31,9 +31,10 @@
     "active": true,
     "category": "Finance",
     "targets": [
+      "app",
+      "dmg",
       "msi",
       "nsis",
-      "dmg",
       "deb",
       "appimage"
     ],
