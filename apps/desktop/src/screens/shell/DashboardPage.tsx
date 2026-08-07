@@ -29,6 +29,35 @@ import { TrendChart, project } from "./TrendChart.js";
 function currentMonth(): string {
   return new Date().toISOString().slice(0, 7);
 }
+function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split("-").map(Number) as [number, number];
+  return new Date(Date.UTC(y, m - 1 + delta, 1)).toISOString().slice(0, 7);
+}
+
+/**
+ * Which month the dashboard opens on.
+ *
+ * Month-to-date framing makes the app look broken for the first days of every
+ * month: on the 2nd there is almost nothing to draw, so the flagship diagram
+ * is empty and income/spending both read $0 next to a healthy net worth. So if
+ * the current month has no activity yet, fall back to the most recent month
+ * that does — always labelled, and steppable, so it never silently lies about
+ * which month you're looking at.
+ *
+ * Derived from the trends data the dashboard already loads: no extra request.
+ */
+function defaultMonth(
+  points: { month: string; incomeCents: number; spendingCents: number }[],
+): string {
+  const now = currentMonth();
+  const current = points.find((p) => p.month === now);
+  if (!current || current.incomeCents > 0 || current.spendingCents > 0) return now;
+  const withActivity = points
+    .filter((p) => p.incomeCents > 0 || p.spendingCents > 0)
+    .map((p) => p.month)
+    .sort();
+  return withActivity[withActivity.length - 1] ?? now;
+}
 function monthLong(month: string): string {
   const [y, m] = month.split("-").map(Number) as [number, number];
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, { month: "long", timeZone: "UTC" });
@@ -74,18 +103,24 @@ const toneColor = (tone: "over" | "soon" | "ok") =>
 
 export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
   const client = useApp((s) => s.client);
-  const month = currentMonth();
+
+  // Trends come first: they carry six months of income/spending, which is
+  // enough to choose a sensible default month without another request.
+  const { data: trendData } = useData(() => client.trends(6), [client]);
+  const [pickedMonth, setPickedMonth] = useState<string | null>(null);
+  const month = pickedMonth ?? defaultMonth(trendData?.points ?? []);
+  const isCurrentMonth = month === currentMonth();
+
   const { data: accountData, reload: reloadAccounts } = useData(() => client.accounts(), [client]);
   const { data: sankeyData, loading, reload: reloadSankey } = useData<SankeyResponse>(
-    () => client.sankey(),
-    [client],
+    () => client.sankey(month),
+    [client, month],
   );
   const { data: txnData, reload: reloadTxns } = useData(
     () => client.transactions({ limit: 6 }),
     [client],
   );
   const { data: goalData } = useData(() => client.goals(), [client]);
-  const { data: trendData } = useData(() => client.trends(6), [client]);
   const { data: budgetData } = useData(() => client.budgets(month), [client, month]);
   const { data: categoryData } = useData(() => client.categories(), [client]);
   const { data: billData } = useData(() => client.bills(), [client]);
@@ -195,7 +230,32 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
       ) : hasData || hasPlan ? (
         <div className="stack">
           <div className="row-between wrap">
-            <div className="eyebrow">Cash flow · {monthLong(month)}</div>
+            <div className="row" style={{ gap: "var(--space-1)" }}>
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="chevronLeft"
+                aria-label="Previous month"
+                onClick={() => setPickedMonth(shiftMonth(month, -1))}
+              />
+              <span className="eyebrow" style={{ minWidth: 108, textAlign: "center" }}>
+                {monthLong(month)}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="chevronRight"
+                aria-label="Next month"
+                disabled={month >= currentMonth()}
+                onClick={() => setPickedMonth(shiftMonth(month, 1))}
+              />
+              {/* Says plainly why you're not looking at the current month. */}
+              {!isCurrentMonth && (
+                <button className="panel-link" onClick={() => setPickedMonth(currentMonth())}>
+                  {monthLong(currentMonth())} has no activity yet — jump to it
+                </button>
+              )}
+            </div>
             <Segmented
               options={availableViews}
               value={effectiveView}
