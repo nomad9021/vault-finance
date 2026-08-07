@@ -13,6 +13,7 @@ import {
   totpInvalid,
   totpRequired,
 } from "../../errors.js";
+import { decryptSecret, encryptSecret } from "../../secret-crypto.js";
 import { generateTotpSecret, otpauthUri, verifyTotp } from "./totp.js";
 
 /**
@@ -95,7 +96,7 @@ export async function login(
   // the password was right.
   if (user.totpEnabled) {
     if (!input.totpCode) throw totpRequired();
-    if (!verifyTotp(user.totpSecret ?? "", input.totpCode)) throw totpInvalid();
+    if (!verifyTotp(decryptSecret(user.totpSecret) ?? "", input.totpCode)) throw totpInvalid();
   }
 
   const [session] = await db
@@ -137,7 +138,10 @@ export async function startTotpSetup(
     throw new AppError("VALIDATION_ERROR", 409, "Two-factor is already on — turn it off to re-enroll.");
   }
   const secret = generateTotpSecret();
-  await db.update(users).set({ totpSecret: secret, updatedAt: new Date() }).where(eq(users.id, userId));
+  await db
+    .update(users)
+    .set({ totpSecret: encryptSecret(secret), updatedAt: new Date() })
+    .where(eq(users.id, userId));
   return { secret, otpauthUri: otpauthUri(secret, user.email) };
 }
 
@@ -148,7 +152,7 @@ export async function enableTotp(db: Db, userId: string, code: string): Promise<
     throw new AppError("VALIDATION_ERROR", 400, "Start two-factor setup first.");
   }
   if (user.totpEnabled) return;
-  if (!verifyTotp(user.totpSecret, code)) throw totpInvalid();
+  if (!verifyTotp(decryptSecret(user.totpSecret), code)) throw totpInvalid();
   await db.update(users).set({ totpEnabled: true, updatedAt: new Date() }).where(eq(users.id, userId));
 }
 

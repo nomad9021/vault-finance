@@ -7,6 +7,7 @@ import { accounts, bankConnections, bankSettings, users } from "../../db/schema.
 import { AppError, notFound } from "../../errors.js";
 import { aiCategorizeUncategorized } from "../categorize/service.js";
 import { isConfigured } from "./providers/index.js";
+import { encryptSecret } from "../../secret-crypto.js";
 import {
   loadBankSettings,
   providerConfig,
@@ -107,7 +108,11 @@ export default async function bankRoutes(
             ? { plaidClientId: body.plaidClientId.trim() || null }
             : {}),
           ...(body.plaidSecret !== undefined
-            ? { plaidSecret: body.plaidSecret.trim() || null }
+            ? {
+                plaidSecret: body.plaidSecret.trim()
+                  ? encryptSecret(body.plaidSecret.trim())
+                  : null,
+              }
             : {}),
         })
         .where(eq(bankSettings.id, true));

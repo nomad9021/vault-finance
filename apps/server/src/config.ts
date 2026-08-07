@@ -28,6 +28,15 @@ const EnvSchema = z.object({
   VAULT_JWT_SECRET: z.string().min(32).optional(),
   VAULT_ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().default(15 * 60),
 
+  // Column-encryption key (32 bytes, base64) for stored secrets. If unset, one
+  // is generated and persisted as `data-key` in the data dir. Set this to keep
+  // the key in a secrets manager instead of on the volume.
+  VAULT_DATA_KEY: z.string().optional(),
+
+  // Extra browser origins allowed to read API responses. Loopback is always
+  // allowed; native clients send no Origin and are unaffected.
+  VAULT_CORS_ORIGINS: z.string().optional(),
+
   // Ollama defaults used when the setup wizard doesn't override them.
   OLLAMA_HOST: z.string().default("ollama"),
   OLLAMA_PORT: z.coerce.number().int().default(11434),
@@ -51,6 +60,10 @@ export interface AppConfig {
   tls: { enabled: boolean; certPath?: string; keyPath?: string };
   dataDir: string;
   jwtSecret: string;
+  /** Base64 column-encryption key; undefined means "use the data-dir file". */
+  dataKey?: string;
+  /** Additional allowed browser origins (loopback is always permitted). */
+  corsOrigins: string[];
   accessTokenTtlSeconds: number;
   ollama: { host: string; port: number; model: string };
   plaidBaseUrl?: string;
@@ -87,6 +100,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     },
     dataDir,
     jwtSecret: parsed.VAULT_JWT_SECRET ?? loadOrCreateJwtSecret(dataDir),
+    ...(parsed.VAULT_DATA_KEY ? { dataKey: parsed.VAULT_DATA_KEY } : {}),
+    corsOrigins: (parsed.VAULT_CORS_ORIGINS ?? "")
+      .split(",")
+      .map((o) => o.trim())
+      .filter(Boolean),
     accessTokenTtlSeconds: parsed.VAULT_ACCESS_TOKEN_TTL_SECONDS,
     ollama: {
       host: parsed.OLLAMA_HOST,

@@ -2,6 +2,7 @@ import type { AiStatus, QualityModelMap } from "@vault/shared";
 import type { FastifyInstance } from "fastify";
 import type { AppConfig } from "../../config.js";
 import { getProvider, isConfigured, type AiConfig } from "./providers/index.js";
+import { decryptSecret } from "../../secret-crypto.js";
 
 export interface ResolvedAiSettings {
   enabled: boolean;
@@ -40,7 +41,7 @@ export async function resolveSettings(
     aiConfig: {
       provider,
       model: row?.model ?? config.ollama.model,
-      apiKey: row?.apiKey ?? null,
+      apiKey: decryptSecret(row?.apiKey ?? null),
       baseUrl:
         row?.baseUrl ?? `http://${config.ollama.host}:${config.ollama.port}`,
     },

@@ -4,6 +4,7 @@ import type { AppConfig } from "../../config.js";
 import type { Db } from "../../plugins/db.js";
 import { accounts, bankConnections, bankSettings, transactions, users } from "../../db/schema.js";
 import { aiCategorizeUncategorized, loadCategorizer } from "../categorize/service.js";
+import { decryptSecret } from "../../secret-crypto.js";
 import {
   getBankProvider,
   isConfigured,
@@ -27,7 +28,7 @@ export function providerConfig(settings: BankSettingsRow, plaidBaseUrl?: string)
   return {
     provider: settings.provider,
     plaidClientId: settings.plaidClientId,
-    plaidSecret: settings.plaidSecret,
+    plaidSecret: decryptSecret(settings.plaidSecret),
     plaidEnv: settings.plaidEnv,
     ...(plaidBaseUrl ? { plaidBaseUrl } : {}),
   };

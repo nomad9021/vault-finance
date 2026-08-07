@@ -16,6 +16,7 @@ import { buildFinancialContext } from "./context.js";
 import { configForQuality } from "./model-manager.js";
 import { getProvider, isConfigured, type ChatMessage } from "./providers/index.js";
 import { resolveSettings, statusFor } from "./settings.js";
+import { encryptSecret } from "../../secret-crypto.js";
 
 const HISTORY_LIMIT = 20;
 
@@ -37,12 +38,14 @@ export default async function aiRoutes(
       const current = await app.db.query.aiSettings.findFirst();
 
       // apiKey semantics: omitted keeps the stored key, empty string clears it.
+      // The stored value is already ciphertext, so the "keep it" branch must
+      // pass it through untouched — only freshly supplied plaintext is encrypted.
       const apiKey =
         body.apiKey === undefined
           ? (current?.apiKey ?? null)
           : body.apiKey.trim() === ""
             ? null
-            : body.apiKey.trim();
+            : encryptSecret(body.apiKey.trim());
 
       const values = {
         id: true as const,
