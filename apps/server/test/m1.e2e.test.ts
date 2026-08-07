@@ -66,7 +66,12 @@ describe("meta", () => {
   it("reports version and health", async () => {
     const version = await app.inject({ method: "GET", url: "/api/v1/version" });
     expect(version.statusCode).toBe(200);
-    expect(version.json()).toEqual({ apiVersion: "0.1.0", minClientVersion: "0.1.0" });
+    // Assert the contract's shape, not a literal — the v0.1.1 release bumped
+    // apiVersion and left this test asserting 0.1.0, which failed on main.
+    const body = version.json();
+    expect(Object.keys(body).sort()).toEqual(["apiVersion", "minClientVersion"]);
+    expect(body.apiVersion).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(body.minClientVersion).toMatch(/^\d+\.\d+\.\d+$/);
 
     const health = await app.inject({ method: "GET", url: "/api/v1/health" });
     expect(health.statusCode).toBe(200);
