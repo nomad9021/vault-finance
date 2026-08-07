@@ -512,6 +512,10 @@ function TransactionDialog({
   const [notes, setNotes] = useState(transaction?.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Offered only when you're actually filing something that wasn't filed
+  // before — that's the moment the rule is worth creating.
+  const [alsoRule, setAlsoRule] = useState(false);
+  const categorizingFresh = !transaction?.categoryId && !!categoryId;
 
   const amountCents = parseAmountToCents(amount);
   const valid =
@@ -537,6 +541,15 @@ function TransactionDialog({
         await client.updateTransaction(transaction.id, common);
       } else {
         await client.createTransaction({ ...common, accountId, pending: false });
+      }
+      // Turn this one-off correction into a standing rule, so the same
+      // merchant files itself on every future import. Non-fatal: the
+      // transaction is already saved, and a duplicate rule isn't worth
+      // surfacing an error over.
+      if (alsoRule && categoryId && merchant.trim()) {
+        await client
+          .createCategorizationRule({ keyword: merchant.trim(), categoryId })
+          .catch(() => {});
       }
       onSaved();
     } catch (err) {
@@ -636,6 +649,24 @@ function TransactionDialog({
             </option>
           ))}
         </Select>
+        {categorizingFresh && (
+          <label className="radio" style={{ alignItems: "flex-start", gap: "var(--space-2)" }}>
+            <input
+              type="checkbox"
+              checked={alsoRule}
+              onChange={(e) => setAlsoRule(e.target.checked)}
+              style={{ position: "static", opacity: 1, width: 16, height: 16, marginTop: 2 }}
+            />
+            <span>
+              <span className="t-sm">
+                Always file “{merchant.trim() || "this merchant"}” here
+              </span>
+              <span className="field-hint" style={{ display: "block" }}>
+                Creates a rule so future imports categorize it automatically.
+              </span>
+            </span>
+          </label>
+        )}
         <Field
           label="Notes (optional)"
           value={notes}
