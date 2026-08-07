@@ -78,6 +78,9 @@ importers:
       '@fastify/cors':
         specifier: ^11.3.0
         version: 11.3.0
+      '@vault/design-tokens':
+        specifier: workspace:*
+        version: link:../../packages/design-tokens
       '@vault/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -145,6 +148,10 @@ importers:
         version: 5.9.3
 
   packages/ui:
+    dependencies:
+      '@vault/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       '@types/react':
         specifier: ^19.0.7

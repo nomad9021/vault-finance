@@ -55,21 +55,21 @@ export function BillsPage() {
     <div className="page">
       <div className="page-head">
         <div className="grid" style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ gridColumn: "span 4", minWidth: 0 }}>
+          <div className="col-4">
             <MetricCard label="Upcoming bills" value={formatCentsWhole(totalDue)} hint={`${bills.length} tracked`} />
           </div>
-          <div style={{ gridColumn: "span 4", minWidth: 0 }}>
+          <div className="col-4">
             <MetricCard label="Set aside" value={formatCentsWhole(totalSaved)} deltaTone="up" hint="saved toward bills" />
           </div>
-          <div style={{ gridColumn: "span 4", minWidth: 0 }}>
+          <div className="col-4">
             <MetricCard label="Still needed" value={formatCentsWhole(remaining)} deltaTone={remaining > 0 ? "down" : "up"} hint="to fully fund" />
           </div>
         </div>
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <Button variant="primary" onClick={() => setEditing("new")}>
-          + Add bill
+        <Button variant="primary" icon="plus" onClick={() => setEditing("new")}>
+          Add bill
         </Button>
       </div>
 
@@ -90,30 +90,30 @@ export function BillsPage() {
                   ? "var(--color-negative)"
                   : due.tone === "soon"
                     ? "var(--color-accent)"
-                    : "var(--color-neutral-500)";
+                    : "var(--content-tertiary)";
               return (
                 <div
                   key={b.id}
                   className="row-div"
                   style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 2px" }}
                 >
-                  <span style={{ width: 10, height: 10, borderRadius: 3, background: b.color, flex: "none" }} />
+                  <span style={{ width: 10, height: 10, borderRadius: "var(--radius-sm)", background: b.color, flex: "none" }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <button
                         onClick={() => setEditing(b)}
                         title="Edit bill"
-                        style={{ background: "none", border: 0, font: "inherit", fontWeight: 600, fontSize: 14, cursor: "pointer", color: "var(--color-text)", padding: 0 }}
+                        style={{ background: "none", border: 0, font: "inherit", fontWeight: 600, fontSize: "var(--text-base)", cursor: "pointer", color: "var(--color-text)", padding: 0 }}
                       >
                         {b.name}
                       </button>
                       {b.autopay && (
-                        <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--color-positive)", border: "1px solid color-mix(in srgb, var(--color-positive) 40%, transparent)", borderRadius: 6, padding: "1px 6px" }}>
+                        <span style={{ fontSize: "var(--text-2xs)", fontWeight: 600, color: "var(--color-positive)", border: "1px solid color-mix(in srgb, var(--color-positive) 40%, transparent)", borderRadius: "var(--radius-sm)", padding: "1px 6px" }}>
                           autopay
                         </span>
                       )}
                     </div>
-                    <div style={{ fontSize: 11.5, color: "var(--color-neutral-500)", marginTop: 1 }}>
+                    <div style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)", marginTop: 1 }}>
                       {dueDateShort(b.nextDueDate)} · {b.cadence}
                       {b.accountId ? ` · ${accountName.get(b.accountId) ?? ""}` : ""}
                     </div>
@@ -121,23 +121,24 @@ export function BillsPage() {
                     <div style={{ height: 6, borderRadius: 99, marginTop: 7, background: "color-mix(in srgb, var(--color-text) 8%, transparent)", overflow: "hidden", maxWidth: 340 }}>
                       <div style={{ height: "100%", width: `${pct * 100}%`, borderRadius: 99, background: funded ? "var(--color-positive)" : b.color, transition: "width .4s var(--ease)" }} />
                     </div>
-                    <div style={{ fontSize: 11, color: "var(--color-neutral-500)", marginTop: 3 }}>
+                    <div style={{ fontSize: "var(--text-2xs)", color: "var(--content-tertiary)", marginTop: 3 }}>
                       {formatCentsWhole(b.savedCents)} of {formatCentsWhole(b.amountCents)} set aside
                       {funded ? " · fully funded 🎉" : ""}
                     </div>
                   </div>
                   <div style={{ textAlign: "right", flex: "none" }}>
-                    <div className="num" style={{ fontWeight: 600, fontSize: 15 }}>
+                    <div className="num" style={{ fontWeight: 600, fontSize: "var(--text-md)" }}>
                       {formatCentsWhole(b.amountCents)}
                     </div>
-                    <div style={{ fontSize: 11.5, fontWeight: 600, color: dueColor }}>{due.text}</div>
+                    <div style={{ fontSize: "var(--text-xs)", fontWeight: 600, color: dueColor }}>{due.text}</div>
                   </div>
                   <button
                     onClick={() => setFunding(b)}
                     title="Set money aside for this bill"
-                    style={{ flex: "none", border: "1px solid var(--color-divider)", background: "var(--color-surface)", borderRadius: 7, padding: "5px 10px", fontSize: 12, fontWeight: 600, color: "var(--color-accent)", cursor: "pointer", whiteSpace: "nowrap" }}
+                    className="btn btn-secondary btn-sm"
+                    style={{ flex: "none", color: "var(--color-accent)" }}
                   >
-                    + Set aside
+                    Set aside
                   </button>
                 </div>
               );
@@ -302,12 +303,12 @@ function BillDialog({
               key={c}
               onClick={() => setColor(c)}
               aria-label={`color ${c}`}
-              style={{ width: 20, height: 20, borderRadius: 6, background: c, border: color === c ? "2px solid var(--color-text)" : "2px solid transparent", cursor: "pointer" }}
+              style={{ width: 20, height: 20, borderRadius: "var(--radius-sm)", background: c, border: color === c ? "2px solid var(--color-text)" : "2px solid transparent", cursor: "pointer" }}
             />
           ))}
         </div>
       </div>
-      {error && <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>{error}</div>}
+      {error && <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>{error}</div>}
       <div className="dialog-actions">
         {bill && (
           <Button variant="ghost" onClick={() => void remove()} disabled={busy}>

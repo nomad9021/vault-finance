@@ -1,14 +1,13 @@
-import { Banner, Button } from "@vault/ui";
-import { useState } from "react";
+import { Banner, Button, CommandPalette, type Command } from "@vault/ui";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useLayoutMode } from "../../lib/useLayout.js";
 import { useApp } from "../../state/store.js";
-import { AppMark } from "../AuthLayout.js";
 import { AccountsPage } from "./AccountsPage.js";
 import { AssistantPage } from "./AssistantPage.js";
-import { BudgetPlannerPage } from "./BudgetPlannerPage.js";
+import { BillsPage } from "./BillsPage.js";
 import { BudgetsPage } from "./BudgetsPage.js";
 import { CashFlowPage } from "./CashFlowPage.js";
 import { DashboardPage } from "./DashboardPage.js";
-import { BillsPage } from "./BillsPage.js";
 import { GoalsPage } from "./GoalsPage.js";
 import { Header } from "./Header.js";
 import { IncomePage } from "./IncomePage.js";
@@ -16,94 +15,82 @@ import { InvestmentsPage } from "./InvestmentsPage.js";
 import { ReportsPage } from "./ReportsPage.js";
 import { SettingsPage } from "./SettingsPage.js";
 import { TransactionsPage } from "./TransactionsPage.js";
+import { Rail, Sidebar } from "./Sidebar.js";
+import { GroupTabs, TabBar } from "./TabBar.js";
+import {
+  NAV_GROUPS,
+  groupOf,
+  pageMeta,
+  visiblePages,
+  type NavFilter,
+  type Navigate,
+  type PageId,
+} from "./nav.js";
 
-export type PageId =
-  | "dashboard"
-  | "accounts"
-  | "transactions"
-  | "income"
-  | "budgets"
-  | "budget-planner"
-  | "bills"
-  | "cashflow"
-  | "investments"
-  | "goals"
-  | "reports"
-  | "assistant"
-  | "settings";
+export type { PageId, NavFilter, Navigate } from "./nav.js";
 
 /**
- * Optional pre-applied filter carried by a cross-page navigation — e.g. click a
- * category or account anywhere and land on Transactions already filtered to it.
+ * The application shell.
+ *
+ * One navigation model (see nav.ts) rendered three ways depending on how much
+ * room there is: a labelled sidebar, an icon rail, or a bottom tab bar with
+ * the group's pages as a top strip. Dragging the window narrower walks you
+ * through those states continuously and lands on exactly the layout the phone
+ * viewer uses, which is the point — there is no separate "mobile design", just
+ * the same design with less room.
  */
-export type NavFilter = { categoryId?: string; accountId?: string };
-export type Navigate = (target: PageId, filter?: NavFilter) => void;
-
-/** `ai: true` items only appear once the assistant is enabled and configured. */
-export const NAV_ITEMS: Array<{ id: PageId; label: string; icon: string; ai?: boolean }> = [
-  { id: "dashboard", label: "Dashboard", icon: "🏠" },
-  { id: "accounts", label: "Accounts", icon: "🏦" },
-  { id: "transactions", label: "Transactions", icon: "💳" },
-  { id: "income", label: "Income", icon: "💵" },
-  { id: "budgets", label: "Budgets", icon: "🎯" },
-  { id: "budget-planner", label: "Budget Planner", icon: "🗂️" },
-  { id: "bills", label: "Bills", icon: "🧾" },
-  { id: "cashflow", label: "Cash Flow", icon: "📈" },
-  { id: "investments", label: "Investments", icon: "📊" },
-  { id: "goals", label: "Savings Goals", icon: "🚩" },
-  { id: "reports", label: "Reports", icon: "📑" },
-  { id: "assistant", label: "AI Assistant", icon: "✦", ai: true },
-  { id: "settings", label: "Settings", icon: "⚙️" },
-];
-
-const SIDEBAR_KEY = "sidebar-open";
-
-const PAGE_TITLES: Record<PageId, string> = {
-  dashboard: "Dashboard",
-  accounts: "Accounts",
-  transactions: "Transactions",
-  income: "Income",
-  budgets: "Budgets",
-  "budget-planner": "Budget Planner",
-  bills: "Bills",
-  cashflow: "Cash Flow",
-  investments: "Investments",
-  goals: "Savings Goals",
-  reports: "Reports",
-  assistant: "AI Assistant",
-  settings: "Settings",
-};
-
 export function AppShell() {
   const connection = useApp((s) => s.connection);
-  const user = useApp((s) => s.user);
   const aiVisible = useApp((s) => s.aiVisible);
-  const [page, setPage] = useState<PageId>("dashboard");
-  const [sidebarOpen, setSidebarOpen] = useState(() => {
-    try {
-      return localStorage.getItem(SIDEBAR_KEY) !== "0";
-    } catch {
-      return true;
-    }
-  });
-  const toggleSidebar = () =>
-    setSidebarOpen((v) => {
-      const next = !v;
-      try {
-        localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0");
-      } catch {
-        /* ignore */
-      }
-      return next;
-    });
-  // Filter carried into Transactions by a cross-page link (Sankey drill-in,
-  // account row, category row, stat card…); consumed once on navigate.
-  const [txnFilter, setTxnFilter] = useState<NavFilter>({});
+  const mode = useLayoutMode();
 
-  const navigate: Navigate = (target, filter) => {
-    setTxnFilter(filter ?? {});
+  const [page, setPage] = useState<PageId>("dashboard");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  // Filter carried into a page by a cross-page link (Sankey drill-in, account
+  // row, category row, stat card…); consumed once on navigate.
+  const [filter, setFilter] = useState<NavFilter>({});
+
+  const navigate = useCallback<Navigate>((target, next) => {
+    setFilter(next ?? {});
     setPage(target);
-  };
+  }, []);
+
+  // If the assistant gets switched off while it's open, don't strand the user
+  // on a page that's no longer in the nav.
+  useEffect(() => {
+    if (page === "assistant" && !aiVisible) setPage("dashboard");
+  }, [page, aiVisible]);
+
+  // ⌘K / Ctrl-K from anywhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const commands = useMemo<Command[]>(
+    () =>
+      NAV_GROUPS.flatMap((group) =>
+        visiblePages(group, aiVisible).map((p) => ({
+          id: `go:${p.id}`,
+          label: p.title,
+          group: group.label,
+          icon: p.icon,
+          ...(p.keywords ? { keywords: p.keywords } : {}),
+          run: () => navigate(p.id),
+        })),
+      ),
+    [aiVisible, navigate],
+  );
+
+  const group = groupOf(page);
+  const meta = pageMeta(page);
+  const narrow = mode === "narrow";
 
   return (
     <div
@@ -112,156 +99,106 @@ export function AppShell() {
         height: "100vh",
         overflow: "hidden",
         background: "var(--color-bg)",
-        color: "var(--color-text)",
+        color: "var(--content-primary)",
         fontFamily: "var(--font-body)",
       }}
     >
-      <aside
-        style={{
-          width: sidebarOpen ? 224 : 0,
-          flex: "none",
-          borderRight: sidebarOpen ? "1px solid var(--color-divider)" : "none",
-          overflow: "hidden",
-          transition: "width .25s ease",
-          display: "flex",
-          flexDirection: "column",
-          minHeight: 0,
-        }}
-      >
-        <div
-          style={{
-            width: 224,
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            minHeight: 0,
-          }}
-        >
-          <div style={{ padding: "20px 18px 16px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <AppMark size={26} />
-              <span
-                style={{
-                  fontFamily: "var(--font-heading)",
-                  fontWeight: 600,
-                  fontSize: 17,
-                  letterSpacing: "-.01em",
-                }}
-              >
-                Vault Finance
-              </span>
-            </div>
-            <div style={{ fontSize: 11, color: "var(--color-neutral-500)", marginTop: 6 }}>
-              Household finance
-            </div>
-          </div>
-          <nav
-            style={{
-              flex: 1,
-              overflow: "auto",
-              padding: "6px 10px 14px",
-              display: "flex",
-              flexDirection: "column",
-              gap: 2,
-            }}
-          >
-            {NAV_ITEMS.filter((item) => !item.ai || aiVisible).map((item) => {
-              const active = page === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setPage(item.id)}
-                  aria-current={active ? "page" : undefined}
-                  className="nav-item"
-                  data-active={active ? "true" : undefined}
-                >
-                  <span aria-hidden="true" className="nav-item-icon">
-                    {item.icon}
-                  </span>
-                  <span className="nav-item-label">{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-          <div
-            style={{
-              padding: "14px 18px",
-              borderTop: "1px solid var(--color-divider)",
-              fontSize: 11,
-              color: "var(--color-neutral-500)",
-              lineHeight: 1.6,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {user?.displayName}
-            <br />
-            Self-hosted · v0.1
-          </div>
-        </div>
-      </aside>
+      {mode === "wide" && <Sidebar page={page} onNavigate={navigate} />}
+      {mode === "medium" && <Rail page={page} onNavigate={navigate} />}
 
-      <main
-        style={{
-          flex: 1,
-          minWidth: 0,
-          display: "flex",
-          flexDirection: "column",
-          minHeight: 0,
-        }}
-      >
+      <main className="app-main">
         {connection === "offline" && (
           <Banner tone="warning" action={<ReconnectAction />}>
-            Connection to the server lost — reconnecting. Your data is safe on
-            the server; nothing is lost.
+            Connection to the server lost — reconnecting. Your data is safe on the
+            server; nothing is lost.
           </Banner>
         )}
+
         <Header
-          title={PAGE_TITLES[page]}
-          onToggleSidebar={toggleSidebar}
-          onNavigate={setPage}
+          title={meta.title}
+          mode={mode}
+          onOpenPalette={() => setPaletteOpen(true)}
+          onNavigate={navigate}
         />
-        <div style={{ flex: 1, overflow: "auto", padding: 24 }}>
-          {page === "dashboard" ? (
-            <DashboardPage onNavigate={navigate} />
-          ) : page === "accounts" ? (
-            <AccountsPage onNavigate={navigate} />
-          ) : page === "transactions" ? (
-            <TransactionsPage
-              key={txnFilter.categoryId ?? txnFilter.accountId ?? "all"}
-              {...(txnFilter.categoryId ? { initialCategoryId: txnFilter.categoryId } : {})}
-              {...(txnFilter.accountId ? { initialAccountId: txnFilter.accountId } : {})}
-            />
-          ) : page === "income" ? (
-            <IncomePage onNavigate={navigate} />
-          ) : page === "budgets" ? (
-            <BudgetsPage onNavigate={navigate} />
-          ) : page === "budget-planner" ? (
-            <BudgetPlannerPage onNavigate={navigate} />
-          ) : page === "bills" ? (
-            <BillsPage />
-          ) : page === "cashflow" ? (
-            <CashFlowPage />
-          ) : page === "investments" ? (
-            <InvestmentsPage onNavigate={navigate} />
-          ) : page === "goals" ? (
-            <GoalsPage onNavigate={navigate} />
-          ) : page === "reports" ? (
-            <ReportsPage onNavigate={navigate} />
-          ) : page === "assistant" && aiVisible ? (
-            <AssistantPage onNavigate={setPage} />
-          ) : (
-            <SettingsPage />
-          )}
+
+        {narrow && (
+          <div style={{ padding: "0 var(--space-4)", flex: "none", background: "var(--color-bg)" }}>
+            <GroupTabs group={group} page={page} onNavigate={navigate} />
+          </div>
+        )}
+
+        <div className="app-scroll">
+          <PageBody page={page} filter={filter} onNavigate={navigate} />
         </div>
+
+        {narrow && (
+          <TabBar
+            group={group}
+            onSelectGroup={(_g, firstPage) => navigate(firstPage)}
+          />
+        )}
       </main>
+
+      <CommandPalette
+        open={paletteOpen}
+        commands={commands}
+        onClose={() => setPaletteOpen(false)}
+      />
     </div>
   );
+}
+
+/**
+ * Page switch. Keyed on the incoming filter so a cross-page navigation to a
+ * page you're already on still re-mounts with the new filter applied.
+ */
+function PageBody({
+  page,
+  filter,
+  onNavigate,
+}: {
+  page: PageId;
+  filter: NavFilter;
+  onNavigate: Navigate;
+}) {
+  switch (page) {
+    case "dashboard":
+      return <DashboardPage onNavigate={onNavigate} />;
+    case "accounts":
+      return <AccountsPage onNavigate={onNavigate} />;
+    case "transactions":
+      return (
+        <TransactionsPage
+          key={filter.categoryId ?? filter.accountId ?? "all"}
+          {...(filter.categoryId ? { initialCategoryId: filter.categoryId } : {})}
+          {...(filter.accountId ? { initialAccountId: filter.accountId } : {})}
+        />
+      );
+    case "income":
+      return <IncomePage onNavigate={onNavigate} />;
+    case "budgets":
+      return <BudgetsPage onNavigate={onNavigate} {...(filter.tab ? { initialTab: filter.tab } : {})} />;
+    case "bills":
+      return <BillsPage />;
+    case "cashflow":
+      return <CashFlowPage {...(filter.tab ? { initialTab: filter.tab } : {})} />;
+    case "investments":
+      return <InvestmentsPage onNavigate={onNavigate} />;
+    case "goals":
+      return <GoalsPage onNavigate={onNavigate} />;
+    case "reports":
+      return <ReportsPage onNavigate={onNavigate} />;
+    case "assistant":
+      return <AssistantPage onNavigate={onNavigate} />;
+    case "settings":
+      return <SettingsPage />;
+  }
 }
 
 function ReconnectAction() {
   const routeForServer = useApp((s) => s.routeForServer);
   return (
-    <Button variant="ghost" onClick={() => void routeForServer()}>
+    <Button variant="ghost" size="sm" onClick={() => void routeForServer()}>
       Retry now
     </Button>
   );

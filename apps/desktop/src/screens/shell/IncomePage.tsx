@@ -127,17 +127,17 @@ export function IncomePage({ onNavigate }: { onNavigate: Navigate }) {
         <Button variant="ghost" onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month">
           ‹
         </Button>
-        <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 15, minWidth: 150, textAlign: "center" }}>
+        <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: "var(--text-md)", minWidth: 150, textAlign: "center" }}>
           {monthLabel(month)}
         </div>
         <Button variant="ghost" onClick={() => setMonth(shiftMonth(month, 1))} aria-label="Next month">
           ›
         </Button>
         <div style={{ marginLeft: "auto", textAlign: "right" }}>
-          <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--color-neutral-500)", fontWeight: 600 }}>
+          <div style={{ fontSize: "var(--text-2xs)", textTransform: "uppercase", letterSpacing: ".04em", color: "var(--content-tertiary)", fontWeight: 600 }}>
             Total income
           </div>
-          <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 22, color: "var(--color-positive)" }}>
+          <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: "var(--text-2xl)", color: "var(--color-positive)" }}>
             {formatCentsWhole(totalIncome)}
           </div>
         </div>
@@ -218,7 +218,7 @@ export function IncomePage({ onNavigate }: { onNavigate: Navigate }) {
           </Button>
         </div>
         {error && (
-          <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)", marginTop: 8 }}>
+          <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)", marginTop: 8 }}>
             {error}
           </div>
         )}
@@ -258,12 +258,12 @@ function SourceRow({
         width: "100%",
       }}
     >
-      <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 3, background: color, flex: "none" }} />
-      <span style={{ flex: 1, minWidth: 0, fontWeight: 500, fontSize: 13.5 }}>{name}</span>
-      <span style={{ fontWeight: 600, fontSize: 14, color: "var(--color-positive)" }}>
+      <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: "var(--radius-sm)", background: color, flex: "none" }} />
+      <span style={{ flex: 1, minWidth: 0, fontWeight: 500, fontSize: "var(--text-base)" }}>{name}</span>
+      <span style={{ fontWeight: 600, fontSize: "var(--text-base)", color: "var(--color-positive)" }}>
         {formatCentsWhole(cents)}
       </span>
-      <span style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>→</span>
+      <span style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>→</span>
     </button>
   );
 }
@@ -289,24 +289,24 @@ function IncomeItem({
         gap: 10,
         padding: "8px 0",
         borderTop: "1px solid color-mix(in srgb, var(--color-text) 7%, transparent)",
-        fontSize: 13,
+        fontSize: "var(--text-sm)",
       }}
     >
-      <span style={{ color: "var(--color-neutral-500)", flex: "none", width: 44 }}>
+      <span style={{ color: "var(--content-tertiary)", flex: "none", width: 44 }}>
         {txn.postedAt.slice(5)}
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {txn.merchantName}
         </div>
-        <div style={{ fontSize: 11.5, color: "var(--color-neutral-500)" }}>{accountName}</div>
+        <div style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>{accountName}</div>
       </div>
       <Select
         aria-label="Income source"
         value={txn.categoryId ?? ""}
         disabled={busy}
         onChange={(e) => onAssign(e.target.value)}
-        style={{ width: 150, fontSize: 12.5 }}
+        style={{ width: 150, fontSize: "var(--text-sm)" }}
       >
         <option value="">Unassigned</option>
         {sources.map((s) => (
@@ -345,9 +345,9 @@ function ManageRow({
     border: 0,
     background: "none",
     cursor: "pointer",
-    color: "var(--color-neutral-400)",
+    color: "var(--content-tertiary)",
     font: "inherit",
-    fontSize: 14,
+    fontSize: "var(--text-base)",
     padding: "0 3px",
   } as const;
   return (
@@ -358,11 +358,11 @@ function ManageRow({
         gap: 8,
         padding: "6px 9px",
         border: "1px solid var(--color-divider)",
-        borderRadius: 8,
+        borderRadius: "var(--radius-md)",
         background: "var(--color-surface)",
       }}
     >
-      <span style={{ width: 10, height: 10, borderRadius: 3, background: source.color, flex: "none" }} />
+      <span style={{ width: 10, height: 10, borderRadius: "var(--radius-sm)", background: source.color, flex: "none" }} />
       {editing ? (
         <input
           autoFocus
@@ -380,7 +380,7 @@ function ManageRow({
               setEditing(false);
             }
           }}
-          style={{ width: 180, padding: "2px 6px", fontSize: 13 }}
+          style={{ width: 180, padding: "2px 6px", fontSize: "var(--text-sm)" }}
         />
       ) : (
         <button
@@ -389,7 +389,7 @@ function ManageRow({
             setEditing(true);
           }}
           title="Rename"
-          style={{ background: "none", border: 0, font: "inherit", fontWeight: 600, fontSize: 13, cursor: "text", color: "var(--color-text)", flex: 1, textAlign: "left" }}
+          style={{ background: "none", border: 0, font: "inherit", fontWeight: 600, fontSize: "var(--text-sm)", cursor: "text", color: "var(--color-text)", flex: 1, textAlign: "left" }}
         >
           {source.name}
         </button>

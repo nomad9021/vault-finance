@@ -3,28 +3,30 @@ export interface AvatarProps {
   /** Hex tint from the user's avatarColor. */
   color: string;
   size?: number;
+  /** Render as a button (header account menu). */
+  onClick?: () => void;
+  title?: string;
 }
 
-/** Initial-bubble avatar, as used across the design's login and header. */
-export function Avatar({ name, color, size = 40 }: AvatarProps) {
+/** Initial-bubble avatar, used in the header, login profiles and member lists. */
+export function Avatar({ name, color, size = 40, onClick, title }: AvatarProps) {
+  const initial = (name.trim()[0] ?? "?").toUpperCase();
+  const style = {
+    width: size,
+    height: size,
+    background: color,
+    fontSize: Math.round(size * 0.4),
+  };
+  if (onClick) {
+    return (
+      <button className="avatar" style={style} onClick={onClick} aria-label={title ?? name} type="button">
+        {initial}
+      </button>
+    );
+  }
   return (
-    <span
-      aria-hidden="true"
-      style={{
-        width: size,
-        height: size,
-        borderRadius: "50%",
-        background: color,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontWeight: 600,
-        fontSize: size * 0.4,
-        color: "var(--color-accent-100)",
-        flex: "none",
-      }}
-    >
-      {(name.trim()[0] ?? "?").toUpperCase()}
+    <span className="avatar" style={style} aria-hidden="true">
+      {initial}
     </span>
   );
 }

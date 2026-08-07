@@ -43,7 +43,7 @@ export function TrendChart({
   const all = [...history, ...projected];
   if (all.length < 2) {
     return (
-      <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-neutral-500)", fontSize: 12 }}>
+      <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--content-tertiary)", fontSize: "var(--text-xs)" }}>
         {emptyLabel}
       </div>
     );

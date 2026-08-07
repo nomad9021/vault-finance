@@ -59,7 +59,7 @@ export function ReportsPage({ onNavigate }: { onNavigate: Navigate }) {
           background:
             "linear-gradient(160deg, var(--color-surface) 0%, color-mix(in srgb, var(--color-section) 45%, var(--color-surface)) 140%)",
           border: "1px solid var(--color-divider)",
-          borderRadius: 12,
+          borderRadius: "var(--radius-lg)",
           padding: 18,
           boxShadow: "var(--shadow-sm)",
         }}
@@ -75,10 +75,10 @@ export function ReportsPage({ onNavigate }: { onNavigate: Navigate }) {
         >
           <div
             style={{
-              fontSize: 11,
+              fontSize: "var(--text-2xs)",
               letterSpacing: ".04em",
               textTransform: "uppercase",
-              color: "var(--color-neutral-400)",
+              color: "var(--content-tertiary)",
               fontWeight: 600,
             }}
           >
@@ -103,15 +103,15 @@ export function ReportsPage({ onNavigate }: { onNavigate: Navigate }) {
         style={{
           background: "var(--color-surface)",
           border: "1px solid var(--color-divider)",
-          borderRadius: 12,
+          borderRadius: "var(--radius-lg)",
           boxShadow: "var(--shadow-sm)",
           overflowX: "auto",
         }}
       >
-        <div style={{ padding: "14px 18px 6px", fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 14 }}>
+        <div style={{ padding: "14px 18px 6px", fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: "var(--text-base)" }}>
           Monthly reports
         </div>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-sm)" }}>
           <thead>
             <tr style={{ textAlign: "left" }}>
               <Th>Month</Th>
@@ -155,7 +155,7 @@ export function ReportsPage({ onNavigate }: { onNavigate: Navigate }) {
                   >
                     {formatCentsWhole(m.netCents)}
                   </td>
-                  <td style={{ padding: "9px 18px", textAlign: "right", color: "var(--color-neutral-400)" }}>
+                  <td style={{ padding: "9px 18px", textAlign: "right", color: "var(--content-tertiary)" }}>
                     {m.savingsRate != null ? `${Math.round(m.savingsRate * 100)}%` : "—"}
                   </td>
                 </tr>
@@ -179,10 +179,10 @@ export function ReportsPage({ onNavigate }: { onNavigate: Navigate }) {
 function Ytd({ value, label }: { value: string; label: string }) {
   return (
     <div>
-      <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 22 }}>
+      <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: "var(--text-2xl)" }}>
         {value}
       </div>
-      <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>{label}</div>
+      <div style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>{label}</div>
     </div>
   );
 }
@@ -192,10 +192,10 @@ function Th({ children, align }: { children: React.ReactNode; align?: "right" })
     <th
       style={{
         padding: "8px 18px",
-        fontSize: 10.5,
+        fontSize: "var(--text-2xs)",
         letterSpacing: ".05em",
         textTransform: "uppercase",
-        color: "var(--color-neutral-500)",
+        color: "var(--content-tertiary)",
         textAlign: align ?? "left",
         fontWeight: 600,
       }}
@@ -234,7 +234,7 @@ function MonthDetail({
           </div>
           {report.topCategories.length > 0 && (
             <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>Spending breakdown</div>
+              <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, marginBottom: 8 }}>Spending breakdown</div>
               <PieChart
                 data={report.topCategories.map((c) => ({
                   label: c.name,
@@ -270,13 +270,13 @@ function MonthDetail({
                   >
                     <span
                       aria-hidden="true"
-                      style={{ width: 9, height: 9, borderRadius: 2, background: c.color, flex: "none" }}
+                      style={{ width: 9, height: 9, borderRadius: "var(--radius-sm)", background: c.color, flex: "none" }}
                     />
-                    <span style={{ flex: 1, minWidth: 0, fontSize: 13 }}>{c.name}</span>
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: "var(--text-sm)" }}>{c.name}</span>
+                    <span style={{ fontSize: "var(--text-sm)", fontWeight: 600 }}>
                       {formatCentsWhole(c.spentCents)}
                     </span>
-                    <span style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>→</span>
+                    <span style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>→</span>
                   </button>
                 ))}
               </div>
@@ -289,13 +289,13 @@ function MonthDetail({
               style={{
                 marginTop: 10,
                 padding: "12px 14px",
-                borderRadius: 10,
+                borderRadius: "var(--radius-md)",
                 background: "color-mix(in srgb, var(--color-accent) 8%, transparent)",
-                fontSize: 13,
+                fontSize: "var(--text-sm)",
                 lineHeight: 1.6,
               }}
             >
-              <Tag variant="accent" style={{ fontSize: 10, marginBottom: 6 }}>
+              <Tag variant="accent" style={{ fontSize: "var(--text-3xs)", marginBottom: 6 }}>
                 ✦ AI summary
               </Tag>
               <div style={{ whiteSpace: "pre-line" }}>{report.aiSummary}</div>
@@ -325,7 +325,7 @@ function GoalsTracker() {
   if (goals.length === 0) return null;
   return (
     <div style={{ marginTop: 14 }}>
-      <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 8 }}>Goals — on track?</div>
+      <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, marginBottom: 8 }}>Goals — on track?</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {goals.map((g) => (
           <GoalRow key={g.id} goal={g} />
@@ -341,16 +341,16 @@ function GoalRow({ goal }: { goal: Goal }) {
   const targetMonth = goal.targetDate ? goal.targetDate.slice(0, 7) : null;
   let status: { label: string; color: string };
   if (pct >= 100) status = { label: "Reached 🎉", color: "var(--color-positive)" };
-  else if (!targetMonth) status = { label: "No deadline", color: "var(--color-neutral-400)" };
+  else if (!targetMonth) status = { label: "No deadline", color: "var(--content-tertiary)" };
   else if (!goal.projectedCompletion)
-    status = { label: "Add funds to project", color: "var(--color-neutral-400)" };
+    status = { label: "Add funds to project", color: "var(--content-tertiary)" };
   else if (goal.projectedCompletion <= targetMonth)
     status = { label: "On track", color: "var(--color-positive)" };
   else status = { label: "Behind", color: "var(--color-negative)" };
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 3 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--text-sm)", marginBottom: 3 }}>
         <span style={{ display: "flex", gap: 7, alignItems: "center" }}>
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: goal.color }} />
           {goal.name}
@@ -362,7 +362,7 @@ function GoalRow({ goal }: { goal: Goal }) {
       >
         <div style={{ height: "100%", width: `${pct}%`, background: goal.color, borderRadius: 99 }} />
       </div>
-      <div style={{ fontSize: 11.5, color: "var(--color-neutral-500)", marginTop: 3 }}>
+      <div style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)", marginTop: 3 }}>
         {formatCentsWhole(goal.savedCents)} of {formatCentsWhole(goal.targetCents)} ({pct}%)
         {targetMonth ? ` · target ${targetMonth}` : ""}
         {goal.projectedCompletion ? ` · projected ${goal.projectedCompletion}` : ""}

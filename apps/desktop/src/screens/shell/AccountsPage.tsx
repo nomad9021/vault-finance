@@ -6,21 +6,32 @@ import {
   parseAmountToCents,
   type Account,
 } from "@vault/shared";
-import { Button, Card, Dialog, Field, MetricCard, Panel, Select, Spinner } from "@vault/ui";
+import {
+  Button,
+  Card,
+  Dialog,
+  Field,
+  Icon,
+  type IconName,
+  MetricCard,
+  Panel,
+  Select,
+  Spinner,
+} from "@vault/ui";
 import { useMemo, useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 import type { Navigate } from "./AppShell.js";
 import { TrendChart, project } from "./TrendChart.js";
 
-const TYPE_ICONS: Record<AccountType, string> = {
-  checking: "💳",
-  savings: "🏦",
-  credit_card: "💠",
-  investment: "📈",
-  loan: "📄",
-  mortgage: "🏠",
-  other: "📁",
+const TYPE_ICONS: Record<AccountType, IconName> = {
+  checking: "card",
+  savings: "bank",
+  credit_card: "card",
+  investment: "invest",
+  loan: "receipt",
+  mortgage: "home",
+  other: "wallet",
 };
 
 const GROUPS: Array<{ title: string; types: AccountType[]; color: string; liability: boolean }> = [
@@ -92,13 +103,13 @@ export function AccountsPage({ onNavigate }: { onNavigate: Navigate }) {
     <div className="page">
       {/* Net-worth hero + assets / liabilities */}
       <div className="grid">
-        <div style={{ gridColumn: "span 6", minWidth: 0 }}>
+        <div className="col-6">
           <MetricCard large label="Net worth" value={formatCentsWhole(stats.netWorth)} hint="assets − liabilities" />
         </div>
-        <div style={{ gridColumn: "span 3", minWidth: 0 }}>
+        <div className="col-3">
           <MetricCard label="Assets" value={formatCentsWhole(stats.assets)} deltaTone="up" />
         </div>
-        <div style={{ gridColumn: "span 3", minWidth: 0 }}>
+        <div className="col-3">
           <MetricCard label="Liabilities" value={formatCentsWhole(stats.liabilities)} deltaTone="down" />
         </div>
       </div>
@@ -110,8 +121,10 @@ export function AccountsPage({ onNavigate }: { onNavigate: Navigate }) {
           subtitle="Last 6 months · dashed = projected"
           actions={
             nwHistory.length >= 2 ? (
-              <span className={`num ${nwChange >= 0 ? "pos" : "neg"}`} style={{ fontWeight: 600, fontSize: 13.5 }}>
-                {nwChange >= 0 ? "▲" : "▼"} {formatCentsWhole(Math.abs(nwChange))} ({nwPct >= 0 ? "+" : ""}{nwPct.toFixed(0)}%)
+              <span className={`stat-delta ${nwChange >= 0 ? "pos" : "neg"}`}>
+                <Icon name={nwChange >= 0 ? "trendUp" : "trendDown"} size={14} />
+                {formatCentsWhole(Math.abs(nwChange))} ({nwPct >= 0 ? "+" : ""}
+                {nwPct.toFixed(0)}%)
               </span>
             ) : undefined
           }
@@ -123,18 +136,18 @@ export function AccountsPage({ onNavigate }: { onNavigate: Navigate }) {
       {/* Allocation + liabilities */}
       {(alloc.assets.length > 0 || alloc.liabilities.length > 0) && (
         <div className="grid">
-          <div style={{ gridColumn: "span 6", minWidth: 0 }}>
+          <div className="col-6">
             <AllocationPanel title="Asset allocation" rows={alloc.assets} total={stats.assets} />
           </div>
-          <div style={{ gridColumn: "span 6", minWidth: 0 }}>
-            <AllocationPanel title="Liabilities" rows={alloc.liabilities.map((r) => ({ ...r, subtotal: Math.abs(r.subtotal) }))} total={Math.abs(stats.liabilities)} emptyLabel="No debts — you're all assets. 🎉" />
+          <div className="col-6">
+            <AllocationPanel title="Liabilities" rows={alloc.liabilities.map((r) => ({ ...r, subtotal: Math.abs(r.subtotal) }))} total={Math.abs(stats.liabilities)} emptyLabel="No debts — you're all assets." />
           </div>
         </div>
       )}
 
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <Button variant="primary" onClick={() => setEditing("new")}>
-          + Add account
+        <Button variant="primary" icon="plus" onClick={() => setEditing("new")}>
+          Add account
         </Button>
       </div>
 
@@ -168,17 +181,22 @@ export function AccountsPage({ onNavigate }: { onNavigate: Navigate }) {
                 >
                   <span
                     aria-hidden
-                    style={{ display: "inline-flex", transition: "transform var(--dur) var(--ease)", transform: isCollapsed ? "rotate(-90deg)" : "none", color: "var(--color-neutral-500)", fontSize: 11 }}
+                    style={{
+                      display: "inline-flex",
+                      transition: "transform var(--dur) var(--ease)",
+                      transform: isCollapsed ? "rotate(-90deg)" : "none",
+                      color: "var(--content-tertiary)",
+                    }}
                   >
-                    ▼
+                    <Icon name="chevronDown" size={15} />
                   </span>
-                  <span aria-hidden style={{ width: 8, height: 8, borderRadius: 2, background: group.color }} />
+                  <span aria-hidden className="dot-swatch" style={{ background: group.color }} />
                   {group.title}
-                  <span style={{ fontSize: 12, color: "var(--color-neutral-500)", fontWeight: 500 }}>· {rows.length}</span>
+                  <span style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)", fontWeight: 500 }}>· {rows.length}</span>
                 </button>
               }
               actions={
-                <span className="num" style={{ fontWeight: 600, fontSize: 14, color: subtotal < 0 ? "var(--color-negative)" : "var(--color-text)" }}>
+                <span className="num" style={{ fontWeight: 600, fontSize: "var(--text-base)", color: subtotal < 0 ? "var(--color-negative)" : "var(--color-text)" }}>
                   {formatCentsWhole(subtotal)}
                 </span>
               }
@@ -208,17 +226,17 @@ export function AccountsPage({ onNavigate }: { onNavigate: Navigate }) {
                         color: "inherit",
                       }}
                     >
-                      <span aria-hidden="true" style={{ width: 34, height: 34, borderRadius: 9, background: "var(--color-accent-900)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flex: "none" }}>
-                        {TYPE_ICONS[account.type]}
+                      <span aria-hidden="true" className="tile tile-accent">
+                        <Icon name={TYPE_ICONS[account.type]} size={17} />
                       </span>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 500, fontSize: 13.5 }}>{account.name}</div>
-                        <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
+                        <div style={{ fontWeight: 500, fontSize: "var(--text-base)" }}>{account.name}</div>
+                        <div style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>
                           {[ACCOUNT_TYPE_LABELS[account.type], account.institution, account.mask ? `••${account.mask}` : null].filter(Boolean).join(" · ")}
                         </div>
                       </div>
                       <div style={{ textAlign: "right" }}>
-                        <div style={{ fontWeight: 600, fontSize: 14, color: account.balanceCents < 0 ? "var(--color-negative)" : "var(--color-text)" }}>
+                        <div style={{ fontWeight: 600, fontSize: "var(--text-base)", color: account.balanceCents < 0 ? "var(--color-negative)" : "var(--color-text)" }}>
                           {formatCents(account.balanceCents, { currency: account.currency })}
                         </div>
                       </div>
@@ -228,9 +246,10 @@ export function AccountsPage({ onNavigate }: { onNavigate: Navigate }) {
                           e.stopPropagation();
                           onNavigate("transactions", { accountId: account.id });
                         }}
-                        style={{ flex: "none", border: "1px solid var(--color-divider)", background: "var(--color-surface)", borderRadius: 7, padding: "4px 9px", fontSize: 11.5, fontWeight: 600, color: "var(--color-neutral-500)", cursor: "pointer", whiteSpace: "nowrap" }}
+                        className="btn btn-secondary btn-sm"
+                        style={{ flex: "none" }}
                       >
-                        Transactions →
+                        Transactions
                       </button>
                     </div>
                   ))}
@@ -277,12 +296,12 @@ function AllocationPanel({
             const share = total > 0 ? r.subtotal / total : 0;
             return (
               <div key={r.title}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 5 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--text-sm)", marginBottom: 5 }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
-                    <span aria-hidden style={{ width: 8, height: 8, borderRadius: 2, background: r.color, flex: "none" }} />
+                    <span aria-hidden style={{ width: 8, height: 8, borderRadius: "var(--radius-sm)", background: r.color, flex: "none" }} />
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.title}</span>
                   </span>
-                  <span className="num" style={{ color: "var(--color-neutral-500)", flex: "none" }}>
+                  <span className="num" style={{ color: "var(--content-tertiary)", flex: "none" }}>
                     {formatCentsWhole(r.subtotal)} · {Math.round(share * 100)}%
                   </span>
                 </div>
@@ -424,7 +443,7 @@ function AccountDialog({
           hint="Use a negative amount for money owed (credit cards, loans)."
         />
         {error && (
-          <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>
+          <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
             {error}
           </div>
         )}

@@ -7,12 +7,18 @@ WORKDIR /repo
 # Manifests first so dependency layers cache across source-only changes.
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/package.json
+COPY packages/design-tokens/package.json packages/design-tokens/package.json
 COPY apps/server/package.json apps/server/package.json
 RUN pnpm install --frozen-lockfile --filter @vault/server...
 
 COPY packages/shared packages/shared
+# The phone viewer serves the same stylesheet the desktop app compiles in, so
+# the design system has to be built into the server image too.
+COPY packages/design-tokens packages/design-tokens
 COPY apps/server apps/server
-RUN pnpm --filter @vault/shared build && pnpm --filter @vault/server build
+RUN pnpm --filter @vault/shared build \
+    && pnpm --filter @vault/design-tokens build \
+    && pnpm --filter @vault/server build
 
 # pnpm deploy produces a self-contained production tree (workspace deps copied
 # in, dev deps pruned) — no pnpm store symlinks in the final image.
@@ -34,7 +40,11 @@ ENV NODE_ENV=production \
 VOLUME /data
 EXPOSE 8443
 
+# Probe 127.0.0.1, not "localhost": the server binds IPv4 (VAULT_HOST defaults
+# to 0.0.0.0) while "localhost" resolves to ::1 first inside the container, so
+# a localhost probe gets connection-refused and the container reports unhealthy
+# even though it is serving fine.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget -qO- --no-check-certificate https://localhost:8443/api/v1/health || exit 1
+  CMD wget -qO- --no-check-certificate https://127.0.0.1:8443/api/v1/health || exit 1
 
 CMD ["node", "dist/server.js"]

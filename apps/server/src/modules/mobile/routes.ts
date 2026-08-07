@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { TOKENS_CSS } from "@vault/design-tokens/css";
 import type { FastifyInstance } from "fastify";
 
 // Brand icon, shipped as PNG next to this module (copied into dist by the build
@@ -9,6 +10,9 @@ const ICON_MASKABLE_PNG = readFileSync(new URL("./app-icon-maskable.png", import
 // Bump this whenever the icon art changes — it cache-busts the URL so phones
 // that already added the app to their home screen pick up the new icon.
 const ICON_VER = "3";
+// Same idea for the stylesheet: it is cached hard, so its URL carries a
+// version that changes whenever the shared design system does.
+const CSS_VER = "2";
 
 /**
  * A tiny, dependency-free, **read-only** phone viewer served on the same origin
@@ -19,6 +23,12 @@ const ICON_VER = "3";
  * page hides the content, and if you're away longer than a few minutes the
  * session is signed out. All data is inserted via textContent / escaped SVG so
  * a merchant or category name can't inject markup.
+ *
+ * Design: this page has no styles of its own. It links the *same* stylesheet
+ * the desktop app compiles in (`@vault/design-tokens`), and builds its screens
+ * out of the same `.panel` / `.list-row` / `.tabbar` classes. That is the only
+ * reason the two platforms look like one product — there is no second palette
+ * to keep in sync, because there is no second palette.
  */
 export default async function mobileRoutes(app: FastifyInstance) {
   app.get("/manifest.webmanifest", async (_req, reply) => {
@@ -30,8 +40,8 @@ export default async function mobileRoutes(app: FastifyInstance) {
           name: "Vault Finance",
           short_name: "Vault Finance",
           display: "standalone",
-          background_color: "#14161f",
-          theme_color: "#14161f",
+          background_color: "#14151f",
+          theme_color: "#14151f",
           start_url: "/",
           icons: [
             { src: "/app-icon.png?v=" + ICON_VER, sizes: "512x512", type: "image/png", purpose: "any" },
@@ -60,6 +70,15 @@ export default async function mobileRoutes(app: FastifyInstance) {
       .send(ICON_MASKABLE_PNG);
   });
 
+  // The shared design system, served rather than inlined so the phone caches it
+  // once instead of re-downloading it on every sign-in.
+  app.get("/vault.css", async (_req, reply) => {
+    reply
+      .header("content-type", "text/css; charset=utf-8")
+      .header("cache-control", "public, max-age=604800, immutable")
+      .send(TOKENS_CSS);
+  });
+
   app.get("/", async (_req, reply) => {
     reply
       .header(
@@ -76,93 +95,93 @@ export default async function mobileRoutes(app: FastifyInstance) {
 }
 
 const PAGE = /* html */ `<!doctype html>
-<html lang="en"><head>
+<html lang="en" data-theme="dark"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#14161f">
+<meta name="theme-color" content="#14151f">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Vault Finance">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/app-icon.png?v=${ICON_VER}">
+<link rel="stylesheet" href="/vault.css?v=${CSS_VER}">
 <title>Vault Finance</title>
 <style>
-  :root{--bg:#14161f;--surface:#1b1e29;--line:#2a2e3b;--text:#e7e9ee;--muted:#9aa0ab;--pos:#3ecf8e;--neg:#e25c5c;--accent:#6f8ef2}
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;
-    padding:max(env(safe-area-inset-top),12px) 14px calc(env(safe-area-inset-bottom) + 28px);-webkit-tap-highlight-color:transparent}
-  .head{display:flex;align-items:center;gap:10px;margin:4px 2px 14px}
-  .mark{width:26px;height:26px;border-radius:7px;flex:none;
-    background:linear-gradient(135deg,#9184d9 0%,#353b80 100%);box-shadow:0 0 20px rgba(145,132,217,.45)}
-  .brand{font-weight:700;font-size:16px;letter-spacing:-.01em}
-  .sp{margin-left:auto}
-  button{font:inherit;color:inherit;cursor:pointer}
-  .ghost{background:none;border:0;color:var(--muted);font-size:13px;padding:6px}
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:12px}
-  .eyebrow{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:6px}
-  .big{font-size:34px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-  .chips{display:flex;gap:10px;flex-wrap:wrap}
-  .chip{flex:1;min-width:96px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px}
-  .chip .v{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
-  .row{display:flex;align-items:center;gap:10px;padding:11px 0;border-top:1px solid #22252f}
-  .row:first-child{border-top:0}
-  .row .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;font-size:14px}
-  .row .sub{font-size:11.5px;color:var(--muted)}
-  .amt{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
-  .bar{height:7px;border-radius:99px;background:#22252f;overflow:hidden;margin-top:6px}
-  .bar>i{display:block;height:100%;border-radius:99px;background:var(--accent)}
-  .title{font-weight:600;font-size:14px;margin:0 2px 8px}
-  .hint{font-size:11px;color:var(--muted);margin:2px 2px 0}
-  .pos{color:var(--pos)} .neg{color:var(--neg)} .mut{color:var(--muted)}
-  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -4px}
-  .trend{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-  .delta{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
-  .input{width:100%;background:#0f111a;border:1px solid var(--line);border-radius:11px;color:var(--text);font-size:16px;padding:12px 14px;margin-top:10px}
-  .btn{width:100%;background:var(--pos);color:#08120c;border:0;border-radius:11px;font-weight:700;font-size:15px;padding:13px;margin-top:12px}
-  .profiles{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:6px 0}
-  .prof{display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 16px;border-radius:14px;background:none;border:1px solid var(--line)}
-  .prof[data-on]{border-color:var(--pos);background:#14231a}
-  .av{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-weight:700;color:#08120c}
-  .err{color:var(--neg);font-size:13px;margin-top:10px;text-align:center}
-  .center{min-height:70vh;display:flex;flex-direction:column;justify-content:center;max-width:420px;margin:0 auto}
-  .note{font-size:11.5px;color:var(--muted);text-align:center;margin-top:16px;line-height:1.5}
-  #lock{position:fixed;inset:0;z-index:99;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
-  #lock .l1{font-weight:700;font-size:18px}
-  #lock .l2{font-size:13px;color:var(--muted)}
-  [hidden]{display:none!important}
+  /* Phone shell geometry only — every colour, size and radius below comes
+     from the shared token layer. Nothing here re-defines the look. */
+  body { overscroll-behavior-y: none; }
+  #app { display: flex; flex-direction: column; height: 100dvh; }
+  #scroll {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: var(--space-4) var(--space-4) var(--space-6);
+  }
+  #scroll > .page { animation: fadeUp var(--dur) var(--ease-out) both; }
+  .m-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: max(env(safe-area-inset-top), var(--space-3)) var(--space-4) var(--space-3);
+    border-bottom: 1px solid var(--color-divider);
+  }
+  .mark {
+    width: 26px; height: 26px; border-radius: 8px; flex: none;
+    background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-section-glow) 100%);
+    box-shadow: 0 0 20px color-mix(in srgb, var(--color-accent) 45%, transparent);
+  }
+  .m-login { min-height: 100dvh; display: flex; flex-direction: column; justify-content: center;
+    max-width: 420px; margin: 0 auto; padding: var(--space-6) var(--space-5); }
+  .prof {
+    display: flex; flex-direction: column; align-items: center; gap: var(--space-2);
+    padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg);
+    background: none; border: 1px solid var(--color-divider); cursor: pointer; color: inherit;
+  }
+  .prof[data-on] { border-color: var(--color-accent); background: var(--color-accent-soft); }
+  #lock {
+    position: fixed; inset: 0; z-index: var(--z-modal);
+    background: var(--color-bg); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: var(--space-4);
+  }
+  /* The diagram is wider than any phone; it scrolls inside its panel. */
+  .sankey-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 calc(var(--card-pad) * -1); padding: 0 var(--card-pad); }
 </style></head>
 <body>
-<div id="login" class="center">
-  <div style="text-align:center;margin-bottom:18px">
-    <div class="mark" style="width:40px;height:40px;border-radius:12px;margin:0 auto 10px"></div>
-    <div class="brand" style="font-size:19px">Vault Finance</div>
-    <div class="mut" style="font-size:12.5px;margin-top:3px">Read-only viewer</div>
+
+<div id="login" class="m-login">
+  <div style="text-align:center;margin-bottom:var(--space-6)">
+    <div class="mark" style="width:44px;height:44px;border-radius:13px;margin:0 auto var(--space-3)"></div>
+    <div class="page-title">Vault Finance</div>
+    <div class="t-sm t-tertiary" style="margin-top:var(--space-1)">Read-only viewer</div>
   </div>
-  <div id="profiles" class="profiles"></div>
-  <div id="pwbox" hidden>
+  <div id="profiles" class="row wrap" style="justify-content:center;gap:var(--space-3);margin-bottom:var(--space-4)"></div>
+  <div id="pwbox" hidden class="stack">
     <input id="pw" class="input" type="password" placeholder="Password" autocomplete="current-password">
     <input id="code" class="input" inputmode="numeric" placeholder="6-digit code" hidden>
-    <button id="signin" class="btn">Sign in</button>
-    <div id="err" class="err" hidden></div>
+    <button id="signin" class="btn btn-primary btn-lg btn-block">Sign in</button>
+    <div id="err" class="field-error" hidden style="text-align:center"></div>
   </div>
-  <div class="note">Nothing is saved on this device. It locks when you leave the app and signs out after a few minutes away.</div>
+  <div class="t-xs t-tertiary" style="text-align:center;margin-top:var(--space-6)">
+    Nothing is saved on this device. It locks when you leave the app and signs out after a few minutes away.
+  </div>
 </div>
 
 <div id="app" hidden>
-  <div class="head">
+  <div class="m-head">
     <div class="mark"></div>
-    <div class="brand">Vault</div>
-    <div class="sp"></div>
-    <button id="out" class="ghost">Sign out</button>
+    <div class="brand-name grow truncate" id="viewTitle">Vault Finance</div>
+    <button id="out" class="btn btn-ghost btn-sm">Sign out</button>
   </div>
-  <div id="body"></div>
+  <div id="scroll"></div>
+  <nav id="tabbar" class="tabbar" aria-label="Sections"></nav>
 </div>
 
 <div id="lock" hidden>
   <div class="mark" style="width:52px;height:52px;border-radius:15px"></div>
-  <div class="l1">Locked</div>
-  <div class="l2">Tap to view your finances</div>
+  <div class="panel-title">Locked</div>
+  <div class="t-sm t-tertiary">Tap to view your finances</div>
 </div>
 
 <script>
@@ -171,13 +190,29 @@ const PAGE = /* html */ `<!doctype html>
   var token=null, sel=null, hiddenAt=0, logoutTimer=null;
   var IDLE_MS=4*60*1000; // sign out after ~4 min in the background
   var $=function(id){return document.getElementById(id)};
-  function fmt(c){var n=Math.round(c/100);var s=n<0?"-":"";n=Math.abs(n);return s+"$"+n.toLocaleString()}
+  var cache={};           // endpoint -> parsed JSON, filled once per session
+  var view={tab:"home", page:null, detail:null};
+
+  // ── tiny DOM helpers ────────────────────────────────────────────────────
+  // Everything user-supplied goes in via textContent, never innerHTML.
   function el(t,cls,txt){var e=document.createElement(t);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
-  function amt(c,cls){var s=el("span","amt"+(cls?" "+cls:""));s.textContent=fmt(c);return s}
+  function fmt(c){var n=Math.round(c/100),s=n<0?"-":"";n=Math.abs(n);return s+"$"+n.toLocaleString()}
+  function fmt2(c){var s=c<0?"-":"";return s+"$"+Math.abs(c/100).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}
   function pct(n){return Math.round(n*100)+"%"}
   function esc(s){return String(s).replace(/[&<>"']/g,function(ch){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]})}
+  function svgIcon(d,size){return '<svg width="'+(size||21)+'" height="'+(size||21)+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="'+d+'"/></svg>'}
 
-  // ---- privacy lock -------------------------------------------------------
+  // Icon paths lifted from the shared @vault/ui set so the tab bar glyphs are
+  // literally the same drawings as the desktop sidebar's.
+  var ICONS={
+    home:"M3 10.6 12 3.5l9 7.1M5.6 9.6V19a1.6 1.6 0 0 0 1.6 1.6h9.6A1.6 1.6 0 0 0 18.4 19V9.6",
+    wallet:"M3.4 7.6A2.2 2.2 0 0 1 5.6 5.4h11.8a2.2 2.2 0 0 1 2.2 2.2v9.2a2.2 2.2 0 0 1-2.2 2.2H5.6a2.2 2.2 0 0 1-2.2-2.2V7.6ZM16 11.6h4.6v3.2H16a1.6 1.6 0 1 1 0-3.2Z",
+    target:"M12 3.2a8.8 8.8 0 1 0 0 17.6 8.8 8.8 0 0 0 0-17.6ZM12 7.6a4.4 4.4 0 1 0 0 8.8 4.4 4.4 0 0 0 0-8.8ZM12 11.4a.6.6 0 1 0 0 1.2.6.6 0 0 0 0-1.2Z",
+    trendUp:"M4 16.8 9.6 11.2l3.4 3.4L20 7.6M15 7.6h5v5",
+    chevronLeft:"M14.6 5.6 8.2 12l6.4 6.4"
+  };
+
+  // ── privacy lock ────────────────────────────────────────────────────────
   function lock(){ if(!token) return; $("lock").hidden=false; hiddenAt=Date.now(); clearTimeout(logoutTimer); logoutTimer=setTimeout(logout, IDLE_MS); }
   function onVisible(){ if(!token){ $("lock").hidden=true; return; } clearTimeout(logoutTimer); if(Date.now()-hiddenAt>IDLE_MS){ logout(); } }
   document.addEventListener("visibilitychange", function(){ document.hidden ? lock() : onVisible(); });
@@ -185,26 +220,46 @@ const PAGE = /* html */ `<!doctype html>
   $("lock").addEventListener("click", function(){ if(token) $("lock").hidden=true; });
 
   async function api(path){
+    if(cache[path]) return cache[path];
     var r=await fetch("/api/v1"+path,{headers:{authorization:"Bearer "+token},cache:"no-store"});
     if(r.status===401){logout();throw new Error("401")}
     if(!r.ok)throw new Error(String(r.status));
-    return r.json();
+    cache[path]=await r.json();
+    return cache[path];
+  }
+  async function tryApi(path,fallback){ try{ return await api(path) }catch(e){ return fallback } }
+
+  function logout(){
+    token=null;sel=null;cache={};view={tab:"home",page:null,detail:null};
+    clearTimeout(logoutTimer);
+    $("lock").hidden=true;$("app").hidden=true;$("scroll").textContent="";
+    $("login").hidden=false;$("pwbox").hidden=true;
+    $("pw").value="";$("code").value="";$("code").hidden=true;
+    loadProfiles();
   }
 
-  function logout(){token=null;sel=null;clearTimeout(logoutTimer);$("lock").hidden=true;$("app").hidden=true;$("body").textContent="";$("login").hidden=false;$("pwbox").hidden=true;$("pw").value="";$("code").value="";$("code").hidden=true;loadProfiles()}
-
+  // ── sign in ─────────────────────────────────────────────────────────────
   async function loadProfiles(){
     var box=$("profiles");box.textContent="";
     try{
       var d=await (await fetch("/api/v1/auth/profiles",{cache:"no-store"})).json();
       (d.profiles||[]).forEach(function(p){
         var b=el("button","prof");
-        var av=el("div","av",(p.displayName||"?").charAt(0).toUpperCase());av.style.background=p.avatarColor||"#3ecf8e";
-        b.appendChild(av);b.appendChild(el("span",null,(p.displayName||"").split(" ")[0]));
-        b.onclick=function(){sel=p;var all=box.querySelectorAll(".prof");for(var i=0;i<all.length;i++)all[i].removeAttribute("data-on");b.setAttribute("data-on","1");$("pwbox").hidden=false;$("err").hidden=true;$("pw").focus()};
+        var av=el("div","avatar",(p.displayName||"?").charAt(0).toUpperCase());
+        av.style.width="44px";av.style.height="44px";av.style.fontSize="17px";
+        av.style.background=p.avatarColor||"var(--color-accent)";
+        b.appendChild(av);
+        b.appendChild(el("span","t-sm t-medium",(p.displayName||"").split(" ")[0]));
+        b.onclick=function(){
+          sel=p;
+          var all=box.querySelectorAll(".prof");
+          for(var i=0;i<all.length;i++)all[i].removeAttribute("data-on");
+          b.setAttribute("data-on","1");
+          $("pwbox").hidden=false;$("err").hidden=true;$("pw").focus();
+        };
         box.appendChild(b);
       });
-    }catch(e){box.appendChild(el("div","mut","Can't reach the server."))}
+    }catch(e){box.appendChild(el("div","t-sm t-tertiary","Can't reach the server."))}
   }
 
   async function signin(){
@@ -215,7 +270,7 @@ const PAGE = /* html */ `<!doctype html>
     var body={userId:sel.id,password:pw,deviceName:"Phone viewer (web)",platform:"ios"};
     if(!$("code").hidden&&code)body.totpCode=code;
     var r=await fetch("/api/v1/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
-    if(r.ok){var d=await r.json();token=d.accessToken;$("login").hidden=true;$("app").hidden=false;overview();return}
+    if(r.ok){var d=await r.json();token=d.accessToken;$("login").hidden=true;$("app").hidden=false;buildTabs();render();return}
     var c2="";try{c2=(await r.json()).error.code}catch(e){}
     if(c2==="TOTP_REQUIRED"){$("code").hidden=false;$("code").focus();return}
     if(c2==="TOTP_INVALID"){$("code").hidden=false;showErr("That code isn't right — use the current one.");return}
@@ -223,10 +278,97 @@ const PAGE = /* html */ `<!doctype html>
   }
   function showErr(m){var e=$("err");e.textContent=m;e.hidden=false}
 
-  function section(title){var c=el("div","card");if(title)c.appendChild(el("div","title",title));return c}
-  function chip(label,valEl){var c=el("div","chip");c.appendChild(el("div","eyebrow",label));c.appendChild(valEl);return c}
+  // ── navigation model ────────────────────────────────────────────────────
+  // Deliberately the same five-group shape as the desktop shell's nav.ts, so
+  // the two navigate identically. The viewer is read-only, so "More" carries
+  // the reports summary instead of settings.
+  var TABS=[
+    {id:"home", label:"Home", icon:"home", pages:[{id:"home", label:"Overview"}]},
+    {id:"money",label:"Money",icon:"wallet",pages:[{id:"accounts",label:"Accounts"},{id:"transactions",label:"Transactions"}]},
+    {id:"plan", label:"Plan", icon:"target",pages:[{id:"budgets",label:"Budgets"},{id:"bills",label:"Bills"}]},
+    {id:"grow", label:"Grow", icon:"trendUp",pages:[{id:"goals",label:"Goals"},{id:"investments",label:"Investments"}]}
+  ];
+  function tabOf(id){for(var i=0;i<TABS.length;i++)if(TABS[i].id===id)return TABS[i];return TABS[0]}
 
-  // ---- charts (SVG, desktop-styled) --------------------------------------
+  function buildTabs(){
+    var bar=$("tabbar");bar.textContent="";
+    TABS.forEach(function(t){
+      var b=el("button","tab-item");
+      var ic=el("span","tab-item-icon");ic.innerHTML=svgIcon(ICONS[t.icon]);
+      b.appendChild(ic);b.appendChild(document.createTextNode(t.label));
+      b.onclick=function(){ view={tab:t.id,page:t.pages[0].id,detail:null}; render() };
+      b.dataset.tab=t.id;
+      bar.appendChild(b);
+    });
+  }
+  function syncTabs(){
+    var kids=$("tabbar").children;
+    for(var i=0;i<kids.length;i++){
+      if(kids[i].dataset.tab===view.tab)kids[i].setAttribute("data-active","1");
+      else kids[i].removeAttribute("data-active");
+    }
+  }
+
+  // ── shared building blocks (mirrors of the desktop primitives) ──────────
+  function panel(title,sub){
+    var p=el("div","panel");
+    if(title){
+      var h=el("div","panel-head");
+      var l=el("div");l.appendChild(el("div","panel-title",title));
+      if(sub)l.appendChild(el("div","panel-sub",sub));
+      h.appendChild(l);p.appendChild(h);
+    }
+    return p;
+  }
+  function statRow(label,value,cls){
+    var s=el("div","stat");
+    s.appendChild(el("div","stat-label",label));
+    s.appendChild(el("div","stat-value"+(cls?" "+cls:""),value));
+    return s;
+  }
+  function listRow(title,sub,amount,amtCls,onClick){
+    var r=el(onClick?"button":"div","list-row");
+    var main=el("div","list-row-main");
+    main.appendChild(el("div","list-row-title",title));
+    if(sub)main.appendChild(el("div","list-row-sub",sub));
+    r.appendChild(main);
+    if(amount!=null){
+      var a=el("div","list-row-amount"+(amtCls?" "+amtCls:""),amount);
+      r.appendChild(a);
+    }
+    if(onClick){
+      var ch=el("span");ch.innerHTML=svgIcon("M9.4 5.6 15.8 12l-6.4 6.4",16);
+      ch.style.color="var(--content-tertiary)";ch.style.flex="none";
+      r.appendChild(ch);
+      r.onclick=onClick;
+    }
+    return r;
+  }
+  function bar(fraction,color){
+    var b=el("div","bar");var i=el("i");
+    b.style.setProperty("--bar-pct",Math.max(0,Math.min(1,fraction))*100+"%");
+    if(color)b.style.setProperty("--bar-fill",color);
+    b.appendChild(i);return b;
+  }
+  function empty(title,body){
+    var e=el("div","empty empty-sm");
+    e.appendChild(el("div","empty-title",title));
+    if(body)e.appendChild(el("p","empty-body",body));
+    return e;
+  }
+  function pageTabs(tab,current,onPick){
+    if(tab.pages.length<2)return null;
+    var d=el("div","tabs no-scrollbar");
+    tab.pages.forEach(function(p){
+      var b=el("button","tab",p.label);
+      if(p.id===current)b.setAttribute("data-active","1");
+      b.onclick=function(){onPick(p.id)};
+      d.appendChild(b);
+    });
+    return d;
+  }
+
+  // ── charts (SVG, same geometry as the desktop) ──────────────────────────
   function project(v,c){var n=v.length;if(!n)return new Array(c).fill(0);if(n===1)return new Array(c).fill(v[0]);
     var xm=(n-1)/2,ym=v.reduce(function(a,b){return a+b},0)/n,num=0,den=0;
     for(var i=0;i<n;i++){num+=(i-xm)*(v[i]-ym);den+=(i-xm)*(i-xm)}var sl=den?num/den:0,ic=ym-sl*xm;
@@ -239,7 +381,7 @@ const PAGE = /* html */ `<!doctype html>
     var hist=history.map(function(v,i){return (i?"L":"M")+x(i).toFixed(1)+","+y(v).toFixed(1)}).join(" ");
     var proj="M"+x(last).toFixed(1)+","+y(history[last]).toFixed(1)+" "+projected.map(function(v,k){return "L"+x(last+1+k).toFixed(1)+","+y(v).toFixed(1)}).join(" ");
     var area=hist+" L"+x(last).toFixed(1)+","+(H-pad)+" L"+x(0).toFixed(1)+","+(H-pad)+" Z";
-    return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="width:100%;height:'+H+'px;display:block;margin-top:8px" xmlns="http://www.w3.org/2000/svg">'
+    return '<svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="width:100%;height:'+H+'px;display:block;margin-top:var(--space-2)" xmlns="http://www.w3.org/2000/svg">'
       +'<path d="'+area+'" fill="'+color+'" fill-opacity="0.13"/>'
       +'<path d="'+hist+'" fill="none" stroke="'+color+'" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>'
       +(projected.length?'<path d="'+proj+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-dasharray="4 4" stroke-opacity="0.55" vector-effect="non-scaling-stroke"/>':'')
@@ -282,99 +424,258 @@ const PAGE = /* html */ `<!doctype html>
     });
     Object.keys(placed).forEach(function(id){var p=placed[id];var right=p.n.depth===0||p.n.kind==="hub";var lx=right?p.x+NW+6:p.x-6;var anc=right?"start":"end";var cy=p.y+p.h/2;
       out.push('<rect x="'+p.x+'" y="'+p.y.toFixed(1)+'" width="'+NW+'" height="'+p.h.toFixed(1)+'" rx="1.5" fill="'+p.n.color+'"/>');
-      out.push('<text x="'+lx+'" y="'+(cy-2).toFixed(1)+'" text-anchor="'+anc+'" font-size="10" font-weight="600" fill="#e7e9ee" font-family="system-ui">'+esc(p.n.label)+'</text>');
-      out.push('<text x="'+lx+'" y="'+(cy+9).toFixed(1)+'" text-anchor="'+anc+'" font-size="9" fill="#9aa0ab" font-family="system-ui">'+esc(fmt(p.n.value))+'</text>');
+      out.push('<text x="'+lx+'" y="'+(cy-2).toFixed(1)+'" text-anchor="'+anc+'" font-size="10" font-weight="600" fill="#e9e9ed" font-family="system-ui">'+esc(p.n.label)+'</text>');
+      out.push('<text x="'+lx+'" y="'+(cy+9).toFixed(1)+'" text-anchor="'+anc+'" font-size="9" fill="#9397ab" font-family="system-ui">'+esc(fmt(p.n.value))+'</text>');
     });
     out.push("</svg>");
     return out.join("");
   }
 
-  function trendCard(label,history,color,goodUp){
-    var proj=project(history,3), cur=history[history.length-1]||0, first=history[0]||0, delta=cur-first;
-    var good=goodUp?delta>=0:delta<=0, base=Math.abs(first)||1, p=Math.round(delta/base*100);
-    var c=el("div","card");
-    var head=el("div","trend");head.appendChild(el("div","eyebrow",label));
-    if(history.length>=2){head.appendChild(el("div","delta "+(good?"pos":"neg"),(delta>=0?"▲ ":"▼ ")+fmt(Math.abs(delta))+" ("+(p>=0?"+":"")+p+"%)"))}
-    c.appendChild(head);
-    var v=el("div","big");v.style.fontSize="24px";v.textContent=fmt(cur);c.appendChild(v);
-    var wrap=el("div");wrap.innerHTML=spark(history,proj,color);c.appendChild(wrap);
-    return c;
-  }
+  // ── screens ─────────────────────────────────────────────────────────────
+  async function renderHome(root){
+    var accounts=(await tryApi("/accounts",{})).accounts||[];
+    var months=(await tryApi("/cashflow/summary?months=2",{})).months||[];
+    var points=(await tryApi("/cashflow/trends?months=6",{})).points||[];
+    var sankey=await tryApi("/cashflow/sankey",{nodes:[],links:[]});
 
-  async function overview(){
-    var body=$("body");body.textContent="";body.appendChild(el("div","mut","Loading…"));
-    var res=await Promise.allSettled([api("/accounts"),api("/cashflow/summary?months=2"),api("/budgets"),api("/goals"),api("/bills"),api("/transactions?limit=6"),api("/cashflow/trends?months=6"),api("/cashflow/sankey")]);
-    var val=function(i){return res[i].status==="fulfilled"?res[i].value:null};
-    var accounts=(val(0)&&val(0).accounts)||[];
-    var months=(val(1)&&val(1).months)||[];
-    var budgets=val(2)||{}; var goals=(val(3)&&val(3).goals)||[];
-    var bills=(val(4)&&val(4).bills)||[]; var txns=(val(5)&&val(5).transactions)||[];
-    var points=(val(6)&&val(6).points)||[]; var sankey=val(7)||{nodes:[],links:[]};
-    body.textContent="";
-
-    // Net worth + trend
     var net=accounts.reduce(function(s,a){return s+(a.balanceCents||0)},0);
-    var nw=section();nw.appendChild(el("div","eyebrow","Net worth"));
-    nw.appendChild((function(){var b=el("div","big");b.textContent=fmt(net);return b})());
-    if(points.length>=2){var wrap=el("div");wrap.innerHTML=spark(points.map(function(p){return p.netWorthCents}),project(points.map(function(p){return p.netWorthCents}),3),"#3ecf8e");nw.appendChild(wrap)}
-    body.appendChild(nw);
+    var nw=panel();
+    nw.appendChild(statRow("Net worth",fmt(net)));
+    if(points.length>=2){
+      var w=el("div");
+      w.innerHTML=spark(points.map(function(p){return p.netWorthCents}),
+        project(points.map(function(p){return p.netWorthCents}),3),"var(--viz-2)");
+      nw.appendChild(w);
+    }
+    root.appendChild(nw);
 
-    // This month
     var m=months[months.length-1]||{};
-    var chips=el("div","chips");
-    chips.appendChild(chip("Income",amt(m.incomeCents||0)));
-    chips.appendChild(chip("Spending",amt(m.spendingCents||0)));
-    chips.appendChild(chip("Savings rate",el("div","v"+((m.savingsRate||0)>=0?" pos":" neg"),(m.savingsRate!=null)?pct(m.savingsRate):"—")));
-    body.appendChild(chips);
+    var g=el("div","grid");
+    [["Income",fmt(m.incomeCents||0),""],
+     ["Spending",fmt(m.spendingCents||0),""],
+     ["Savings rate",(m.savingsRate!=null?pct(m.savingsRate):"—"),(m.savingsRate||0)>=0?"pos":"neg"]
+    ].forEach(function(row){
+      var c=el("div","col-4");var p=el("div","panel");
+      p.appendChild(statRow(row[0],row[1],row[2]));
+      c.appendChild(p);g.appendChild(c);
+    });
+    root.appendChild(g);
 
-    // Cash-flow Sankey (scrollable)
     if((sankey.links||[]).length){
-      var s=section("Cash flow");
-      var sc=el("div","scroll");var holder=el("div");holder.style.padding="0 4px";
+      var s=panel("Cash flow","Where the money went");
+      var sc=el("div","sankey-scroll");
+      var holder=el("div");
       holder.innerHTML=sankeySvg(
         sankey.nodes.map(function(n){return {id:n.id,label:n.label,value:n.valueCents,color:n.color,depth:n.depth,kind:n.kind}}),
         sankey.links.map(function(l){return {from:l.from,to:l.to,value:l.valueCents}})
       );
       sc.appendChild(holder);s.appendChild(sc);
-      s.appendChild(el("div","hint","Swipe the diagram sideways to follow the flow."));
-      body.appendChild(s);
+      s.appendChild(el("div","panel-sub","Swipe the diagram sideways to follow the flow."));
+      root.appendChild(s);
     }
 
-    // Trends
     if(points.length>=2){
-      body.appendChild(trendCard("Income · 6 mo",points.map(function(p){return p.incomeCents}),"#6f8ef2",true));
-      body.appendChild(trendCard("Spending · 6 mo",points.map(function(p){return p.spendingCents}),"#b47ef0",false));
+      [["Income · 6 mo","incomeCents","var(--viz-3)",true],
+       ["Spending · 6 mo","spendingCents","var(--viz-1)",false]
+      ].forEach(function(t){
+        var hist=points.map(function(p){return p[t[1]]});
+        var cur=hist[hist.length-1]||0, first=hist[0]||0, delta=cur-first;
+        var good=t[3]?delta>=0:delta<=0;
+        var p=panel();
+        var head=el("div","row-baseline");
+        head.appendChild(el("div","stat-label",t[0]));
+        if(hist.length>=2)head.appendChild(el("div","stat-delta "+(good?"pos":"neg"),
+          (delta>=0?"▲ ":"▼ ")+fmt(Math.abs(delta))));
+        p.appendChild(head);
+        p.appendChild(el("div","stat-value",fmt(cur)));
+        var w=el("div");w.innerHTML=spark(hist,project(hist,3),t[2]);p.appendChild(w);
+        root.appendChild(p);
+      });
+    }
+  }
+
+  async function renderAccounts(root){
+    var accounts=(await tryApi("/accounts",{})).accounts||[];
+    var live=accounts.filter(function(a){return a.balanceCents!==0});
+    if(!live.length){root.appendChild(empty("No accounts","Accounts added on the desktop app show up here."));return}
+    var p=panel("Accounts",live.length+" with a balance");
+    var list=el("div","list list-divided");
+    live.forEach(function(a){
+      list.appendChild(listRow(a.name,String(a.type||"").replace(/_/g," "),
+        fmt(a.balanceCents),a.balanceCents<0?"neg":"",
+        function(){ view.detail={type:"account",id:a.id,name:a.name}; render() }));
+    });
+    p.appendChild(list);root.appendChild(p);
+  }
+
+  async function renderTransactions(root){
+    var txns=(await tryApi("/transactions?limit=50",{})).transactions||[];
+    if(!txns.length){root.appendChild(empty("No transactions","Nothing recorded yet."));return}
+    var accounts=(await tryApi("/accounts",{})).accounts||[];
+    var byId={};accounts.forEach(function(a){byId[a.id]=a.name});
+    var p=panel("Recent","Last "+txns.length);
+    var list=el("div","list list-divided");
+    txns.forEach(function(t){
+      list.appendChild(listRow(t.merchantName,
+        t.postedAt.slice(5)+" · "+(byId[t.accountId]||"—"),
+        fmt2(t.amountCents), t.amountCents>0?"pos":""));
+    });
+    p.appendChild(list);root.appendChild(p);
+  }
+
+  async function renderAccountDetail(root,detail){
+    var back=el("button","back-btn");
+    back.innerHTML=svgIcon(ICONS.chevronLeft,17);
+    back.appendChild(document.createTextNode(" Accounts"));
+    back.onclick=function(){ view.detail=null; render() };
+    root.appendChild(back);
+
+    var res=await tryApi("/transactions?limit=50&accountId="+encodeURIComponent(detail.id),{});
+    var txns=res.transactions||[];
+    var p=panel(detail.name, txns.length? txns.length+" recent transactions" : null);
+    if(!txns.length){p.appendChild(empty("Nothing here yet","No transactions on this account."))}
+    else{
+      var list=el("div","list list-divided");
+      txns.forEach(function(t){
+        list.appendChild(listRow(t.merchantName,t.postedAt.slice(5),fmt2(t.amountCents),t.amountCents>0?"pos":""));
+      });
+      p.appendChild(list);
+    }
+    root.appendChild(p);
+  }
+
+  async function renderBudgets(root){
+    var b=await tryApi("/budgets",{});
+    var tb=b.totalBudgetedCents||0, ts=b.totalSpentCents||0;
+    if(!tb){root.appendChild(empty("No budgets set","Set category budgets on the desktop app."));return}
+    var cats=(await tryApi("/categories",{})).categories||[];
+    var byId={};cats.forEach(function(c){byId[c.id]=c});
+
+    var p=panel("This month",pct(Math.min(1,ts/tb))+" of budget used");
+    var head=el("div","row-baseline");
+    head.appendChild(el("div","stat-value",fmt(ts)));
+    head.appendChild(el("div","t-sm t-tertiary","of "+fmt(tb)));
+    p.appendChild(head);
+    p.appendChild(bar(ts/tb, ts>tb?"var(--color-negative)":null));
+    root.appendChild(p);
+
+    var rows=(b.budgets||[]).slice().sort(function(x,y){return y.spentCents-x.spentCents});
+    if(rows.length){
+      var d=panel("By category");
+      rows.forEach(function(r){
+        var cat=byId[r.categoryId]||{};
+        var over=r.spentCents>r.amountCents;
+        var wrap=el("div");wrap.style.marginBottom="var(--space-3)";
+        var line=el("div","row-between t-sm");
+        line.appendChild(el("div","truncate",cat.name||"Category"));
+        var v=el("div","num"+(over?" neg":" t-tertiary"),fmt(r.spentCents)+" / "+fmt(r.amountCents));
+        line.appendChild(v);
+        wrap.appendChild(line);
+        wrap.appendChild(bar(r.amountCents>0?r.spentCents/r.amountCents:0, over?"var(--color-negative)":(cat.color||null)));
+        d.appendChild(wrap);
+      });
+      root.appendChild(d);
+    }
+  }
+
+  async function renderBills(root){
+    var bills=(await tryApi("/bills",{})).bills||[];
+    if(!bills.length){root.appendChild(empty("No bills tracked","Recurring bills show up here."));return}
+    var p=panel("Upcoming","Soonest first");
+    var list=el("div","list list-divided");
+    bills.forEach(function(b){
+      var due=b.daysUntilDue<0?Math.abs(b.daysUntilDue)+"d overdue"
+             :b.daysUntilDue===0?"Due today":"Due in "+b.daysUntilDue+"d";
+      var r=listRow(b.name,due,fmt(b.amountCents));
+      if(b.daysUntilDue<=2){var s=r.querySelector(".list-row-sub");if(s)s.className="list-row-sub neg"}
+      list.appendChild(r);
+    });
+    p.appendChild(list);root.appendChild(p);
+  }
+
+  async function renderGoals(root){
+    var goals=(await tryApi("/goals",{})).goals||[];
+    if(!goals.length){root.appendChild(empty("No savings goals","Goals you set show up here."));return}
+    var p=panel("Goals");
+    goals.forEach(function(g){
+      var frac=g.targetCents>0?Math.min(1,g.savedCents/g.targetCents):0;
+      var wrap=el("div");wrap.style.marginBottom="var(--space-4)";
+      var line=el("div","row-between t-sm");
+      line.appendChild(el("div","t-medium truncate",g.name));
+      line.appendChild(el("div","num t-tertiary",fmt(g.savedCents)+" / "+fmt(g.targetCents)));
+      wrap.appendChild(line);
+      wrap.appendChild(bar(frac,g.color||null));
+      p.appendChild(wrap);
+    });
+    root.appendChild(p);
+  }
+
+  async function renderInvestments(root){
+    var d=await tryApi("/investments",{});
+    var value=d.totalValueCents||0, cost=d.totalCostBasisCents||0;
+    if(!value){root.appendChild(empty("No holdings","Positions you track show up here."));return}
+    var gain=value-cost, gpct=cost>0?(gain/cost)*100:0;
+    var p=panel("Portfolio");
+    p.appendChild(el("div","stat-value",fmt(value)));
+    p.appendChild(el("div","stat-delta "+(gain>=0?"pos":"neg"),
+      (gain>=0?"+":"−")+fmt(Math.abs(gain))+" ("+(gpct>=0?"+":"")+gpct.toFixed(1)+"%)"));
+    root.appendChild(p);
+
+    var alloc=d.allocation||[];
+    if(alloc.length){
+      var a=panel("Allocation");
+      alloc.slice(0,10).forEach(function(s){
+        var wrap=el("div");wrap.style.marginBottom="var(--space-3)";
+        var line=el("div","row-between t-sm");
+        line.appendChild(el("div","t-medium",s.symbol));
+        line.appendChild(el("div","num t-tertiary",pct(s.share)));
+        wrap.appendChild(line);
+        wrap.appendChild(bar(s.share));
+        a.appendChild(wrap);
+      });
+      root.appendChild(a);
+    }
+  }
+
+  var RENDERERS={
+    home:renderHome, accounts:renderAccounts, transactions:renderTransactions,
+    budgets:renderBudgets, bills:renderBills, goals:renderGoals, investments:renderInvestments
+  };
+
+  async function render(){
+    var tab=tabOf(view.tab);
+    if(!view.page||!tab.pages.some(function(p){return p.id===view.page}))view.page=tab.pages[0].id;
+    syncTabs();
+    $("viewTitle").textContent = view.detail ? view.detail.name : tab.label;
+
+    var root=$("scroll");
+    root.textContent="";
+    var page=el("div","page");
+    root.appendChild(page);
+    $("scroll").scrollTop=0;
+
+    if(view.detail){
+      await renderAccountDetail(page,view.detail);
+      return;
     }
 
-    // Accounts
-    if(accounts.length){var s=section("Accounts");accounts.filter(function(a){return a.balanceCents!==0}).slice(0,8).forEach(function(a){
-      var r=el("div","row");var wrap=el("div");wrap.style.flex="1";wrap.style.minWidth="0";
-      wrap.appendChild(el("div","name",a.name));wrap.appendChild(el("div","sub",a.type.replace("_"," ")));r.appendChild(wrap);
-      r.appendChild(amt(a.balanceCents,(a.balanceCents<0?"neg":"")));s.appendChild(r)});body.appendChild(s)}
+    var strip=pageTabs(tab,view.page,function(id){view.page=id;render()});
+    if(strip)page.appendChild(strip);
 
-    // Budget
-    var tb=budgets.totalBudgetedCents||0, ts=budgets.totalSpentCents||0;
-    if(tb>0){var s=section("Budget this month");var p=Math.min(1,ts/tb),over=ts>tb;
-      var top=el("div","row");top.style.borderTop="0";top.appendChild(el("div","name",pct(p)+" used"));top.appendChild(amt(ts));s.appendChild(top);
-      var bar=el("div","bar");var i=el("i");i.style.width=(p*100)+"%";if(over)i.style.background="var(--neg)";bar.appendChild(i);s.appendChild(bar);body.appendChild(s)}
+    var body=el("div","stack");
+    page.appendChild(body);
+    var loading=el("div","skeleton");loading.style.height="120px";
+    body.appendChild(loading);
 
-    // Goals
-    if(goals.length){var s=section("Goals");goals.slice(0,4).forEach(function(g){var p=g.targetCents>0?Math.min(1,g.savedCents/g.targetCents):0;
-      var head=el("div","row");head.style.borderTop="0";head.style.paddingBottom="2px";head.appendChild(el("div","name",g.name));head.appendChild(el("div","amt mut",pct(p)));s.appendChild(head);
-      var bar=el("div","bar");var i=el("i");i.style.width=(p*100)+"%";i.style.background=g.color||"var(--pos)";bar.appendChild(i);s.appendChild(bar)});body.appendChild(s)}
+    var fn=RENDERERS[view.page];
+    var fresh=el("div","stack");
+    if(fn)await fn(fresh);
+    body.replaceWith(fresh);
 
-    // Bills
-    if(bills.length){var s=section("Upcoming bills");bills.slice(0,5).forEach(function(b){var r=el("div","row");
-      var wrap=el("div");wrap.style.flex="1";wrap.style.minWidth="0";wrap.appendChild(el("div","name",b.name));
-      var due=b.daysUntilDue<0?Math.abs(b.daysUntilDue)+"d overdue":b.daysUntilDue===0?"Due today":"Due in "+b.daysUntilDue+"d";
-      var sub=el("div","sub",due);if(b.daysUntilDue<=2)sub.className="sub neg";wrap.appendChild(sub);r.appendChild(wrap);r.appendChild(amt(b.amountCents));s.appendChild(r)});body.appendChild(s)}
-
-    // Recent
-    if(txns.length){var s=section("Recent");txns.forEach(function(t){var r=el("div","row");
-      var wrap=el("div");wrap.style.flex="1";wrap.style.minWidth="0";wrap.appendChild(el("div","name",t.merchantName));wrap.appendChild(el("div","sub",t.postedAt.slice(5)));r.appendChild(wrap);
-      r.appendChild(amt(t.amountCents,(t.amountCents>0?"pos":"")));s.appendChild(r)});body.appendChild(s)}
-
-    body.appendChild(el("div","note","Nothing here is stored on your phone. Locks when you leave; signs out after ~4 min away."));
+    if(view.tab==="home"){
+      fresh.appendChild(el("div","t-xs t-tertiary",
+        "Nothing here is stored on your phone. Locks when you leave; signs out after ~4 min away."));
+    }
   }
 
   $("signin").onclick=signin;
