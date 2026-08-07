@@ -1,15 +1,19 @@
-import { Button, Tag } from "@vault/ui";
+import { Avatar, Button, Icon } from "@vault/ui";
 import { useEffect, useRef, useState } from "react";
+import type { LayoutMode } from "../../lib/useLayout.js";
 import { useApp } from "../../state/store.js";
-import type { PageId } from "./AppShell.js";
+import { AppMark } from "../AuthLayout.js";
+import type { PageId } from "./nav.js";
 
 export function Header({
   title,
-  onToggleSidebar,
+  mode,
+  onOpenPalette,
   onNavigate,
 }: {
   title: string;
-  onToggleSidebar: () => void;
+  mode: LayoutMode;
+  onOpenPalette: () => void;
   onNavigate: (page: PageId) => void;
 }) {
   const user = useApp((s) => s.user);
@@ -23,134 +27,75 @@ export function Header({
     const close = (e: MouseEvent) => {
       if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
     };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setMenuOpen(false);
     window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [menuOpen]);
 
-  const fullDate = new Date().toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
+  const narrow = mode === "narrow";
+  const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
   return (
-    <header
-      style={{
-        height: 58,
-        flex: "none",
-        borderBottom: "1px solid var(--color-divider)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 12,
-        padding: "0 16px 0 12px",
-        background: "color-mix(in srgb, var(--color-bg) 88%, transparent)",
-        backdropFilter: "blur(12px)",
-        position: "relative",
-        zIndex: 50,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-        <Button
-          variant="ghost"
-          onClick={onToggleSidebar}
-          aria-label="Toggle navigation"
-          title="Toggle navigation"
-          style={{ fontSize: 16, padding: "6px 10px" }}
-        >
-          ☰
-        </Button>
-        <h1
-          style={{
-            fontSize: 17,
-            fontWeight: 600,
-            margin: 0,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            letterSpacing: "-.01em",
-          }}
-        >
+    <header className="app-header">
+      <div className="row" style={{ minWidth: 0, gap: "var(--space-3)" }}>
+        {/* At narrow widths the sidebar is gone, so the header carries the mark. */}
+        {narrow && <AppMark size={24} />}
+        <h1 className="truncate" style={{ font: "inherit", fontWeight: 600, fontSize: "var(--text-lg)", margin: 0 }}>
           {title}
         </h1>
-        <Tag variant="neutral" style={{ whiteSpace: "nowrap" }}>
-          {fullDate}
-        </Tag>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>
-        {aiVisible && (
-          <Button
-            variant="primary"
-            style={{ whiteSpace: "nowrap" }}
-            onClick={() => onNavigate("assistant")}
-          >
-            ✦ Ask AI
+      <div className="row" style={{ gap: "var(--space-2)", flex: "none" }}>
+        {narrow ? (
+          <Button variant="ghost" icon="search" onClick={onOpenPalette} aria-label="Search" />
+        ) : (
+          <button className="search-trigger" onClick={onOpenPalette}>
+            <Icon name="search" size={15} />
+            <span style={{ flex: 1, textAlign: "left" }}>Search…</span>
+            <span className="kbd">{mac ? "⌘" : "Ctrl"}</span>
+            <span className="kbd">K</span>
+          </button>
+        )}
+
+        {aiVisible && !narrow && (
+          <Button variant="primary" icon="sparkle" onClick={() => onNavigate("assistant")}>
+            Ask AI
           </Button>
         )}
+
         <div style={{ position: "relative" }} ref={menuRef}>
-          <button
+          <Avatar
+            name={user?.displayName ?? "?"}
+            color={user?.avatarColor ?? "var(--color-accent)"}
+            size={32}
+            title="Account"
             onClick={() => setMenuOpen((v) => !v)}
-            aria-label="Account"
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: "50%",
-              border: "1px solid var(--color-divider)",
-              cursor: "pointer",
-              background: user?.avatarColor ?? "var(--color-accent-800)",
-              color: "var(--color-accent-100)",
-              fontWeight: 600,
-              fontSize: 13,
-              fontFamily: "var(--font-body)",
-            }}
-          >
-            {(user?.displayName.trim()[0] ?? "?").toUpperCase()}
-          </button>
+          />
           {menuOpen && (
-            <div
-              style={{
-                position: "absolute",
-                right: 0,
-                top: "calc(100% + 8px)",
-                zIndex: 60,
-                background: "var(--color-surface)",
-                border: "1px solid var(--color-divider)",
-                borderRadius: 10,
-                boxShadow: "var(--shadow-lg)",
-                minWidth: 190,
-                padding: 6,
-              }}
-            >
-              <div
-                style={{
-                  padding: "8px 10px",
-                  borderBottom: "1px solid var(--color-divider)",
-                  marginBottom: 4,
-                }}
-              >
-                <div style={{ fontWeight: 600, fontSize: 13 }}>{user?.displayName}</div>
-                <div style={{ fontSize: 11.5, color: "var(--color-neutral-500)" }}>
-                  {user?.email}
-                </div>
+            <div className="menu" style={{ right: 0, top: "calc(100% + var(--space-2))" }}>
+              <div className="menu-head">
+                <div className="t-sm t-semibold truncate">{user?.displayName}</div>
+                <div className="t-xs t-tertiary truncate">{user?.email}</div>
               </div>
-              <Button
-                variant="ghost"
-                style={{ justifyContent: "flex-start", width: "100%", fontSize: 13 }}
+              <button
+                className="menu-item"
                 onClick={() => {
                   setMenuOpen(false);
                   onNavigate("settings");
                 }}
               >
-                Account settings
-              </Button>
-              <Button
-                variant="ghost"
-                style={{ justifyContent: "flex-start", width: "100%", fontSize: 13 }}
-                onClick={() => void signOut()}
-              >
-                Switch user / sign out
-              </Button>
+                <Icon name="settings" size={16} />
+                Settings
+              </button>
+              <div className="menu-sep" />
+              <button className="menu-item menu-item-danger" onClick={() => void signOut()}>
+                <Icon name="logout" size={16} />
+                Sign out
+              </button>
             </div>
           )}
         </div>

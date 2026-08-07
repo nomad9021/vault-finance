@@ -1,15 +1,28 @@
 import {
-  formatCents,
   formatCentsWhole,
   type Goal,
   type SankeyResponse,
   type Transaction,
 } from "@vault/shared";
-import { Button, Card, MetricCard, Panel } from "@vault/ui";
-import { useEffect } from "react";
+import {
+  Button,
+  Card,
+  EmptyState,
+  Icon,
+  ListRow,
+  MetricCard,
+  Money,
+  Panel,
+  PanelLink,
+  ProgressBar,
+  Segmented,
+  Skeleton,
+} from "@vault/ui";
+import { useEffect, useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
-import type { Navigate, PageId } from "./AppShell.js";
+import { buildBudgetSankey } from "./budgetSankey.js";
+import type { Navigate, PageId } from "./nav.js";
 import { SankeyCard } from "./SankeyCard.js";
 import { TrendChart, project } from "./TrendChart.js";
 
@@ -28,20 +41,36 @@ function dueLabel(days: number): { text: string; tone: "over" | "soon" | "ok" } 
   if (days < 0) return { text: `${Math.abs(days)}d overdue`, tone: "over" };
   if (days === 0) return { text: "Due today", tone: "over" };
   if (days === 1) return { text: "Due tomorrow", tone: "soon" };
-  if (days <= 7) return { text: `Due in ${days} days`, tone: "soon" };
-  return { text: `Due in ${days} days`, tone: "ok" };
+  return { text: `Due in ${days} days`, tone: days <= 7 ? "soon" : "ok" };
 }
-const toneColor = (tone: "over" | "soon" | "ok") =>
-  tone === "over" ? "var(--color-negative)" : tone === "soon" ? "var(--color-accent)" : "var(--color-neutral-500)";
+/**
+ * The dashboard can lead with what actually happened, what you planned, or
+ * both side by side — the last being the interesting one, since the gap
+ * between the two diagrams *is* the story.
+ */
+type SankeyView = "actual" | "planned" | "both";
+const SANKEY_VIEW_KEY = "dashboard-sankey-view";
+const SANKEY_VIEWS = [
+  { value: "actual" as const, label: "Actual" },
+  { value: "planned" as const, label: "Planned" },
+  { value: "both" as const, label: "Both" },
+];
+function loadSankeyView(): SankeyView {
+  try {
+    const v = localStorage.getItem(SANKEY_VIEW_KEY);
+    if (v === "actual" || v === "planned" || v === "both") return v;
+  } catch {
+    /* ignore */
+  }
+  return "actual";
+}
 
-/** A subtle "See all →" link used in every dashboard panel header. */
-function SeeAll({ onClick, label = "See all" }: { onClick: () => void; label?: string }) {
-  return (
-    <button className="panel-link" onClick={onClick}>
-      {label} →
-    </button>
-  );
-}
+const toneColor = (tone: "over" | "soon" | "ok") =>
+  tone === "over"
+    ? "var(--color-negative)"
+    : tone === "soon"
+      ? "var(--color-warning)"
+      : "var(--content-tertiary)";
 
 export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
   const client = useApp((s) => s.client);
@@ -61,9 +90,21 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
   const { data: categoryData } = useData(() => client.categories(), [client]);
   const { data: billData } = useData(() => client.bills(), [client]);
   const { data: investData } = useData(() => client.investments(), [client]);
+  const { data: planData } = useData(() => client.budgetPlan(), [client]);
+
+  // Which cash-flow diagram the dashboard leads with. Remembered, because it's
+  // a statement about how you think about money, not a per-visit choice.
+  const [sankeyView, setSankeyView] = useState<SankeyView>(loadSankeyView);
+  useEffect(() => {
+    try {
+      localStorage.setItem(SANKEY_VIEW_KEY, sankeyView);
+    } catch {
+      /* ignore */
+    }
+  }, [sankeyView]);
 
   // Poll so bank auto-sync / webhook imports show up live without a manual
-  // refresh. The spinner only appears when there's no data yet, so this is
+  // refresh. The skeleton only appears when there's no data yet, so this is
   // invisible once loaded.
   useEffect(() => {
     const id = setInterval(() => {
@@ -83,40 +124,62 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
   const goals = goalData?.goals ?? [];
   const recent = txnData?.transactions ?? [];
   const accountById = new Map(accounts.map((a) => [a.id, a]));
-  const categoryById = new Map((categoryData?.categories ?? []).map((c) => [c.id, c]));
+  const categories = categoryData?.categories ?? [];
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
   const points = trendData?.points ?? [];
+
+  // The planned diagram, built from the same category tree and allocations the
+  // Budgets planner uses, so the two are always the same picture.
+  const plannedIncome = planData?.plannedIncomeCents ?? 0;
+  const planSankey = buildBudgetSankey(
+    plannedIncome,
+    categories.filter((c) => c.kind === "expense"),
+    new Map((budgetData?.budgets ?? []).map((b) => [b.categoryId, b.amountCents])),
+  );
+  const hasPlan = plannedIncome > 0 || planSankey.allocated > 0;
+
+  // Don't offer a view there's no data for — and fall back rather than render
+  // an empty card if the remembered choice is currently unavailable.
+  const availableViews = SANKEY_VIEWS.filter(
+    (v) => (v.value === "actual" && hasData) || (v.value === "planned" && hasPlan) || (v.value === "both" && hasData && hasPlan),
+  );
+  const effectiveView: SankeyView = availableViews.some((v) => v.value === sankeyView)
+    ? sankeyView
+    : (availableViews[0]?.value ?? "actual");
 
   return (
     <div className="page">
       {/* Hero metrics */}
       <div className="grid">
-        <div style={{ gridColumn: "span 3", minWidth: 0 }}>
+        <div className="col-3">
           <MetricCard
             label="Net worth"
+            icon="bank"
             value={formatCentsWhole(netWorth)}
-            hint="View accounts →"
+            hint="Across all accounts"
             onClick={() => onNavigate("accounts")}
           />
         </div>
-        <div style={{ gridColumn: "span 3", minWidth: 0 }}>
+        <div className="col-3">
           <MetricCard
             label={`Income · ${monthLong(month)}`}
+            icon="income"
             value={formatCentsWhole(income)}
-            hint="View income →"
             onClick={() => onNavigate("income")}
           />
         </div>
-        <div style={{ gridColumn: "span 3", minWidth: 0 }}>
+        <div className="col-3">
           <MetricCard
             label={`Spending · ${monthLong(month)}`}
+            icon="card"
             value={formatCentsWhole(spending)}
-            hint="View reports →"
             onClick={() => onNavigate("reports")}
           />
         </div>
-        <div style={{ gridColumn: "span 3", minWidth: 0 }}>
+        <div className="col-3">
           <MetricCard
             label="Savings rate"
+            icon="target"
             value={savingsRate !== null ? `${savingsRate}%` : "—"}
             deltaTone={savingsRate !== null && savingsRate >= 0 ? "up" : "down"}
             hint="of income kept"
@@ -124,53 +187,130 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
         </div>
       </div>
 
-      {/* Flagship cash-flow Sankey */}
+      {/* Flagship cash-flow Sankey — actual, planned, or both side by side */}
       {loading && !sankeyData ? (
         <Panel>
-          <div className="skeleton" style={{ height: 360 }} />
+          <Skeleton height={360} />
         </Panel>
-      ) : hasData ? (
-        <SankeyCard nodes={sankeyData!.nodes} links={sankeyData!.links} month={sankeyData!.month} onNavigate={onNavigate} />
+      ) : hasData || hasPlan ? (
+        <div className="stack">
+          <div className="row-between wrap">
+            <div className="eyebrow">Cash flow · {monthLong(month)}</div>
+            <Segmented
+              options={availableViews}
+              value={effectiveView}
+              onChange={setSankeyView}
+              aria-label="Which cash-flow diagram to show"
+            />
+          </div>
+
+          {effectiveView === "both" ? (
+            <div className="grid">
+              <div className="col-6">
+                <SankeyCard
+                  compact
+                  title="Actual"
+                  nodes={sankeyData!.nodes}
+                  links={sankeyData!.links}
+                  month={sankeyData!.month}
+                  onNavigate={onNavigate}
+                />
+              </div>
+              <div className="col-6">
+                <SankeyCard
+                  compact
+                  title="Planned"
+                  nodes={planSankey.nodes}
+                  links={planSankey.links}
+                  month={month}
+                  onNavigate={onNavigate}
+                />
+              </div>
+            </div>
+          ) : effectiveView === "planned" ? (
+            <SankeyCard
+              title="Budget plan"
+              hint="Click a category to see this month's actual spending"
+              nodes={planSankey.nodes}
+              links={planSankey.links}
+              month={month}
+              onNavigate={onNavigate}
+            />
+          ) : (
+            <SankeyCard
+              nodes={sankeyData!.nodes}
+              links={sankeyData!.links}
+              month={sankeyData!.month}
+              onNavigate={onNavigate}
+            />
+          )}
+        </div>
       ) : (
         <GetStarted onNavigate={onNavigate} hasAccounts={accounts.length > 0} />
       )}
 
       {/* Net worth · income · spending — past months + forward projection */}
       <div className="grid">
-        <div style={{ gridColumn: "span 4", minWidth: 0 }}>
-          <TrendCard label="Net worth" points={points} pick={(p) => p.netWorthCents} color="var(--color-positive)" goodWhenUp onViewAll={() => onNavigate("accounts")} />
+        <div className="col-4">
+          <TrendCard
+            label="Net worth"
+            points={points}
+            pick={(p) => p.netWorthCents}
+            color="var(--viz-2)"
+            goodWhenUp
+            onViewAll={() => onNavigate("accounts")}
+          />
         </div>
-        <div style={{ gridColumn: "span 4", minWidth: 0 }}>
-          <TrendCard label="Income" points={points} pick={(p) => p.incomeCents} color="#6f8ef2" goodWhenUp onViewAll={() => onNavigate("income")} />
+        <div className="col-4">
+          <TrendCard
+            label="Income"
+            points={points}
+            pick={(p) => p.incomeCents}
+            color="var(--viz-3)"
+            goodWhenUp
+            onViewAll={() => onNavigate("income")}
+          />
         </div>
-        <div style={{ gridColumn: "span 4", minWidth: 0 }}>
-          <TrendCard label="Spending" points={points} pick={(p) => p.spendingCents} color="var(--color-accent)" goodWhenUp={false} onViewAll={() => onNavigate("reports")} />
+        <div className="col-4">
+          <TrendCard
+            label="Spending"
+            points={points}
+            pick={(p) => p.spendingCents}
+            color="var(--viz-1)"
+            goodWhenUp={false}
+            onViewAll={() => onNavigate("reports")}
+          />
         </div>
       </div>
 
       {/* Budgets · bills · investments */}
       <div className="grid">
-        <div style={{ gridColumn: "span 4", minWidth: 0 }}>
-          <BudgetOverview data={budgetData} month={month} categoryById={categoryById} onViewAll={() => onNavigate("budgets")} />
+        <div className="col-4">
+          <BudgetOverview
+            data={budgetData}
+            month={month}
+            categoryById={categoryById}
+            onViewAll={() => onNavigate("budgets")}
+          />
         </div>
-        <div style={{ gridColumn: "span 4", minWidth: 0 }}>
+        <div className="col-4">
           <UpcomingBills bills={billData?.bills ?? []} onViewAll={() => onNavigate("bills")} />
         </div>
-        <div style={{ gridColumn: "span 4", minWidth: 0 }}>
+        <div className="col-4">
           <InvestmentsCard data={investData} onViewAll={() => onNavigate("investments")} />
         </div>
       </div>
 
       {/* Recent activity · goals */}
       <div className="grid">
-        <div style={{ gridColumn: "span 8", minWidth: 0 }}>
+        <div className="col-8">
           <RecentActivity
             transactions={recent}
             accountName={(id) => accountById.get(id)?.name ?? "—"}
             onViewAll={() => onNavigate("transactions")}
           />
         </div>
-        <div style={{ gridColumn: "span 4", minWidth: 0 }}>
+        <div className="col-4">
           <TopGoals goals={goals} onViewAll={() => onNavigate("goals")} />
         </div>
       </div>
@@ -200,26 +340,33 @@ function TrendCard({
   const first = history[0] ?? 0;
   const delta = current - first;
   const good = goodWhenUp ? delta >= 0 : delta <= 0;
-  const pctBase = Math.abs(first) || 1;
-  const pct = (delta / pctBase) * 100;
+  const pct = (delta / (Math.abs(first) || 1)) * 100;
   const projEnd = projected[projected.length - 1] ?? current;
-  const spanLabel = points.length > 0 ? `${monthShort(points[0]!.month)}–${monthShort(points[points.length - 1]!.month)} · +3 mo` : "";
+  const spanLabel =
+    points.length > 0
+      ? `${monthShort(points[0]!.month)}–${monthShort(points[points.length - 1]!.month)} · +3 mo`
+      : "";
+
   return (
-    <Panel title={label} subtitle={spanLabel} actions={<SeeAll onClick={onViewAll} />}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-        <span className="metric-value" style={{ fontSize: 24 }}>{formatCentsWhole(current)}</span>
+    <Panel title={label} subtitle={spanLabel} actions={<PanelLink onClick={onViewAll} />}>
+      <div className="row-baseline">
+        <span className="stat-value" style={{ fontSize: "var(--text-xl)" }}>
+          {formatCentsWhole(current)}
+        </span>
         {history.length >= 2 && (
-          <span className={`num ${good ? "pos" : "neg"}`} style={{ fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>
-            {delta >= 0 ? "▲" : "▼"} {formatCentsWhole(Math.abs(delta))} ({pct >= 0 ? "+" : ""}{pct.toFixed(0)}%)
+          <span className={`stat-delta ${good ? "pos" : "neg"}`}>
+            <Icon name={delta >= 0 ? "arrowUp" : "arrowDown"} size={12} />
+            {formatCentsWhole(Math.abs(delta))} ({pct >= 0 ? "+" : ""}
+            {pct.toFixed(0)}%)
           </span>
         )}
       </div>
-      <div style={{ marginTop: 10 }}>
+      <div style={{ marginTop: "var(--space-3)" }}>
         <TrendChart history={history} projected={projected} color={color} />
       </div>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--color-neutral-500)", marginTop: 4 }}>
+      <div className="row-between t-2xs t-tertiary" style={{ marginTop: "var(--space-1)" }}>
         <span>{points.length > 0 ? monthShort(points[0]!.month) : ""}</span>
-        <span style={{ opacity: 0.7 }}>projected {formatCentsWhole(projEnd)}</span>
+        <span>projected {formatCentsWhole(projEnd)}</span>
       </div>
     </Panel>
   );
@@ -232,48 +379,74 @@ function BudgetOverview({
   categoryById,
   onViewAll,
 }: {
-  data: { budgets: { categoryId: string; amountCents: number; spentCents: number }[]; totalBudgetedCents: number; totalSpentCents: number } | null;
+  data: {
+    budgets: { categoryId: string; amountCents: number; spentCents: number }[];
+    totalBudgetedCents: number;
+    totalSpentCents: number;
+  } | null;
   month: string;
   categoryById: Map<string, { name: string; color: string }>;
   onViewAll: () => void;
 }) {
   const budgeted = data?.totalBudgetedCents ?? 0;
   const spent = data?.totalSpentCents ?? 0;
-  const pct = budgeted > 0 ? Math.min(1, spent / budgeted) : 0;
   const over = budgeted > 0 && spent > budgeted;
   const top = [...(data?.budgets ?? [])].sort((a, b) => b.spentCents - a.spentCents).slice(0, 3);
+
   return (
-    <Panel title="Budgets" subtitle={monthLong(month)} actions={<SeeAll onClick={onViewAll} />}>
+    <Panel title="Budgets" subtitle={monthLong(month)} actions={<PanelLink onClick={onViewAll} />}>
       {budgeted === 0 ? (
-        <p className="card-meta">No budgets set this month.</p>
+        <EmptyState
+          compact
+          icon="target"
+          title="No budgets this month"
+          body="Set a limit per category to track spending against a plan."
+          action={
+            <Button variant="secondary" size="sm" onClick={onViewAll}>
+              Set budgets
+            </Button>
+          }
+        />
       ) : (
         <>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
-            <span className="metric-value" style={{ fontSize: 22 }}>{formatCentsWhole(spent)}</span>
-            <span style={{ fontSize: 12.5, color: "var(--color-neutral-500)" }}>of {formatCentsWhole(budgeted)}</span>
+          <div className="row-baseline" style={{ marginBottom: "var(--space-2)" }}>
+            <span className="stat-value" style={{ fontSize: "var(--text-xl)" }}>
+              {formatCentsWhole(spent)}
+            </span>
+            <span className="t-xs t-tertiary">of {formatCentsWhole(budgeted)}</span>
           </div>
-          <div style={{ height: 8, borderRadius: 99, background: "color-mix(in srgb, var(--color-text) 8%, transparent)", overflow: "hidden" }}>
-            <div style={{ height: "100%", width: `${pct * 100}%`, borderRadius: 99, background: over ? "var(--color-negative)" : "var(--color-accent)", transition: "width .4s var(--ease)" }} />
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 11, marginTop: 14 }}>
+          <ProgressBar value={spent / budgeted} over={over} label="Total budget used" />
+          <div className="stack" style={{ marginTop: "var(--space-4)" }}>
             {top.map((b) => {
               const cat = categoryById.get(b.categoryId);
-              const p = b.amountCents > 0 ? Math.min(1, b.spentCents / b.amountCents) : 0;
-              const o = b.spentCents > b.amountCents;
+              const catOver = b.spentCents > b.amountCents;
               return (
                 <div key={b.categoryId}>
-                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4 }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                      <span aria-hidden style={{ width: 7, height: 7, borderRadius: "50%", background: cat?.color ?? "var(--color-accent)", flex: "none" }} />
-                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat?.name ?? "Category"}</span>
+                  <div className="row-between t-xs" style={{ marginBottom: "var(--space-1)" }}>
+                    <span className="row" style={{ gap: "var(--space-2)", minWidth: 0 }}>
+                      <span
+                        aria-hidden
+                        className="dot-swatch"
+                        style={{ background: cat?.color ?? "var(--color-accent)" }}
+                      />
+                      <span className="truncate">{cat?.name ?? "Category"}</span>
                     </span>
-                    <span className="num" style={{ color: o ? "var(--color-negative)" : "var(--color-neutral-500)", flex: "none" }}>
+                    <span
+                      className="num"
+                      style={{
+                        color: catOver ? "var(--color-negative)" : "var(--content-tertiary)",
+                        flex: "none",
+                      }}
+                    >
                       {formatCentsWhole(b.spentCents)} / {formatCentsWhole(b.amountCents)}
                     </span>
                   </div>
-                  <div style={{ height: 6, borderRadius: 99, background: "color-mix(in srgb, var(--color-text) 8%, transparent)", overflow: "hidden" }}>
-                    <div style={{ height: "100%", width: `${p * 100}%`, borderRadius: 99, background: o ? "var(--color-negative)" : (cat?.color ?? "var(--color-accent)"), transition: "width .4s var(--ease)" }} />
-                  </div>
+                  <ProgressBar
+                    small
+                    value={b.amountCents > 0 ? b.spentCents / b.amountCents : 0}
+                    over={catOver}
+                    {...(cat?.color ? { color: cat.color } : {})}
+                  />
                 </div>
               );
             })}
@@ -294,22 +467,32 @@ function UpcomingBills({
 }) {
   const next = bills.slice(0, 4);
   return (
-    <Panel title="Upcoming bills" subtitle="Soonest first" actions={<SeeAll onClick={onViewAll} />}>
+    <Panel title="Upcoming bills" subtitle="Soonest first" actions={<PanelLink onClick={onViewAll} />}>
       {next.length === 0 ? (
-        <p className="card-meta">No bills tracked yet.</p>
+        <EmptyState
+          compact
+          icon="receipt"
+          title="No bills tracked"
+          body="Add recurring bills to see what's due next."
+          action={
+            <Button variant="secondary" size="sm" onClick={onViewAll}>
+              Add a bill
+            </Button>
+          }
+        />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column" }}>
+        <div className="list list-divided">
           {next.map((b) => {
             const due = dueLabel(b.daysUntilDue);
             return (
-              <div key={b.id} className="row-div" style={{ display: "flex", alignItems: "center", gap: 11, padding: "9px 2px", fontSize: 13.5 }}>
-                <span aria-hidden style={{ width: 8, height: 8, borderRadius: 2, background: b.color, flex: "none" }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</div>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: toneColor(due.tone) }}>{due.text}</div>
-                </div>
-                <span className="num" style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{formatCentsWhole(b.amountCents)}</span>
-              </div>
+              <ListRow
+                key={b.id}
+                chevron={false}
+                leading={<span aria-hidden className="sq-swatch" style={{ background: b.color }} />}
+                title={b.name}
+                subtitle={<span style={{ color: toneColor(due.tone), fontWeight: 600 }}>{due.text}</span>}
+                trailing={<Money cents={b.amountCents} whole />}
+              />
             );
           })}
         </div>
@@ -323,7 +506,11 @@ function InvestmentsCard({
   data,
   onViewAll,
 }: {
-  data: { totalValueCents: number; totalCostBasisCents: number; allocation: { symbol: string; share: number }[] } | null;
+  data: {
+    totalValueCents: number;
+    totalCostBasisCents: number;
+    allocation: { symbol: string; share: number }[];
+  } | null;
   onViewAll: () => void;
 }) {
   const value = data?.totalValueCents ?? 0;
@@ -331,20 +518,34 @@ function InvestmentsCard({
   const gain = value - cost;
   const gainPct = cost > 0 ? (gain / cost) * 100 : 0;
   const top = data?.allocation?.[0];
+
   return (
-    <Panel title="Investments" subtitle="Portfolio value" actions={<SeeAll onClick={onViewAll} />}>
+    <Panel title="Investments" subtitle="Portfolio value" actions={<PanelLink onClick={onViewAll} />}>
       {value === 0 ? (
-        <p className="card-meta">No holdings yet.</p>
+        <EmptyState
+          compact
+          icon="invest"
+          title="No holdings yet"
+          body="Track positions to see portfolio value and allocation."
+          action={
+            <Button variant="secondary" size="sm" onClick={onViewAll}>
+              Add holdings
+            </Button>
+          }
+        />
       ) : (
         <>
-          <div className="metric-value" style={{ fontSize: 26 }}>{formatCentsWhole(value)}</div>
-          <div className={`num ${gain >= 0 ? "pos" : "neg"}`} style={{ fontSize: 12.5, fontWeight: 600, marginTop: 2 }}>
-            {gain >= 0 ? "+" : "−"}
-            {formatCentsWhole(Math.abs(gain))} ({gainPct >= 0 ? "+" : ""}{gainPct.toFixed(1)}%)
+          <div className="stat-value">{formatCentsWhole(value)}</div>
+          <div className={`stat-delta ${gain >= 0 ? "pos" : "neg"}`}>
+            <Icon name={gain >= 0 ? "trendUp" : "trendDown"} size={13} />
+            {formatCentsWhole(Math.abs(gain))} ({gainPct >= 0 ? "+" : ""}
+            {gainPct.toFixed(1)}%)
           </div>
           {top && (
-            <div style={{ fontSize: 12.5, color: "var(--color-neutral-500)", marginTop: 12 }}>
-              Largest holding · <b style={{ color: "var(--color-text)" }}>{top.symbol}</b> {Math.round(top.share * 100)}%
+            <div className="t-xs t-tertiary" style={{ marginTop: "var(--space-3)" }}>
+              Largest holding ·{" "}
+              <b style={{ color: "var(--content-primary)" }}>{top.symbol}</b>{" "}
+              {Math.round(top.share * 100)}%
             </div>
           )}
         </>
@@ -363,49 +564,29 @@ function RecentActivity({
   onViewAll: () => void;
 }) {
   return (
-    <Panel
-      title="Recent activity"
-      actions={
-        <button className="panel-link" onClick={onViewAll}>
-          See all →
-        </button>
-      }
-    >
+    <Panel title="Recent activity" actions={<PanelLink onClick={onViewAll} />}>
       {transactions.length === 0 ? (
-        <p className="card-meta">No transactions yet.</p>
+        <EmptyState
+          compact
+          icon="card"
+          title="No transactions yet"
+          body="Import a statement or add one by hand to get started."
+          action={
+            <Button variant="secondary" size="sm" onClick={onViewAll}>
+              Open Transactions
+            </Button>
+          }
+        />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column" }}>
+        <div className="list list-divided">
           {transactions.map((t) => (
-            <div
+            <ListRow
               key={t.id}
-              className="row-div"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "10px 2px",
-                fontSize: 13.5,
-              }}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 500 }}>
-                  {t.merchantName}
-                </div>
-                <div style={{ fontSize: 11.5, color: "var(--color-neutral-500)" }}>
-                  {t.postedAt.slice(5)} · {accountName(t.accountId)}
-                </div>
-              </div>
-              <span
-                className="num"
-                style={{
-                  fontWeight: 600,
-                  whiteSpace: "nowrap",
-                  color: t.amountCents > 0 ? "var(--color-positive)" : "var(--color-text)",
-                }}
-              >
-                {formatCents(t.amountCents, { signed: true })}
-              </span>
-            </div>
+              chevron={false}
+              title={t.merchantName}
+              subtitle={`${t.postedAt.slice(5)} · ${accountName(t.accountId)}`}
+              trailing={<Money cents={t.amountCents} signed tone="auto" />}
+            />
           ))}
         </div>
       )}
@@ -417,43 +598,38 @@ function TopGoals({ goals, onViewAll }: { goals: Goal[]; onViewAll: () => void }
   const top = [...goals]
     .sort((a, b) => b.savedCents / (b.targetCents || 1) - a.savedCents / (a.targetCents || 1))
     .slice(0, 3);
+
   return (
-    <Panel
-      title="Goals"
-      actions={
-        <button className="panel-link" onClick={onViewAll}>
-          See all →
-        </button>
-      }
-    >
+    <Panel title="Goals" actions={<PanelLink onClick={onViewAll} />}>
       {top.length === 0 ? (
-        <p className="card-meta">No savings goals yet.</p>
+        <EmptyState
+          compact
+          icon="flag"
+          title="No savings goals"
+          body="Name what you're saving for and track progress toward it."
+          action={
+            <Button variant="secondary" size="sm" onClick={onViewAll}>
+              Add a goal
+            </Button>
+          }
+        />
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {top.map((g) => {
-            const pct = g.targetCents > 0 ? Math.min(1, g.savedCents / g.targetCents) : 0;
-            return (
-              <div key={g.id}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 5 }}>
-                  <span style={{ fontWeight: 500 }}>{g.name}</span>
-                  <span className="num" style={{ color: "var(--color-neutral-500)" }}>
-                    {formatCentsWhole(g.savedCents)} / {formatCentsWhole(g.targetCents)}
-                  </span>
-                </div>
-                <div style={{ height: 8, borderRadius: 99, background: "color-mix(in srgb, var(--color-text) 8%, transparent)", overflow: "hidden" }}>
-                  <div
-                    style={{
-                      height: "100%",
-                      width: `${pct * 100}%`,
-                      borderRadius: 99,
-                      background: g.color,
-                      transition: "width .4s var(--ease)",
-                    }}
-                  />
-                </div>
+        <div className="stack-lg">
+          {top.map((g) => (
+            <div key={g.id}>
+              <div className="row-between t-sm" style={{ marginBottom: "var(--space-1)" }}>
+                <span className="t-medium truncate">{g.name}</span>
+                <span className="num t-tertiary" style={{ flex: "none" }}>
+                  {formatCentsWhole(g.savedCents)} / {formatCentsWhole(g.targetCents)}
+                </span>
               </div>
-            );
-          })}
+              <ProgressBar
+                value={g.targetCents > 0 ? g.savedCents / g.targetCents : 0}
+                color={g.color}
+                label={g.name}
+              />
+            </div>
+          ))}
         </div>
       )}
     </Panel>
@@ -472,8 +648,8 @@ function GetStarted({
     <div
       style={{
         display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-        gap: 14,
+        gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+        gap: "var(--grid-gap)",
       }}
     >
       <Card kicker="Get started" title={hasAccounts ? "Record transactions" : "Add your first account"}>
@@ -483,10 +659,7 @@ function GetStarted({
             : "Checking, savings, credit cards, loans — accounts are where every transaction lives."}
         </p>
         <div>
-          <Button
-            variant="primary"
-            onClick={() => onNavigate(hasAccounts ? "transactions" : "accounts")}
-          >
+          <Button variant="primary" onClick={() => onNavigate(hasAccounts ? "transactions" : "accounts")}>
             {hasAccounts ? "Open Transactions" : "Open Accounts"}
           </Button>
         </div>
@@ -494,11 +667,10 @@ function GetStarted({
       {aiVisible ? (
         <Card kicker="Anytime" title="Ask the assistant">
           <p className="card-body">
-            Your assistant can explain spending, forecast cash flow, and
-            summarize your month.
+            Your assistant can explain spending, forecast cash flow, and summarize your month.
           </p>
           <div>
-            <Button variant="secondary" onClick={() => onNavigate("assistant")}>
+            <Button variant="secondary" icon="sparkle" onClick={() => onNavigate("assistant")}>
               Open AI Assistant
             </Button>
           </div>
@@ -506,8 +678,8 @@ function GetStarted({
       ) : (
         <Card kicker="Optional" title="Add an AI assistant">
           <p className="card-body">
-            Off by default. Connect OpenAI, Anthropic, or a local Ollama in
-            Settings to get spending explanations and monthly summaries.
+            Off by default. Connect OpenAI, Anthropic, or a local Ollama in Settings to get spending
+            explanations and monthly summaries.
           </p>
           <div>
             <Button variant="secondary" onClick={() => onNavigate("settings")}>

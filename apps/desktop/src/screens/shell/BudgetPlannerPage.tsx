@@ -3,81 +3,19 @@ import {
   parseAmountToCents,
   type BudgetWithSpend,
   type Category,
-  type SankeyLink,
-  type SankeyNode,
 } from "@vault/shared";
 import { Button, Panel, Spinner } from "@vault/ui";
 import { useEffect, useRef, useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 import type { Navigate } from "./AppShell.js";
+import { buildBudgetSankey } from "./budgetSankey.js";
 import { SankeyCard } from "./SankeyCard.js";
 
 function currentMonth(): string {
   return new Date().toISOString().slice(0, 7);
 }
 
-/**
- * Build the budget-planner Sankey with the same hierarchical structure as the
- * main cash-flow diagram — income → hub → the category tree (each node weighted
- * by its subtree's budgeted amount) → an "Unallocated / savings" leaf. Because
- * it walks the same `parentCategoryId` tree, editing the tree in Settings
- * reshapes this diagram and the cash-flow one identically.
- */
-function buildBudgetSankey(
-  incomeCents: number,
-  expenseCats: Category[],
-  budgetByCatAmount: Map<string, number>,
-): { nodes: SankeyNode[]; links: SankeyLink[]; allocated: number } {
-  const childrenOf = (id: string | null) =>
-    expenseCats
-      .filter((c) => (c.parentCategoryId ?? null) === id)
-      .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
-  const subtree = new Map<string, number>();
-  const compute = (id: string, seen: Set<string>): number => {
-    if (subtree.has(id)) return subtree.get(id)!;
-    if (seen.has(id)) return 0;
-    seen.add(id);
-    let total = budgetByCatAmount.get(id) ?? 0;
-    for (const ch of childrenOf(id)) total += compute(ch.id, seen);
-    subtree.set(id, total);
-    return total;
-  };
-  for (const c of expenseCats) compute(c.id, new Set());
-
-  const nodes: SankeyNode[] = [];
-  const links: SankeyLink[] = [];
-  const emit = (cat: Category, depth: number) => {
-    nodes.push({ id: `cat:${cat.id}`, label: cat.name, valueCents: subtree.get(cat.id) ?? 0, color: cat.color, depth, kind: "category", categoryId: cat.id });
-    const kids = childrenOf(cat.id).filter((k) => (subtree.get(k.id) ?? 0) > 0);
-    for (const k of kids) {
-      links.push({ from: `cat:${cat.id}`, to: `cat:${k.id}`, valueCents: subtree.get(k.id) ?? 0 });
-      emit(k, depth + 1);
-    }
-    const direct = budgetByCatAmount.get(cat.id) ?? 0;
-    if (kids.length > 0 && direct > 0) {
-      nodes.push({ id: `cat:${cat.id}:direct`, label: `${cat.name} (direct)`, valueCents: direct, color: cat.color, depth: depth + 1, kind: "category", categoryId: cat.id });
-      links.push({ from: `cat:${cat.id}`, to: `cat:${cat.id}:direct`, valueCents: direct });
-    }
-  };
-
-  const tops = childrenOf(null).filter((c) => (subtree.get(c.id) ?? 0) > 0);
-  const allocated = tops.reduce((s, c) => s + (subtree.get(c.id) ?? 0), 0);
-
-  nodes.push({ id: "income", label: "Planned income", valueCents: incomeCents, color: "#3ecf8e", depth: 0, kind: "income", categoryId: null });
-  nodes.push({ id: "hub", label: "To allocate", valueCents: incomeCents, color: "#9397ab", depth: 1, kind: "hub", categoryId: null });
-  links.push({ from: "income", to: "hub", valueCents: incomeCents });
-  for (const c of tops) {
-    links.push({ from: "hub", to: `cat:${c.id}`, valueCents: subtree.get(c.id) ?? 0 });
-    emit(c, 2);
-  }
-  const unallocated = Math.max(0, incomeCents - allocated);
-  if (unallocated > 0) {
-    nodes.push({ id: "saved", label: "Unallocated / savings", valueCents: unallocated, color: "#43cfc0", depth: 2, kind: "saved", categoryId: null });
-    links.push({ from: "hub", to: "saved", valueCents: unallocated });
-  }
-  return { nodes, links, allocated };
-}
 function shiftMonth(month: string, delta: number): string {
   const [y, m] = month.split("-").map(Number) as [number, number];
   return new Date(Date.UTC(y, m - 1 + delta, 1)).toISOString().slice(0, 7);
@@ -159,7 +97,7 @@ export function BudgetPlannerPage({ onNavigate }: { onNavigate: Navigate }) {
         <Button variant="ghost" onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month">
           ←
         </Button>
-        <span style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 15, minWidth: 150, textAlign: "center" }}>
+        <span style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: "var(--text-md)", minWidth: 150, textAlign: "center" }}>
           {monthLabel(month)}
         </span>
         <Button variant="ghost" onClick={() => setMonth(shiftMonth(month, 1))} aria-label="Next month">
@@ -181,26 +119,26 @@ export function BudgetPlannerPage({ onNavigate }: { onNavigate: Navigate }) {
           <div>
             <div className="eyebrow" style={{ marginBottom: 4 }}>Fixed monthly income</div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ color: "var(--color-neutral-500)", fontSize: 18 }}>$</span>
+              <span style={{ color: "var(--content-tertiary)", fontSize: "var(--text-xl)" }}>$</span>
               <input
                 className="input"
                 value={income}
                 onChange={(e) => setIncome(e.target.value)}
                 inputMode="decimal"
                 placeholder="5000"
-                style={{ width: 130, fontSize: 18, fontWeight: 600 }}
+                style={{ width: 130, fontSize: "var(--text-xl)", fontWeight: 600 }}
               />
             </div>
           </div>
           <div>
             <div className="eyebrow" style={{ marginBottom: 4 }}>Allocated</div>
-            <div className="metric-value" style={{ fontSize: 20 }}>{formatCentsWhole(allocated)}</div>
+            <div className="metric-value" style={{ fontSize: "var(--text-xl)" }}>{formatCentsWhole(allocated)}</div>
           </div>
           <div>
             <div className="eyebrow" style={{ marginBottom: 4 }}>{over ? "Over budget" : "Unallocated / savings"}</div>
             <div
               className="metric-value"
-              style={{ fontSize: 20, color: over ? "var(--color-negative)" : "var(--color-positive)" }}
+              style={{ fontSize: "var(--text-xl)", color: over ? "var(--color-negative)" : "var(--color-positive)" }}
             >
               {over ? `-${formatCentsWhole(allocated - incomeCents)}` : formatCentsWhole(unallocated)}
             </div>
@@ -275,7 +213,7 @@ function AllocationRow({
   return (
     <div
       className="row-div"
-      style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 2px", fontSize: 13 }}
+      style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 2px", fontSize: "var(--text-sm)" }}
     >
       <span
         aria-hidden
@@ -284,7 +222,7 @@ function AllocationRow({
       <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {category.name}
       </span>
-      <span style={{ color: "var(--color-neutral-500)" }}>$</span>
+      <span style={{ color: "var(--content-tertiary)" }}>$</span>
       <input
         className="input num"
         value={val}

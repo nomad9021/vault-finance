@@ -90,7 +90,7 @@ function PayoffChart({ plan, minOnly }: { plan: number[]; minOnly: number[] }) {
       <line x1={pad} y1={H - pad} x2={W - pad} y2={H - pad} stroke="var(--color-divider)" strokeWidth={1} />
       <path d={area} fill="color-mix(in srgb, var(--color-accent) 14%, transparent)" />
       {minOnly.length > 2 && (
-        <path d={line(minOnly)} fill="none" stroke="var(--color-neutral-500)" strokeWidth={1.5} strokeDasharray="4 4" />
+        <path d={line(minOnly)} fill="none" stroke="var(--content-tertiary)" strokeWidth={1.5} strokeDasharray="4 4" />
       )}
       <path d={line(plan)} fill="none" stroke="var(--color-accent)" strokeWidth={2.5} strokeLinecap="round" />
       {planN <= xMax && <circle cx={px(planN)} cy={py(0)} r={4} fill="var(--color-accent)" />}
@@ -262,7 +262,7 @@ export function DebtCalculator() {
           {celebrate && <Confetti />}
           <div
             style={{
-              fontSize: 48,
+              fontSize: "var(--text-5xl)",
               lineHeight: 1,
               animation: celebrate ? "debtFreePop .55s var(--ease) both" : undefined,
             }}
@@ -273,7 +273,7 @@ export function DebtCalculator() {
             style={{
               fontFamily: "var(--font-heading)",
               fontWeight: 700,
-              fontSize: 24,
+              fontSize: "var(--text-2xl)",
               letterSpacing: "-.02em",
               margin: "8px 0 4px",
             }}
@@ -288,8 +288,8 @@ export function DebtCalculator() {
             <Button variant="ghost" onClick={resetPlan}>
               Start a new plan
             </Button>
-            <Button variant="secondary" onClick={addManualDebt}>
-              + Add a debt
+            <Button variant="secondary" onClick={addManualDebt} icon="plus">
+              Add a debt
             </Button>
           </div>
         </div>
@@ -305,8 +305,8 @@ export function DebtCalculator() {
           add a debt by hand. The planner shows how fast you can be debt-free and how much interest
           you’ll save.
         </p>
-        <Button variant="primary" onClick={addManualDebt}>
-          + Add a debt manually
+        <Button variant="primary" onClick={addManualDebt} icon="plus">
+          Add a debt manually
         </Button>
       </Panel>
     );
@@ -331,8 +331,8 @@ export function DebtCalculator() {
             justifyContent: "center",
             border: "1px solid var(--color-divider)",
             background: "var(--color-surface)",
-            borderRadius: 8,
-            color: "var(--color-neutral-500)",
+            borderRadius: "var(--radius-md)",
+            color: "var(--content-tertiary)",
             cursor: "pointer",
           }}
         >
@@ -342,30 +342,30 @@ export function DebtCalculator() {
     >
       {/* Result summary */}
       <div className="grid" style={{ marginBottom: 6 }}>
-        <div style={{ gridColumn: "span 4" }}>
+        <div className="col-4">
           <div className="eyebrow">Debt-free by</div>
-          <div className="metric-value" style={{ fontSize: 22 }}>
+          <div className="metric-value" style={{ fontSize: "var(--text-2xl)" }}>
             {plan.neverPayoff ? "—" : payoffDate(plan.months)}
           </div>
-          <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
+          <div style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>
             {plan.neverPayoff ? "payment too low" : monthsLabel(plan.months)}
           </div>
         </div>
-        <div style={{ gridColumn: "span 4" }}>
+        <div className="col-4">
           <div className="eyebrow">Interest paid</div>
-          <div className="metric-value" style={{ fontSize: 22 }}>
+          <div className="metric-value" style={{ fontSize: "var(--text-2xl)" }}>
             {formatCentsWhole(plan.totalInterestCents)}
           </div>
-          <div className="pos" style={{ fontSize: 12, fontWeight: 600 }}>
+          <div className="pos" style={{ fontSize: "var(--text-xs)", fontWeight: 600 }}>
             {interestSaved > 0 ? `save ${formatCentsWhole(interestSaved)} vs. minimums` : " "}
           </div>
         </div>
-        <div style={{ gridColumn: "span 4" }}>
+        <div className="col-4">
           <div className="eyebrow">Total debt</div>
-          <div className="metric-value" style={{ fontSize: 22 }}>
+          <div className="metric-value" style={{ fontSize: "var(--text-2xl)" }}>
             {formatCentsWhole(totalDebt)}
           </div>
-          <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
+          <div style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>
             {monthsSaved > 0 ? `${monthsLabel(monthsSaved)} sooner` : " "}
           </div>
         </div>
@@ -375,13 +375,13 @@ export function DebtCalculator() {
       {!plan.neverPayoff && (
         <div style={{ marginBottom: 4 }}>
           <PayoffChart plan={plan.trajectory} minOnly={minOnly.trajectory} />
-          <div style={{ display: "flex", gap: 16, fontSize: 11.5, color: "var(--color-neutral-500)" }}>
+          <div style={{ display: "flex", gap: 16, fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>
             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ width: 14, height: 3, borderRadius: 2, background: "var(--color-accent)" }} />
+              <span style={{ width: 14, height: 3, borderRadius: "var(--radius-sm)", background: "var(--color-accent)" }} />
               Your plan — debt-free {payoffDate(plan.months)}
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ width: 14, height: 0, borderTop: "2px dashed var(--color-neutral-500)" }} />
+              <span style={{ width: 14, height: 0, borderTop: "2px dashed var(--content-tertiary)" }} />
               Minimums only
             </span>
           </div>
@@ -396,8 +396,8 @@ export function DebtCalculator() {
           alignItems: "center",
           gap: 10,
           flexWrap: "wrap",
-          fontSize: 12.5,
-          color: "var(--color-neutral-500)",
+          fontSize: "var(--text-sm)",
+          color: "var(--content-tertiary)",
           borderTop: "1px solid var(--hairline)",
           marginTop: 8,
           paddingTop: 12,
@@ -423,9 +423,9 @@ export function DebtCalculator() {
             gap: 6,
             border: "1px solid var(--color-divider)",
             background: "var(--color-surface)",
-            borderRadius: 8,
+            borderRadius: "var(--radius-md)",
             padding: "5px 11px",
-            fontSize: 12.5,
+            fontSize: "var(--text-sm)",
             fontWeight: 600,
             color: "var(--color-text)",
             cursor: "pointer",
@@ -489,7 +489,7 @@ export function DebtCalculator() {
             as deleting it from the Accounts page.
           </p>
           {deleteError && (
-            <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)", marginTop: 10 }}>
+            <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)", marginTop: 10 }}>
               {deleteError}
             </div>
           )}
@@ -547,11 +547,11 @@ function DebtSettingsDialog({
   onClose: () => void;
 }) {
   const miniLabel = {
-    fontSize: 10,
+    fontSize: "var(--text-3xs)",
     fontWeight: 600,
     letterSpacing: ".04em",
     textTransform: "uppercase",
-    color: "var(--color-neutral-500)",
+    color: "var(--content-tertiary)",
     marginBottom: 3,
     display: "block",
   } as const;
@@ -571,7 +571,7 @@ function DebtSettingsDialog({
           <div>
             <span style={miniLabel}>Extra / month</span>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ color: "var(--color-neutral-500)" }}>$</span>
+              <span style={{ color: "var(--content-tertiary)" }}>$</span>
               <input
                 className="input"
                 value={extra}
@@ -595,7 +595,7 @@ function DebtSettingsDialog({
             </div>
           </div>
         </div>
-        <div style={{ fontSize: 11.5, color: "var(--color-neutral-500)", lineHeight: 1.5 }}>
+        <div style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)", lineHeight: 1.5 }}>
           {strategy === "avalanche"
             ? "Avalanche: extra goes to the highest-APR debt first — least interest."
             : "Snowball: extra goes to the smallest balance first — fastest wins for motivation."}
@@ -611,7 +611,7 @@ function DebtSettingsDialog({
                   key={d.id}
                   style={{
                     border: "1px solid var(--color-divider)",
-                    borderRadius: 10,
+                    borderRadius: "var(--radius-md)",
                     padding: 10,
                     display: "flex",
                     flexDirection: "column",
@@ -639,10 +639,10 @@ function DebtSettingsDialog({
                         justifyContent: "center",
                         border: "1px solid var(--color-divider)",
                         background: "var(--color-surface)",
-                        borderRadius: 7,
+                        borderRadius: "var(--radius-md)",
                         color: "var(--color-negative)",
                         cursor: "pointer",
-                        fontSize: 17,
+                        fontSize: "var(--text-lg)",
                         lineHeight: 1,
                         flex: "0 0 auto",
                       }}
@@ -682,7 +682,7 @@ function DebtSettingsDialog({
                       />
                     </label>
                   </div>
-                  <span style={{ fontSize: 10.5, color: "var(--color-neutral-500)" }}>
+                  <span style={{ fontSize: "var(--text-2xs)", color: "var(--content-tertiary)" }}>
                     {linked ? "🔗 From a linked account — removing deletes the account" : "✎ Manual entry"}
                   </span>
                 </div>
@@ -690,8 +690,8 @@ function DebtSettingsDialog({
             })}
           </div>
           <div style={{ marginTop: 10 }}>
-            <Button variant="ghost" onClick={onAdd}>
-              + Add a debt manually
+            <Button variant="ghost" onClick={onAdd} icon="plus">
+              Add a debt manually
             </Button>
           </div>
         </div>

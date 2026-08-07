@@ -6,7 +6,7 @@ import {
   type InvestmentAccount,
   type InvestmentsResponse,
 } from "@vault/shared";
-import { Button, Card, Dialog, Field, Spinner } from "@vault/ui";
+import { Button, Card, Dialog, Field, Panel, Spinner } from "@vault/ui";
 import { useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
@@ -57,8 +57,8 @@ export function InvestmentsPage({ onNavigate }: { onNavigate: (page: PageId) => 
           gap: 14,
         }}
       >
-        <Stat label="Portfolio value" value={formatCentsWhole(totalValueCents)} sub="user-entered valuations" subColor="var(--color-neutral-500)" />
-        <Stat label="Cost basis" value={formatCentsWhole(totalCostBasisCents)} sub="total invested" subColor="var(--color-neutral-500)" />
+        <Stat label="Portfolio value" value={formatCentsWhole(totalValueCents)} sub="user-entered valuations" subColor="var(--content-tertiary)" />
+        <Stat label="Cost basis" value={formatCentsWhole(totalCostBasisCents)} sub="total invested" subColor="var(--content-tertiary)" />
         <Stat
           label="Unrealized gain"
           value={formatCentsWhole(gainCents)}
@@ -68,93 +68,65 @@ export function InvestmentsPage({ onNavigate }: { onNavigate: (page: PageId) => 
       </div>
 
       {allocation.length > 0 && (
-        <div
-          style={{
-            background: "var(--color-surface)",
-            border: "1px solid var(--color-divider)",
-            borderRadius: 12,
-            boxShadow: "var(--shadow-sm)",
-          }}
-        >
-          <div style={{ padding: "14px 18px 10px", fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 14 }}>
-            Allocation
+        <Panel title="Allocation" subtitle="Share of portfolio value">
+          <div
+            style={{
+              display: "flex",
+              height: 14,
+              borderRadius: "var(--radius-pill)",
+              overflow: "hidden",
+              gap: 2,
+            }}
+          >
+            {allocation.map((slice, i) => (
+              <div
+                key={slice.symbol}
+                title={`${slice.symbol} · ${(slice.share * 100).toFixed(1)}%`}
+                style={{
+                  width: `${slice.share * 100}%`,
+                  background: SLICE_COLORS[i % SLICE_COLORS.length],
+                }}
+              />
+            ))}
           </div>
-          <div style={{ padding: "0 18px 6px" }}>
-            <div style={{ display: "flex", height: 14, borderRadius: 99, overflow: "hidden", gap: 2 }}>
-              {allocation.map((slice, i) => (
-                <div
-                  key={slice.symbol}
-                  title={`${slice.symbol} · ${(slice.share * 100).toFixed(1)}%`}
-                  style={{
-                    width: `${slice.share * 100}%`,
-                    background: SLICE_COLORS[i % SLICE_COLORS.length],
-                  }}
-                />
-              ))}
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 14, padding: "12px 0 14px" }}>
-              {allocation.map((slice, i) => (
+          <div className="row wrap" style={{ gap: "var(--space-4)", marginTop: "var(--space-3)" }}>
+            {allocation.map((slice, i) => (
+              <span key={slice.symbol} className="row t-xs t-tertiary" style={{ gap: "var(--space-2)" }}>
                 <span
-                  key={slice.symbol}
-                  style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--color-neutral-400)" }}
-                >
-                  <span
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 2,
-                      background: SLICE_COLORS[i % SLICE_COLORS.length],
-                    }}
-                  />
-                  {slice.symbol} · {(slice.share * 100).toFixed(1)}%
-                </span>
-              ))}
-            </div>
+                  className="dot-swatch"
+                  style={{ background: SLICE_COLORS[i % SLICE_COLORS.length] }}
+                />
+                {slice.symbol} · {(slice.share * 100).toFixed(1)}%
+              </span>
+            ))}
           </div>
-        </div>
+        </Panel>
       )}
 
       {accounts.map((account) => (
-        <div
+        <Panel
           key={account.id}
-          style={{
-            background: "var(--color-surface)",
-            border: "1px solid var(--color-divider)",
-            borderRadius: 12,
-            boxShadow: "var(--shadow-sm)",
-          }}
-        >
-          <div
-            style={{
-              padding: "14px 18px 6px",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "baseline",
-              gap: 8,
-            }}
-          >
-            <div>
-              <span style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 14 }}>
-                {account.name}
-              </span>
-              {account.institution && (
-                <span style={{ fontSize: 12, color: "var(--color-neutral-500)", marginLeft: 8 }}>
-                  {account.institution}
-                </span>
-              )}
-            </div>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-              <span style={{ fontWeight: 600, fontSize: 14 }}>
+          title={account.name}
+          {...(account.institution ? { subtitle: account.institution } : {})}
+          actions={
+            <>
+              <span className="money t-semibold">
                 {formatCentsWhole(account.holdingsValueCents)}
               </span>
-              <Button variant="ghost" onClick={() => setEditing({ account, holding: null })}>
-                + Holding
+              <Button
+                variant="secondary"
+                size="sm"
+                icon="plus"
+                onClick={() => setEditing({ account, holding: null })}
+              >
+                Holding
               </Button>
-            </div>
-          </div>
-          <div style={{ padding: "0 18px 12px" }}>
+            </>
+          }
+        >
+          <div>
             {account.holdings.length === 0 ? (
-              <p className="text-muted" style={{ fontSize: 12.5, margin: "6px 0" }}>
+              <p className="card-meta" style={{ margin: 0 }}>
                 No holdings yet.
               </p>
             ) : (
@@ -171,7 +143,7 @@ export function InvestmentsPage({ onNavigate }: { onNavigate: (page: PageId) => 
                       gap: 12,
                       padding: "10px 0",
                       borderTop: "1px solid color-mix(in srgb, var(--color-text) 7%, transparent)",
-                      fontSize: 13,
+                      fontSize: "var(--text-sm)",
                       width: "100%",
                       background: "none",
                       border: "none",
@@ -183,29 +155,29 @@ export function InvestmentsPage({ onNavigate }: { onNavigate: (page: PageId) => 
                     }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 500, fontSize: 13.5 }}>
+                      <div style={{ fontWeight: 500, fontSize: "var(--text-base)" }}>
                         {h.symbol}
                         {h.name && (
-                          <span style={{ color: "var(--color-neutral-500)", fontWeight: 400, marginLeft: 8 }}>
+                          <span style={{ color: "var(--content-tertiary)", fontWeight: 400, marginLeft: 8 }}>
                             {h.name}
                           </span>
                         )}
                       </div>
-                      <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
+                      <div style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>
                         {h.quantity} units · as of {h.asOfDate}
                       </div>
                     </div>
                     {gain !== null && (
                       <span
                         style={{
-                          fontSize: 12.5,
+                          fontSize: "var(--text-sm)",
                           color: gain >= 0 ? "var(--color-positive)" : "var(--color-negative)",
                         }}
                       >
                         {formatCents(gain, { signed: true })}
                       </span>
                     )}
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>
+                    <span style={{ fontWeight: 600, fontSize: "var(--text-base)" }}>
                       {formatCents(h.marketValueCents)}
                     </span>
                   </button>
@@ -213,7 +185,7 @@ export function InvestmentsPage({ onNavigate }: { onNavigate: (page: PageId) => 
               })
             )}
           </div>
-        </div>
+        </Panel>
       ))}
 
       {editing && (
@@ -247,26 +219,26 @@ function Stat({
       style={{
         background: "var(--color-surface)",
         border: "1px solid var(--color-divider)",
-        borderRadius: 12,
+        borderRadius: "var(--radius-lg)",
         padding: "16px 18px",
         boxShadow: "var(--shadow-sm)",
       }}
     >
       <div
         style={{
-          fontSize: 11,
+          fontSize: "var(--text-2xs)",
           letterSpacing: ".04em",
           textTransform: "uppercase",
-          color: "var(--color-neutral-500)",
+          color: "var(--content-tertiary)",
           fontWeight: 600,
         }}
       >
         {label}
       </div>
-      <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 24, marginTop: 2 }}>
+      <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: "var(--text-2xl)", marginTop: 2 }}>
         {value}
       </div>
-      <div style={{ fontSize: 12, color: subColor }}>{sub}</div>
+      <div style={{ fontSize: "var(--text-xs)", color: subColor }}>{sub}</div>
     </div>
   );
 }
@@ -415,7 +387,7 @@ function HoldingDialog({
           }
         />
         {error && (
-          <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>
+          <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
             {error}
           </div>
         )}

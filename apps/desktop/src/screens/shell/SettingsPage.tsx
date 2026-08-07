@@ -94,7 +94,7 @@ function UpdatesSection() {
       ) : state.phase === "installing" ? (
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Spinner label="Installing update" />
-          <span style={{ fontSize: 13 }}>
+          <span style={{ fontSize: "var(--text-sm)" }}>
             Downloading… {Math.round(state.progress * 100)}%
           </span>
         </div>
@@ -108,12 +108,12 @@ function UpdatesSection() {
             {state.phase === "checking" ? <Spinner label="Checking" /> : "Check for updates"}
           </Button>
           {state.phase === "none" && (
-            <span style={{ fontSize: 13, color: "var(--color-neutral-500)" }}>
+            <span style={{ fontSize: "var(--text-sm)", color: "var(--content-tertiary)" }}>
               You're on the latest version.
             </span>
           )}
           {state.phase === "error" && (
-            <span role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>
+            <span role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
               {state.message}
             </span>
           )}
@@ -148,9 +148,9 @@ const treeIconBtn: CSSProperties = {
   border: 0,
   background: "none",
   cursor: "pointer",
-  color: "var(--color-neutral-400)",
+  color: "var(--content-tertiary)",
   font: "inherit",
-  fontSize: 15,
+  fontSize: "var(--text-md)",
   lineHeight: 1,
   padding: "0 2px",
 };
@@ -160,6 +160,7 @@ function CategoryTreeNode({
   childrenOf,
   onAdd,
   onRename,
+  onRecolor,
   onRemove,
   onMove,
   onDragStartNode,
@@ -172,6 +173,7 @@ function CategoryTreeNode({
   childrenOf: (id: string | null) => TreeCat[];
   onAdd: (parentId: string | null) => void;
   onRename: (id: string, name: string) => void;
+  onRecolor: (id: string, color: string) => void;
   onRemove: (id: string) => void;
   onMove: (id: string, direction: "up" | "down") => void;
   onDragStartNode: (id: string) => void;
@@ -210,7 +212,7 @@ function CategoryTreeNode({
           gap: 7,
           padding: "6px 9px",
           border: over ? "1px solid var(--color-accent)" : "1px solid var(--color-divider)",
-          borderRadius: 8,
+          borderRadius: "var(--radius-md)",
           background: over
             ? "color-mix(in srgb, var(--color-accent) 12%, var(--color-surface))"
             : "var(--color-surface)",
@@ -219,9 +221,29 @@ function CategoryTreeNode({
           cursor: "grab",
         }}
       >
-        <span
-          style={{ width: 10, height: 10, borderRadius: 3, background: cat.color, flex: "0 0 auto" }}
-        />
+        {/* The swatch is the colour control. A category's colour is what paints
+            its ribbon in both Sankey diagrams and its bar in Budgets, so this
+            is where the shape *and* the palette of those charts is set. */}
+        <label
+          title={`Colour for ${cat.name} — used in the cash-flow and budget diagrams`}
+          style={{
+            width: 14,
+            height: 14,
+            borderRadius: "var(--radius-sm)",
+            background: cat.color,
+            flex: "0 0 auto",
+            cursor: "pointer",
+            position: "relative",
+            boxShadow: "inset 0 0 0 1px color-mix(in srgb, var(--color-text) 25%, transparent)",
+          }}
+        >
+          <input
+            type="color"
+            value={cat.color}
+            onChange={(e) => onRecolor(cat.id, e.target.value)}
+            style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "pointer" }}
+          />
+        </label>
         {editing ? (
           <input
             autoFocus
@@ -239,7 +261,7 @@ function CategoryTreeNode({
                 setEditing(false);
               }
             }}
-            style={{ width: 150, padding: "2px 6px", fontSize: 13 }}
+            style={{ width: 150, padding: "2px 6px", fontSize: "var(--text-sm)" }}
           />
         ) : (
           <button
@@ -253,7 +275,7 @@ function CategoryTreeNode({
               border: 0,
               font: "inherit",
               fontWeight: 600,
-              fontSize: 13,
+              fontSize: "var(--text-sm)",
               cursor: "text",
               color: "var(--color-text)",
             }}
@@ -315,6 +337,7 @@ function CategoryTreeNode({
                   childrenOf={childrenOf}
                   onAdd={onAdd}
                   onRename={onRename}
+                  onRecolor={onRecolor}
                   onRemove={onRemove}
                   onMove={onMove}
                   onDragStartNode={onDragStartNode}
@@ -373,6 +396,18 @@ function CategoryTreeSection() {
   const rename = async (id: string, name: string) => {
     await client.updateCategory(id, { name }).catch(() => setError("Couldn't rename."));
     await reload();
+  };
+  // Native colour inputs fire on every drag of the picker, so debounce the
+  // write and only reload once the user settles on a colour.
+  const recolorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recolor = (id: string, color: string) => {
+    if (recolorTimer.current) clearTimeout(recolorTimer.current);
+    recolorTimer.current = setTimeout(() => {
+      void client
+        .updateCategory(id, { color })
+        .then(() => reload())
+        .catch(() => setError("Couldn't change the colour."));
+    }, 250);
   };
   const remove = async (id: string) => {
     setBusy(true);
@@ -448,6 +483,7 @@ function CategoryTreeSection() {
                 childrenOf={childrenOf}
                 onAdd={addChild}
                 onRename={rename}
+                onRecolor={recolor}
                 onRemove={remove}
                 onMove={move}
                 onDragStartNode={(id) => (dragId.current = id)}
@@ -471,10 +507,10 @@ function CategoryTreeSection() {
             void onDropOn(null);
           }}
           style={{
-            fontSize: 12,
-            color: "var(--color-neutral-500)",
+            fontSize: "var(--text-xs)",
+            color: "var(--content-tertiary)",
             border: "1px dashed var(--color-divider)",
-            borderRadius: 8,
+            borderRadius: "var(--radius-md)",
             padding: "6px 12px",
           }}
         >
@@ -482,7 +518,7 @@ function CategoryTreeSection() {
         </div>
       </div>
       {error && (
-        <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)", marginTop: 8 }}>
+        <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)", marginTop: 8 }}>
           {error}
         </div>
       )}
@@ -552,8 +588,8 @@ function CategorizationRulesSection() {
                 borderTop: "1px solid var(--color-divider)",
               }}
             >
-              <span style={{ fontWeight: 600, fontSize: 13 }}>“{r.keyword}”</span>
-              <span style={{ color: "var(--color-neutral-500)", fontSize: 13 }}>
+              <span style={{ fontWeight: 600, fontSize: "var(--text-sm)" }}>“{r.keyword}”</span>
+              <span style={{ color: "var(--content-tertiary)", fontSize: "var(--text-sm)" }}>
                 → {catName(r.categoryId)}
               </span>
               <div style={{ marginLeft: "auto" }}>
@@ -590,7 +626,7 @@ function CategorizationRulesSection() {
         </Button>
       </div>
       {error && (
-        <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)", marginTop: 8 }}>
+        <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)", marginTop: 8 }}>
           {error}
         </div>
       )}
@@ -731,7 +767,7 @@ function AiSection() {
                     : "var(--color-negative)",
               }}
             />
-            <span style={{ fontSize: 13 }}>{statusLine(status)}</span>
+            <span style={{ fontSize: "var(--text-sm)" }}>{statusLine(status)}</span>
             {status.enabled && status.configured && (
               <Button variant="ghost" onClick={reload} style={{ marginLeft: "auto" }}>
                 Test connection
@@ -848,7 +884,7 @@ function AiSection() {
                       gap: 10,
                     }}
                   >
-                    <span style={{ fontSize: 13, fontWeight: 600 }}>Model quality levels</span>
+                    <span style={{ fontSize: "var(--text-sm)", fontWeight: 600 }}>Model quality levels</span>
                     <Button
                       variant="ghost"
                       onClick={() => void refreshModels()}
@@ -897,7 +933,7 @@ function AiSection() {
                           </Select>
                           {missing && (
                             <div
-                              style={{ fontSize: 11.5, color: "var(--color-negative)", marginTop: 3 }}
+                              style={{ fontSize: "var(--text-xs)", color: "var(--color-negative)", marginTop: 3 }}
                             >
                               Not installed — pull it or pick another.
                             </div>
@@ -906,7 +942,7 @@ function AiSection() {
                       );
                     })}
                   </div>
-                  <label className="radio" style={{ fontSize: 13, marginTop: 10 }}>
+                  <label className="radio" style={{ fontSize: "var(--text-sm)", marginTop: 10 }}>
                     <input
                       type="checkbox"
                       checked={showModelNames}
@@ -915,7 +951,7 @@ function AiSection() {
                         touch();
                       }}
                     />
-                    <span className="dot" style={{ borderRadius: 4 }} />
+                    <span className="dot" style={{ borderRadius: "var(--radius-sm)" }} />
                     Show technical model names
                   </label>
                 </div>
@@ -925,7 +961,7 @@ function AiSection() {
                 <div
                   role="note"
                   style={{
-                    fontSize: 12.5,
+                    fontSize: "var(--text-sm)",
                     lineHeight: 1.6,
                     padding: "10px 12px",
                     borderRadius: "var(--radius-md)",
@@ -940,7 +976,7 @@ function AiSection() {
                 </div>
               )}
 
-              <label className="radio" style={{ fontSize: 13 }}>
+              <label className="radio" style={{ fontSize: "var(--text-sm)" }}>
                 <input
                   type="checkbox"
                   checked={enabled}
@@ -949,12 +985,12 @@ function AiSection() {
                     touch();
                   }}
                 />
-                <span className="dot" style={{ borderRadius: 4 }} />
+                <span className="dot" style={{ borderRadius: "var(--radius-sm)" }} />
                 Enable the AI assistant
               </label>
 
               {error && (
-                <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>
+                <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
                   {error}
                 </div>
               )}
@@ -1109,8 +1145,8 @@ function BankSection() {
               style={{
                 marginTop: 12,
                 padding: "10px 12px",
-                borderRadius: 8,
-                fontSize: 13,
+                borderRadius: "var(--radius-md)",
+                fontSize: "var(--text-sm)",
                 lineHeight: 1.5,
                 background: "color-mix(in srgb, var(--color-negative) 10%, var(--color-surface))",
                 border: "1px solid color-mix(in srgb, var(--color-negative) 30%, transparent)",
@@ -1157,7 +1193,7 @@ function BankSection() {
               alignItems: "center",
               gap: 8,
               marginTop: 12,
-              fontSize: 14,
+              fontSize: "var(--text-base)",
               cursor: "pointer",
             }}
           >
@@ -1184,12 +1220,12 @@ function BankSection() {
           </div>
 
           {message && (
-            <div role="status" style={{ fontSize: 13, color: "var(--color-neutral-300)", marginTop: 8 }}>
+            <div role="status" style={{ fontSize: "var(--text-sm)", color: "var(--content-secondary)", marginTop: 8 }}>
               {message}
             </div>
           )}
           {error && (
-            <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)", marginTop: 8 }}>
+            <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)", marginTop: 8 }}>
               {error}
             </div>
           )}
@@ -1208,8 +1244,8 @@ function BankSection() {
                   }}
                 >
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{c.institutionName}</div>
-                    <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>
+                    <div style={{ fontWeight: 600, fontSize: "var(--text-sm)" }}>{c.institutionName}</div>
+                    <div style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>
                       {c.accountCount} account{c.accountCount === 1 ? "" : "s"} ·{" "}
                       {c.lastSyncedAt
                         ? `synced ${new Date(c.lastSyncedAt).toLocaleString()}`
@@ -1322,7 +1358,7 @@ function TwoFactorSection() {
           aria-hidden="true"
           style={{ width: 8, height: 8, borderRadius: "50%", background: enabled ? "var(--color-positive)" : "var(--color-neutral-600)" }}
         />
-        <span style={{ fontSize: 13 }}>{enabled ? "On — a code is required to sign in" : "Off"}</span>
+        <span style={{ fontSize: "var(--text-sm)" }}>{enabled ? "On — a code is required to sign in" : "Off"}</span>
         <div style={{ marginLeft: "auto" }}>
           {enabled ? (
             <Button variant="ghost" onClick={() => { setDisabling(true); setError(null); setPassword(""); }}>
@@ -1336,7 +1372,7 @@ function TwoFactorSection() {
         </div>
       </div>
       {error && !setup && !disabling && (
-        <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)", marginTop: 8 }}>
+        <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)", marginTop: 8 }}>
           {error}
         </div>
       )}
@@ -1365,10 +1401,10 @@ function TwoFactorSection() {
               <div
                 style={{
                   fontFamily: "ui-monospace, monospace",
-                  fontSize: 15,
+                  fontSize: "var(--text-md)",
                   letterSpacing: "0.08em",
                   padding: "10px 12px",
-                  borderRadius: 8,
+                  borderRadius: "var(--radius-md)",
                   background: "var(--color-neutral-900)",
                   border: "1px solid var(--color-divider)",
                   userSelect: "all",
@@ -1379,10 +1415,10 @@ function TwoFactorSection() {
               </div>
             </div>
             <details>
-              <summary style={{ fontSize: 12, color: "var(--color-neutral-500)", cursor: "pointer" }}>
+              <summary style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)", cursor: "pointer" }}>
                 Setup link (for apps that accept a pasted otpauth URI)
               </summary>
-              <div style={{ fontFamily: "ui-monospace, monospace", fontSize: 11, wordBreak: "break-all", marginTop: 6, userSelect: "all", color: "var(--color-neutral-400)" }}>
+              <div style={{ fontFamily: "ui-monospace, monospace", fontSize: "var(--text-2xs)", wordBreak: "break-all", marginTop: 6, userSelect: "all", color: "var(--content-tertiary)" }}>
                 {setup.otpauthUri}
               </div>
             </details>
@@ -1396,7 +1432,7 @@ function TwoFactorSection() {
               placeholder="123456"
             />
             {error && (
-              <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>{error}</div>
+              <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>{error}</div>
             )}
           </div>
         </Dialog>
@@ -1433,7 +1469,7 @@ function TwoFactorSection() {
               autoFocus
             />
             {error && (
-              <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>{error}</div>
+              <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>{error}</div>
             )}
           </div>
         </Dialog>

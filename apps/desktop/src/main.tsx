@@ -1,4 +1,4 @@
-import "@vault/design-tokens/tokens.css";
+import "@vault/design-tokens/index.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.js";

@@ -1,0 +1,9 @@
+/*
+ * The whole Vault look, in dependency order. Import this one file.
+ *
+ * Order matters: tokens define the variables, base consumes them for the
+ * reset/typography, components build on both.
+ */
+@import "./tokens.css";
+@import "./base.css";
+@import "./components.css";

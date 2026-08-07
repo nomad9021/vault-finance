@@ -195,22 +195,22 @@ export function TransactionsPage({
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <input
             className="input"
-            style={{ flex: 1, minWidth: 170, maxWidth: 300, borderRadius: 8 }}
+            style={{ flex: 1, minWidth: 170, maxWidth: 300, borderRadius: "var(--radius-md)" }}
             placeholder="Search merchants…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             aria-label="Search merchants"
           />
-          <Select aria-label="Filter by category" style={{ width: "auto", minWidth: 155, borderRadius: 8 }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+          <Select aria-label="Filter by category" style={{ width: "auto", minWidth: 155, borderRadius: "var(--radius-md)" }} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
             <option value="">All categories</option>
             <option value="none">Uncategorized</option>
             {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
           </Select>
-          <Select aria-label="Filter by account" style={{ width: "auto", minWidth: 145, borderRadius: 8 }} value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)}>
+          <Select aria-label="Filter by account" style={{ width: "auto", minWidth: 145, borderRadius: "var(--radius-md)" }} value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)}>
             <option value="">All accounts</option>
             {accounts.map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
           </Select>
-          <Select aria-label="Filter by date" style={{ width: "auto", minWidth: 140, borderRadius: 8 }} value={period} onChange={(e) => setPeriod(e.target.value as Period)}>
+          <Select aria-label="Filter by date" style={{ width: "auto", minWidth: 140, borderRadius: "var(--radius-md)" }} value={period} onChange={(e) => setPeriod(e.target.value as Period)}>
             {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (<option key={p} value={p}>{PERIOD_LABELS[p]}</option>))}
           </Select>
           <div style={{ display: "flex", gap: 10, marginLeft: "auto", flexWrap: "wrap" }}>
@@ -223,7 +223,9 @@ export function TransactionsPage({
               {autocatting ? "Sorting…" : "Auto-categorize"}
             </Button>
             <Button variant="secondary" onClick={() => setImporting(true)}>Import CSV</Button>
-            <Button variant="primary" onClick={() => setEditing("new")}>+ Add</Button>
+            <Button variant="primary" icon="plus" onClick={() => setEditing("new")}>
+              Add
+            </Button>
           </div>
         </div>
 
@@ -235,13 +237,13 @@ export function TransactionsPage({
               gap: 10,
               flexWrap: "wrap",
               padding: "8px 12px",
-              borderRadius: 10,
+              borderRadius: "var(--radius-md)",
               background: "color-mix(in srgb, var(--color-accent) 12%, var(--color-surface))",
               border: "1px solid color-mix(in srgb, var(--color-accent) 35%, transparent)",
             }}
           >
-            <strong style={{ fontSize: 13 }}>{selected.size} selected</strong>
-            <Select aria-label="Recategorize selected" style={{ width: "auto", minWidth: 160, borderRadius: 8 }} value={bulkCat} onChange={(e) => setBulkCat(e.target.value)}>
+            <strong style={{ fontSize: "var(--text-sm)" }}>{selected.size} selected</strong>
+            <Select aria-label="Recategorize selected" style={{ width: "auto", minWidth: 160, borderRadius: "var(--radius-md)" }} value={bulkCat} onChange={(e) => setBulkCat(e.target.value)}>
               <option value="">Set category…</option>
               <option value="__none__">Uncategorized</option>
               {categories.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}
@@ -260,15 +262,15 @@ export function TransactionsPage({
       </div>
 
       {autocatMsg && (
-        <div role="status" style={{ fontSize: 13, color: "var(--color-neutral-300)", background: "var(--color-surface)", border: "1px solid var(--color-divider)", borderRadius: 8, padding: "8px 12px" }}>
+        <div role="status" style={{ fontSize: "var(--text-sm)", color: "var(--content-secondary)", background: "var(--color-surface)", border: "1px solid var(--color-divider)", borderRadius: "var(--radius-md)", padding: "8px 12px" }}>
           {autocatMsg}
         </div>
       )}
 
       <div className="grid">
-        <div style={{ gridColumn: "span 9", minWidth: 0 }}>
-          <div style={{ background: "var(--color-surface)", border: "1px solid var(--color-divider)", borderRadius: 12, overflowX: "auto", boxShadow: "var(--shadow-sm)" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <div className="col-9">
+          <div className="panel panel-flush table-scroll">
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-sm)" }}>
               <thead>
                 <tr style={{ textAlign: "left" }}>
                   <th style={{ width: 38, padding: "10px 0 10px 16px" }}>
@@ -336,12 +338,12 @@ export function TransactionsPage({
           )}
         </div>
 
-        <div style={{ gridColumn: "span 3", minWidth: 0 }}>
+        <div className="col-3">
           <Panel title="Summary" subtitle={PERIOD_LABELS[period]} style={{ position: "sticky", top: 96 }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <div>
                 <div className="eyebrow">Transactions</div>
-                <div className="metric-value" style={{ fontSize: 22 }}>{totalCount.toLocaleString()}</div>
+                <div className="metric-value" style={{ fontSize: "var(--text-2xl)" }}>{totalCount.toLocaleString()}</div>
               </div>
               <div style={{ height: 1, background: "var(--hairline)" }} />
               <SummaryRow label="Money in" value={formatCentsWhole(sumIn)} color="var(--color-positive)" />
@@ -402,7 +404,7 @@ export function TransactionsPage({
 function SummaryRow({ label, value, color, strong }: { label: string; value: string; color: string; strong?: boolean }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-      <span style={{ fontSize: 12.5, color: "var(--color-neutral-500)" }}>{label}</span>
+      <span style={{ fontSize: "var(--text-sm)", color: "var(--content-tertiary)" }}>{label}</span>
       <span className="num" style={{ fontWeight: strong ? 700 : 600, fontSize: strong ? 16 : 14, color }}>
         {value}
       </span>
@@ -415,10 +417,10 @@ function Th({ children, align }: { children: React.ReactNode; align?: "right" })
     <th
       style={{
         padding: "10px 16px",
-        fontSize: 10.5,
+        fontSize: "var(--text-2xs)",
         letterSpacing: ".05em",
         textTransform: "uppercase",
-        color: "var(--color-neutral-500)",
+        color: "var(--content-tertiary)",
         textAlign: align ?? "left",
         fontWeight: 600,
       }}
@@ -443,7 +445,7 @@ function Td({
     <td
       style={{
         padding: "8px 16px",
-        ...(muted ? { color: "var(--color-neutral-500)" } : {}),
+        ...(muted ? { color: "var(--content-tertiary)" } : {}),
         ...(nowrap ? { whiteSpace: "nowrap" } : {}),
         ...style,
       }}
@@ -460,7 +462,7 @@ function CategoryPill({ category }: { category: Category | undefined }) {
         display: "inline-flex",
         alignItems: "center",
         gap: 6,
-        fontSize: 11.5,
+        fontSize: "var(--text-xs)",
         padding: "2px 9px",
         borderRadius: 99,
         background: category
@@ -640,7 +642,7 @@ function TransactionDialog({
           onChange={(e) => setNotes(e.target.value)}
         />
         {error && (
-          <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>
+          <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
             {error}
           </div>
         )}
@@ -736,13 +738,13 @@ function ImportDialog({
         <Button variant="secondary" onClick={() => fileRef.current?.click()}>
           {fileName ?? "Choose CSV file…"}
         </Button>
-        <p className="text-muted" style={{ fontSize: 12, margin: 0, lineHeight: 1.6 }}>
+        <p className="text-muted" style={{ fontSize: "var(--text-xs)", margin: 0, lineHeight: 1.6 }}>
           Needs columns: <code>date</code>, <code>merchant</code> (or payee/name),{" "}
           <code>amount</code>. Optional: <code>category</code>, <code>description</code>,{" "}
           <code>external_id</code>. Re-importing the same file won't create duplicates.
         </p>
         {result && (
-          <div style={{ fontSize: 13, lineHeight: 1.7 }} role="status">
+          <div style={{ fontSize: "var(--text-sm)", lineHeight: 1.7 }} role="status">
             ✓ Imported <strong>{result.imported}</strong>
             {result.skippedDuplicates > 0 && (
               <> · skipped {result.skippedDuplicates} duplicate{result.skippedDuplicates === 1 ? "" : "s"}</>
@@ -757,7 +759,7 @@ function ImportDialog({
           </div>
         )}
         {error && (
-          <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>
+          <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
             {error}
           </div>
         )}

@@ -5,11 +5,55 @@ import {
   type BudgetWithSpend,
   type Category,
 } from "@vault/shared";
-import { Button, Card, Dialog, Field, Select, Spinner, Tag } from "@vault/ui";
+import {
+  Button,
+  Dialog,
+  EmptyState,
+  Field,
+  Panel,
+  Select,
+  SkeletonList,
+  Spinner,
+  Tabs,
+  Tag,
+} from "@vault/ui";
 import { useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 import type { Navigate } from "./AppShell.js";
+import { BudgetPlannerPage } from "./BudgetPlannerPage.js";
+
+const TABS = [
+  { value: "budgets" as const, label: "This month" },
+  { value: "planner" as const, label: "Planner" },
+];
+type BudgetTab = (typeof TABS)[number]["value"];
+
+/**
+ * Budgets and the budget planner were two sidebar entries that nobody could
+ * tell apart. They're the same subject at two time horizons — what you've spent
+ * this month, and how you intend to divide a month's income — so they're one
+ * destination with two tabs.
+ */
+export function BudgetsPage({
+  onNavigate,
+  initialTab,
+}: {
+  onNavigate: Navigate;
+  initialTab?: string;
+}) {
+  const [tab, setTab] = useState<BudgetTab>(initialTab === "planner" ? "planner" : "budgets");
+  return (
+    <div className="page">
+      <Tabs items={TABS} value={tab} onChange={setTab} aria-label="Budget views" />
+      {tab === "budgets" ? (
+        <BudgetsTab onNavigate={onNavigate} />
+      ) : (
+        <BudgetPlannerPage onNavigate={onNavigate} />
+      )}
+    </div>
+  );
+}
 
 function currentMonth(): string {
   return new Date().toISOString().slice(0, 7);
@@ -30,7 +74,7 @@ function monthLabel(month: string): string {
   });
 }
 
-export function BudgetsPage({ onNavigate }: { onNavigate: Navigate }) {
+function BudgetsTab({ onNavigate }: { onNavigate: Navigate }) {
   const client = useApp((s) => s.client);
   const [month, setMonth] = useState(currentMonth());
 
@@ -49,57 +93,44 @@ export function BudgetsPage({ onNavigate }: { onNavigate: Navigate }) {
 
   return (
     <div className="page" style={{ maxWidth: 920 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Button variant="ghost" onClick={() => setMonth(shiftMonth(month, -1))} aria-label="Previous month">
-          ←
-        </Button>
-        <span style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 15, minWidth: 140, textAlign: "center" }}>
+      <div className="row" style={{ gap: "var(--space-1)" }}>
+        <Button
+          variant="ghost"
+          icon="chevronLeft"
+          onClick={() => setMonth(shiftMonth(month, -1))}
+          aria-label="Previous month"
+        />
+        <span
+          className="t-md t-semibold"
+          style={{ minWidth: 150, textAlign: "center", fontFamily: "var(--font-heading)" }}
+        >
           {monthLabel(month)}
         </span>
-        <Button variant="ghost" onClick={() => setMonth(shiftMonth(month, 1))} aria-label="Next month">
-          →
-        </Button>
-        <div style={{ marginLeft: "auto" }}>
-          <Button variant="primary" onClick={() => setEditing("new")}>
-            + Add budget
+        <Button
+          variant="ghost"
+          icon="chevronRight"
+          onClick={() => setMonth(shiftMonth(month, 1))}
+          aria-label="Next month"
+        />
+        <div className="spacer">
+          <Button variant="primary" icon="plus" onClick={() => setEditing("new")}>
+            Add budget
           </Button>
         </div>
       </div>
 
-      <div
-        style={{
-          background: "var(--color-surface)",
-          border: "1px solid var(--color-divider)",
-          borderRadius: 12,
-          padding: "16px 18px",
-          boxShadow: "var(--shadow-sm)",
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 24,
-          alignItems: "baseline",
-        }}
-      >
-        <div>
-          <div
-            style={{
-              fontSize: 11,
-              letterSpacing: ".04em",
-              textTransform: "uppercase",
-              color: "var(--color-neutral-500)",
-              fontWeight: 600,
-            }}
-          >
-            {monthLabel(month)} total
-          </div>
-          <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 24 }}>
+      <div className="panel row wrap" style={{ gap: "var(--space-6)", alignItems: "baseline" }}>
+        <div className="stat">
+          <div className="stat-label">{monthLabel(month)} total</div>
+          <div className="stat-value">
             {formatCentsWhole(totalSpent)}{" "}
-            <span style={{ fontSize: 14, color: "var(--color-neutral-500)", fontWeight: 500 }}>
+            <span className="t-base t-tertiary" style={{ fontWeight: 500 }}>
               of {formatCentsWhole(totalBudgeted)}
             </span>
           </div>
         </div>
         {totalBudgeted > 0 && (
-          <Tag variant={leftCents < 0 ? "outline" : "accent"}>
+          <Tag variant={leftCents < 0 ? "negative" : "accent"}>
             {pctUsed}% used ·{" "}
             {leftCents < 0
               ? `${formatCentsWhole(-leftCents)} over`
@@ -108,39 +139,22 @@ export function BudgetsPage({ onNavigate }: { onNavigate: Navigate }) {
         )}
       </div>
 
-      <div
-        style={{
-          background: "var(--color-surface)",
-          border: "1px solid var(--color-divider)",
-          borderRadius: 12,
-          boxShadow: "var(--shadow-sm)",
-        }}
-      >
-        <div
-          style={{
-            padding: "14px 18px 8px",
-            fontFamily: "var(--font-heading)",
-            fontWeight: 600,
-            fontSize: 14,
-          }}
-        >
-          Category budgets
-        </div>
-        <div
-          style={{
-            padding: "8px 18px 18px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 15,
-          }}
-        >
+      <Panel title="Category budgets">
+        <div className="stack-lg">
           {loading && !data ? (
-            <Spinner label="Loading budgets" />
+            <SkeletonList rows={4} height={52} />
           ) : budgets.length === 0 ? (
-            <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>
-              No budgets for {monthLabel(month)}. Add one to start tracking
-              spending against a monthly limit.
-            </p>
+            <EmptyState
+              compact
+              icon="target"
+              title={`No budgets for ${monthLabel(month)}`}
+              body="Add one to start tracking spending against a monthly limit."
+              action={
+                <Button variant="primary" icon="plus" onClick={() => setEditing("new")}>
+                  Add budget
+                </Button>
+              }
+            />
           ) : (
             budgets.map((b) => (
               <BudgetBar
@@ -155,7 +169,7 @@ export function BudgetsPage({ onNavigate }: { onNavigate: Navigate }) {
             ))
           )}
         </div>
-      </div>
+      </Panel>
 
       {editing && (
         <BudgetDialog
@@ -212,7 +226,7 @@ function BudgetBar({
           display: "flex",
           justifyContent: "space-between",
           alignItems: "baseline",
-          fontSize: 13,
+          fontSize: "var(--text-sm)",
           marginBottom: 5,
         }}
       >
@@ -232,7 +246,7 @@ function BudgetBar({
         <span style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
           <span
             style={{
-              color: over ? "var(--color-negative)" : "var(--color-neutral-500)",
+              color: over ? "var(--color-negative)" : "var(--content-tertiary)",
             }}
           >
             {formatCents(budget.spentCents)} of {formatCents(budget.amountCents)}
@@ -249,9 +263,9 @@ function BudgetBar({
               background: "none",
               cursor: "pointer",
               font: "inherit",
-              fontSize: 12,
+              fontSize: "var(--text-xs)",
               fontWeight: 600,
-              color: "var(--color-neutral-500)",
+              color: "var(--content-tertiary)",
               padding: 0,
             }}
           >
@@ -398,7 +412,7 @@ function BudgetDialog({
           }
         />
         {error && (
-          <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>
+          <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
             {error}
           </div>
         )}

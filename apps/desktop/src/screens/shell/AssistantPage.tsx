@@ -129,7 +129,7 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
           }}
         >
           {messages.length === 0 && (
-            <div className="text-muted" style={{ fontSize: 13.5, maxWidth: 480, lineHeight: 1.7 }}>
+            <div className="text-muted" style={{ fontSize: "var(--text-base)", maxWidth: 480, lineHeight: 1.7 }}>
               Ask anything about your money — spending, budgets, cash flow,
               forecasts. Answers come from a model running on your own server;
               nothing leaves your hardware.
@@ -146,7 +146,7 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
                   color: "var(--color-accent-100)",
                   padding: "9px 14px",
                   borderRadius: "16px 16px 4px 16px",
-                  fontSize: 13.5,
+                  fontSize: "var(--text-base)",
                   lineHeight: 1.5,
                 }}
               >
@@ -163,22 +163,22 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
                   gap: 7,
                 }}
               >
-                <Tag variant="accent" style={{ alignSelf: "flex-start", fontSize: 10 }}>
+                <Tag variant="accent" style={{ alignSelf: "flex-start", fontSize: "var(--text-3xs)" }}>
                   ✦ AI advisor
                 </Tag>
                 {m.pending && m.text === "" ? (
                   <div
                     style={{
-                      fontSize: 20,
+                      fontSize: "var(--text-xl)",
                       letterSpacing: 3,
-                      color: "var(--color-neutral-500)",
+                      color: "var(--content-tertiary)",
                       animation: "blink 1s infinite",
                     }}
                   >
                     ···
                   </div>
                 ) : (
-                  <div style={{ fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-line" }}>
+                  <div style={{ fontSize: "var(--text-base)", lineHeight: 1.6, whiteSpace: "pre-line" }}>
                     {m.text}
                   </div>
                 )}
@@ -186,7 +186,7 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
             ),
           )}
           {error && (
-            <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>
+            <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
               {error}
             </div>
           )}
@@ -207,7 +207,7 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
         >
           <input
             className="input"
-            style={{ flex: 1, borderRadius: 10 }}
+            style={{ flex: 1, borderRadius: "var(--radius-md)" }}
             placeholder="Ask about your money…"
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -236,10 +236,10 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
       >
         <div
           style={{
-            fontSize: 11,
+            fontSize: "var(--text-2xs)",
             letterSpacing: ".05em",
             textTransform: "uppercase",
-            color: "var(--color-neutral-500)",
+            color: "var(--content-tertiary)",
             fontWeight: 600,
             marginBottom: 12,
           }}
@@ -255,8 +255,8 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
                 justifyContent: "flex-start",
                 textAlign: "left",
                 fontWeight: 500,
-                fontSize: 12.5,
-                borderRadius: 9,
+                fontSize: "var(--text-sm)",
+                borderRadius: "var(--radius-md)",
               }}
               disabled={busy || aiOffline}
               onClick={() => void send(chip)}

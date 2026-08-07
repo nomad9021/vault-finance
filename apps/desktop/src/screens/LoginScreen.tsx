@@ -121,7 +121,7 @@ export function LoginScreen() {
                 alignItems: "center",
                 gap: 8,
                 padding: "14px 22px",
-                borderRadius: 12,
+                borderRadius: "var(--radius-lg)",
                 cursor: "pointer",
                 background:
                   selected?.id === p.id ? "var(--color-accent-900)" : "transparent",
@@ -133,7 +133,7 @@ export function LoginScreen() {
               }}
             >
               <Avatar name={p.displayName} color={p.avatarColor} />
-              <span style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text)" }}>
+              <span style={{ fontSize: "var(--text-sm)", fontWeight: 500, color: "var(--color-text)" }}>
                 {p.displayName.split(" ")[0]}
               </span>
             </button>
@@ -153,7 +153,7 @@ export function LoginScreen() {
             ref={passwordRef}
             className="input"
             type="password"
-            style={{ borderRadius: 9 }}
+            style={{ borderRadius: "var(--radius-md)" }}
             placeholder={`Password for ${selected.displayName.split(" ")[0]}`}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -168,19 +168,19 @@ export function LoginScreen() {
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 maxLength={7}
-                style={{ borderRadius: 9, letterSpacing: "0.3em", textAlign: "center", fontVariantNumeric: "tabular-nums" }}
+                style={{ borderRadius: "var(--radius-md)", letterSpacing: "0.3em", textAlign: "center", fontVariantNumeric: "tabular-nums" }}
                 placeholder="6-digit code"
                 value={totpCode}
                 onChange={(e) => setTotpCode(e.target.value.replace(/[^0-9]/g, ""))}
                 aria-label="Authentication code"
               />
-              <div style={{ fontSize: 12, color: "var(--color-neutral-500)", lineHeight: 1.5 }}>
+              <div style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)", lineHeight: 1.5 }}>
                 Enter the current 6-digit code from your authenticator app.
               </div>
             </>
           )}
           {error && (
-            <div role="alert" style={{ fontSize: 12.5, color: "var(--color-negative)" }}>
+            <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
               {error}
             </div>
           )}
@@ -199,8 +199,8 @@ export function LoginScreen() {
         <span style={{ flex: 1, height: 1, background: "var(--color-divider)" }} />
         <span
           style={{
-            fontSize: 11,
-            color: "var(--color-neutral-500)",
+            fontSize: "var(--text-2xs)",
+            color: "var(--content-tertiary)",
             textTransform: "uppercase",
             letterSpacing: ".05em",
           }}

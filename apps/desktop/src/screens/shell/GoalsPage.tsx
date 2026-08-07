@@ -4,12 +4,11 @@ import {
   type Account,
   type Goal,
 } from "@vault/shared";
-import { Button, Card, Dialog, Field, Select, Spinner, Tag } from "@vault/ui";
+import { Button, Dialog, EmptyState, Field, ProgressBar, Select, Spinner, Tag } from "@vault/ui";
 import { useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 import type { Navigate } from "./AppShell.js";
-import { DebtCalculator } from "./DebtCalculator.js";
 
 const GOAL_COLORS = ["#3ecf8e", "#43cfc0", "#6f8ef2", "#b47ef0", "#ec6a9c", "#d8b23c"];
 
@@ -35,19 +34,27 @@ export function GoalsPage({ onNavigate }: { onNavigate: Navigate }) {
 
   return (
     <div className="page">
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
-        <Button variant="primary" onClick={() => setEditing("new")}>
-          + Add goal
+      <div className="page-head">
+        <div className="page-sub">
+          {goals.length > 0 && `${goals.length} goal${goals.length === 1 ? "" : "s"}`}
+        </div>
+        <Button variant="primary" icon="plus" onClick={() => setEditing("new")}>
+          Add goal
         </Button>
       </div>
       {goals.length === 0 ? (
-        <Card title="No savings goals yet" style={{ maxWidth: 560, margin: "0 auto" }}>
-          <p className="card-body">
-            Set a target — an emergency fund, a trip, a down payment — and
-            track progress here. Link a goal to a savings account and its
-            balance becomes the progress automatically.
-          </p>
-        </Card>
+        <div className="panel">
+          <EmptyState
+            icon="flag"
+            title="No savings goals yet"
+            body="Set a target — an emergency fund, a trip, a down payment — and track progress here. Link a goal to a savings account and its balance becomes the progress automatically."
+            action={
+              <Button variant="primary" icon="plus" onClick={() => setEditing("new")}>
+                Add your first goal
+              </Button>
+            }
+          />
+        </div>
       ) : (
         <div
           style={{
@@ -73,8 +80,6 @@ export function GoalsPage({ onNavigate }: { onNavigate: Navigate }) {
           ))}
         </div>
       )}
-
-      <DebtCalculator />
 
       {editing && (
         <GoalDialog
@@ -114,95 +119,41 @@ function GoalCard({
 
   return (
     <div
+      className="panel clickable"
       role="button"
       tabIndex={0}
       onClick={onClick}
       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onClick()}
-      style={{
-        background: "var(--color-surface)",
-        border: "1px solid var(--color-divider)",
-        borderRadius: 12,
-        padding: 18,
-        boxShadow: "var(--shadow-sm)",
-        cursor: "pointer",
-        textAlign: "left",
-        font: "inherit",
-        color: "inherit",
-        width: "100%",
-      }}
+      style={{ textAlign: "left", width: "100%" }}
     >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "baseline",
-          gap: 8,
-        }}
-      >
-        <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 15 }}>
-          {goal.name}
-        </div>
-        <Tag variant="neutral" style={{ whiteSpace: "nowrap" }}>
-          {eta}
-        </Tag>
+      <div className="row-baseline">
+        <div className="panel-title truncate">{goal.name}</div>
+        <Tag variant={funded ? "positive" : "neutral"}>{eta}</Tag>
       </div>
-      <div
-        style={{
-          fontFamily: "var(--font-heading)",
-          fontWeight: 600,
-          fontSize: 26,
-          letterSpacing: "-.02em",
-          margin: "10px 0 2px",
-        }}
-      >
+      <div className="stat-value" style={{ marginTop: "var(--space-3)" }}>
         {formatCentsWhole(goal.savedCents)}
       </div>
-      <div style={{ fontSize: 12.5, color: "var(--color-neutral-500)" }}>
+      <div className="t-sm t-tertiary">
         of {formatCentsWhole(goal.targetCents)} · {Math.round(pct * 100)}% funded
       </div>
-      <div
-        style={{
-          height: 8,
-          borderRadius: 99,
-          background: "var(--color-neutral-900)",
-          overflow: "hidden",
-          margin: "12px 0 10px",
-        }}
-      >
-        <div
-          style={{
-            height: "100%",
-            borderRadius: 99,
-            width: `${pct * 100}%`,
-            background: goal.color,
-            transition: "width .3s ease",
-          }}
-        />
+      <div style={{ margin: "var(--space-3) 0" }}>
+        <ProgressBar value={pct} color={goal.color} label={goal.name} />
       </div>
-      {goal.note && (
-        <div style={{ fontSize: 12.5, color: "var(--color-neutral-400)" }}>{goal.note}</div>
-      )}
+      {goal.note && <div className="t-sm t-tertiary">{goal.note}</div>}
       {onViewAccount && (
-        <button
+        <Button
+          variant="secondary"
+          size="sm"
+          iconEnd="arrowRight"
           title="View the linked account's transactions"
+          style={{ marginTop: "var(--space-2)", alignSelf: "flex-start" }}
           onClick={(e) => {
             e.stopPropagation();
             onViewAccount();
           }}
-          style={{
-            marginTop: 10,
-            border: "1px solid var(--color-divider)",
-            background: "var(--color-surface)",
-            borderRadius: 7,
-            padding: "4px 9px",
-            fontSize: 11.5,
-            fontWeight: 600,
-            color: "var(--color-neutral-500)",
-            cursor: "pointer",
-          }}
         >
-          🔗 {linkedAccountName ?? "Linked account"} →
-        </button>
+          {linkedAccountName ?? "Linked account"}
+        </Button>
       )}
     </div>
   );
@@ -335,7 +286,7 @@ function GoalDialog({
           ))}
         </Select>
         {linkedAccountId ? (
-          <p className="text-muted" style={{ fontSize: 12, margin: 0, lineHeight: 1.6 }}>
+          <p className="text-muted" style={{ fontSize: "var(--text-xs)", margin: 0, lineHeight: 1.6 }}>
             Progress follows this account's balance automatically, and the
             timeline is projected from its recent growth.
           </p>
@@ -378,7 +329,7 @@ function GoalDialog({
           placeholder="3 months of expenses"
         />
         {error && (
-          <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>
+          <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
             {error}
           </div>
         )}

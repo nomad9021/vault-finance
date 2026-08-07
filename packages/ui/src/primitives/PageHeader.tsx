@@ -12,18 +12,10 @@ export function PageHeader({ title, subtitle, actions }: PageHeaderProps) {
   return (
     <div className="page-head">
       <div style={{ minWidth: 0 }}>
-        <div className="page-title">{title}</div>
-        {subtitle && (
-          <div style={{ fontSize: 13, color: "var(--color-neutral-500)", marginTop: 2 }}>
-            {subtitle}
-          </div>
-        )}
+        <h1 className="page-title">{title}</h1>
+        {subtitle && <div className="page-sub">{subtitle}</div>}
       </div>
-      {actions && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          {actions}
-        </div>
-      )}
+      {actions && <div className="page-actions">{actions}</div>}
     </div>
   );
 }

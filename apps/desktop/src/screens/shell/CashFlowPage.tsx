@@ -1,7 +1,30 @@
 import { formatCentsWhole, type CashflowSummaryResponse } from "@vault/shared";
-import { MetricCard, Panel, Spinner } from "@vault/ui";
+import { MetricCard, Panel, Spinner, Tabs } from "@vault/ui";
+import { useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
+import { DebtCalculator } from "./DebtCalculator.js";
+
+const TABS = [
+  { value: "trends" as const, label: "Income vs. spending" },
+  { value: "debt" as const, label: "Debt payoff" },
+];
+type FlowTab = (typeof TABS)[number]["value"];
+
+/**
+ * Cash flow and the debt payoff planner both answer "where is the surplus
+ * going?", and the planner was buried at the bottom of Savings Goals where
+ * nobody would look for it. They share a destination now.
+ */
+export function CashFlowPage({ initialTab }: { initialTab?: string }) {
+  const [tab, setTab] = useState<FlowTab>(initialTab === "debt" ? "debt" : "trends");
+  return (
+    <div className="page">
+      <Tabs items={TABS} value={tab} onChange={setTab} aria-label="Cash flow views" />
+      {tab === "trends" ? <TrendsTab /> : <DebtCalculator />}
+    </div>
+  );
+}
 
 function monthName(month: string): string {
   const [y, m] = month.split("-").map(Number) as [number, number];
@@ -12,7 +35,7 @@ function monthName(month: string): string {
 }
 
 /** Income vs. spending bars for the last six months, per the design. */
-export function CashFlowPage() {
+function TrendsTab() {
   const client = useApp((s) => s.client);
   const { data, loading } = useData<CashflowSummaryResponse>(
     () => client.cashflowSummary(6),
@@ -39,13 +62,13 @@ export function CashFlowPage() {
         title="Income vs. spending"
         subtitle="Last 6 months"
         actions={
-          <div style={{ display: "flex", gap: 14, fontSize: 11.5, color: "var(--color-neutral-500)" }}>
+          <div style={{ display: "flex", gap: 14, fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>
             <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-positive)" }} />
+              <span style={{ width: 8, height: 8, borderRadius: "var(--radius-sm)", background: "var(--color-positive)" }} />
               In
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: "var(--color-accent)" }} />
+              <span style={{ width: 8, height: 8, borderRadius: "var(--radius-sm)", background: "var(--color-accent)" }} />
               Out
             </span>
           </div>
@@ -106,12 +129,12 @@ export function CashFlowPage() {
                   }}
                 />
               </div>
-              <div style={{ fontSize: 11.5, color: "var(--color-neutral-500)" }}>
+              <div style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>
                 {monthName(m.month)}
               </div>
               <div
                 style={{
-                  fontSize: 11.5,
+                  fontSize: "var(--text-xs)",
                   fontWeight: 600,
                   color: m.netCents >= 0 ? "var(--color-positive)" : "var(--color-negative)",
                 }}
@@ -124,17 +147,17 @@ export function CashFlowPage() {
       </Panel>
 
       <div className="grid">
-        <div style={{ gridColumn: "span 4" }}>
+        <div className="col-4">
           <MetricCard label="Avg monthly net" value={formatCentsWhole(avgNet)} hint="months with activity" />
         </div>
-        <div style={{ gridColumn: "span 4" }}>
+        <div className="col-4">
           <MetricCard
             label="Avg savings rate"
             value={avgRate !== null ? `${Math.round(avgRate * 100)}%` : "—"}
             hint="of income kept"
           />
         </div>
-        <div style={{ gridColumn: "span 4" }}>
+        <div className="col-4">
           <MetricCard label="Saved over period" value={formatCentsWhole(totalSaved)} hint="sum of positive months" />
         </div>
       </div>

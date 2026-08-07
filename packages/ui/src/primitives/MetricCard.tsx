@@ -1,22 +1,24 @@
 import type { ReactNode } from "react";
+import { Icon, type IconName } from "./Icon.js";
 
 export interface MetricCardProps {
   label: string;
   value: ReactNode;
-  /** Signed change line, e.g. "+$1,240 (2.5%)". Colored by `deltaTone`. */
+  /** Signed change line, e.g. "+$1,240 (2.5%)". Coloured by `deltaTone`. */
   delta?: ReactNode;
   deltaTone?: "up" | "down" | "muted";
   /** Small hint under the value (or a call-to-action when clickable). */
   hint?: ReactNode;
   /** Large hero value (e.g. Net worth). */
   large?: boolean;
-  icon?: ReactNode;
+  icon?: IconName;
   onClick?: () => void;
 }
 
 /**
  * A single financial metric: quiet uppercase label, a dominant tabular number,
- * and an optional change/hint. The whole card can be a navigation target.
+ * and an optional change/hint. The whole card can be a navigation target — the
+ * chevron only appears then, so a static metric doesn't imply a click.
  */
 export function MetricCard({
   label,
@@ -30,32 +32,43 @@ export function MetricCard({
 }: MetricCardProps) {
   const interactive = !!onClick;
   const deltaClass = deltaTone === "up" ? "pos" : deltaTone === "down" ? "neg" : "";
+  const arrow = deltaTone === "up" ? "trendUp" : deltaTone === "down" ? "trendDown" : null;
+
   return (
     <div
-      className={["panel", interactive ? "clickable" : ""].filter(Boolean).join(" ")}
+      className={["panel", "stat", interactive ? "clickable" : ""].filter(Boolean).join(" ")}
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
       onClick={onClick}
       onKeyDown={
         interactive
-          ? (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onClick!())
+          ? (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), onClick())
           : undefined
       }
-      style={{ display: "flex", flexDirection: "column", gap: 6 }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        {icon}
-        <span className="eyebrow">{label}</span>
+      <div className="row" style={{ gap: "var(--space-2)" }}>
+        {icon && (
+          <span className="tile" style={{ width: 26, height: 26, borderRadius: "var(--radius-sm)" }}>
+            <Icon name={icon} size={15} />
+          </span>
+        )}
+        <span className="stat-label">{label}</span>
+        {interactive && (
+          <Icon
+            name="chevronRight"
+            size={15}
+            style={{ marginLeft: "auto", color: "var(--content-tertiary)" }}
+          />
+        )}
       </div>
-      <div className={large ? "metric-value metric-value-lg" : "metric-value"}>{value}</div>
+      <div className={large ? "stat-value stat-value-lg" : "stat-value"}>{value}</div>
       {delta && (
-        <div className={`num ${deltaClass}`} style={{ fontSize: 12.5, fontWeight: 600 }}>
+        <div className={`stat-delta ${deltaClass}`}>
+          {arrow && <Icon name={arrow} size={13} />}
           {delta}
         </div>
       )}
-      {hint && (
-        <div style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>{hint}</div>
-      )}
+      {hint && <div className="stat-hint">{hint}</div>}
     </div>
   );
 }

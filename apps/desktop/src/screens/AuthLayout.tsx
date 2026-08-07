@@ -25,7 +25,7 @@ export function AuthLayout({ children, width = 380 }: { children: ReactNode; wid
           maxWidth: "100%",
           background: "var(--color-surface)",
           border: "1px solid var(--color-divider)",
-          borderRadius: 16,
+          borderRadius: "var(--radius-lg)",
           boxShadow: "var(--shadow-lg)",
           padding: 28,
           animation: "fadeUp .3s both",
@@ -69,10 +69,10 @@ export function AuthHeading({ title, subtitle }: { title: string; subtitle: stri
       }}
     >
       <AppMark />
-      <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 19 }}>
+      <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: "var(--text-xl)" }}>
         {title}
       </div>
-      <div style={{ fontSize: 12.5, color: "var(--color-neutral-500)" }}>{subtitle}</div>
+      <div style={{ fontSize: "var(--text-sm)", color: "var(--content-tertiary)" }}>{subtitle}</div>
     </div>
   );
 }

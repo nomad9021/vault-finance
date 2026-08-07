@@ -1,4 +1,5 @@
 import type { HTMLAttributes, ReactNode } from "react";
+import { Icon } from "./Icon.js";
 
 export interface PanelProps extends Omit<HTMLAttributes<HTMLDivElement>, "title"> {
   /** Small uppercase eyebrow above the title. */
@@ -8,7 +9,7 @@ export interface PanelProps extends Omit<HTMLAttributes<HTMLDivElement>, "title"
   subtitle?: ReactNode;
   /** Right-aligned header content (buttons, toggles, a "See all" link). */
   actions?: ReactNode;
-  /** Remove body padding — for panels whose children own their own edges (tables, charts). */
+  /** Remove body padding — for panels whose children own their own edges. */
   flush?: boolean;
 }
 
@@ -33,14 +34,33 @@ export function Panel({
       {hasHead && (
         <div className={flush ? "panel-head panel-head-pad" : "panel-head"}>
           <div style={{ minWidth: 0 }}>
-            {kicker && <div className="eyebrow" style={{ marginBottom: 2 }}>{kicker}</div>}
+            {kicker && <div className="eyebrow">{kicker}</div>}
             {title && <div className="panel-title">{title}</div>}
-            {subtitle && <div className="panel-sub" style={{ marginTop: 2 }}>{subtitle}</div>}
+            {subtitle && <div className="panel-sub">{subtitle}</div>}
           </div>
-          {actions && <div style={{ display: "flex", alignItems: "center", gap: 8 }}>{actions}</div>}
+          {actions && <div className="panel-actions">{actions}</div>}
         </div>
       )}
       {children}
     </div>
+  );
+}
+
+/**
+ * The "See all →" link used in every panel header that fronts a longer list.
+ * One component means the affordance reads identically everywhere.
+ */
+export function PanelLink({
+  onClick,
+  children = "See all",
+}: {
+  onClick: () => void;
+  children?: ReactNode;
+}) {
+  return (
+    <button type="button" className="panel-link" onClick={onClick}>
+      {children}
+      <Icon name="arrowRight" size={14} />
+    </button>
   );
 }

@@ -59,7 +59,7 @@ export function ConnectScreen({ error }: { error?: string }) {
           </Button>
         )}
       </form>
-      <div className="text-muted" style={{ fontSize: 12, marginTop: 16, lineHeight: 1.6 }}>
+      <div className="text-muted" style={{ fontSize: "var(--text-xs)", marginTop: 16, lineHeight: 1.6 }}>
         Don't have a server yet? The self-hosting guide walks through starting
         one with Docker Compose in a few minutes.
       </div>

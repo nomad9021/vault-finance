@@ -25,6 +25,7 @@ export function SankeyCard({
   onNavigate,
   title = "Cash flow",
   hint = "Click any node to drill in",
+  compact = false,
 }: {
   nodes: SankeyNode[];
   links: SankeyLink[];
@@ -32,6 +33,8 @@ export function SankeyCard({
   onNavigate: Navigate;
   title?: string;
   hint?: string;
+  /** Side-by-side mode: drop the period toggle and hint so the card can halve. */
+  compact?: boolean;
 }) {
   const [focus, setFocus] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>("monthly");
@@ -42,48 +45,33 @@ export function SankeyCard({
   const panelSide: "left" | "right" = isIncomeSide ? "right" : "left";
 
   return (
-    <div
-      style={{
-        background: "var(--color-surface)",
-        border: "1px solid var(--color-divider)",
-        borderRadius: 14,
-        position: "relative",
-        overflow: "hidden",
-        boxShadow: "var(--shadow-md)",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "16px 20px 8px", flexWrap: "wrap" }}>
-        <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 15, letterSpacing: "-.01em" }}>
-          {title}
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <span style={{ fontSize: 12, color: "var(--color-neutral-500)" }}>{hint}</span>
-          <div style={{ display: "flex", background: "var(--color-neutral-900)", border: "1px solid var(--color-divider)", borderRadius: 8, padding: 2, gap: 2 }}>
-            {(["weekly", "monthly", "yearly"] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                style={{
-                  border: 0,
-                  cursor: "pointer",
-                  fontFamily: "var(--font-body)",
-                  fontWeight: 600,
-                  fontSize: 12,
-                  padding: "4px 12px",
-                  borderRadius: 6,
-                  background: period === p ? "var(--color-accent-800)" : "transparent",
-                  color: period === p ? "var(--color-accent-100)" : "var(--color-neutral-400)",
-                  transition: "background .15s",
-                }}
-              >
-                {p}
-              </button>
-            ))}
+    <div className="panel panel-flush elev-md" style={{ position: "relative" }}>
+      <div
+        className="row-between wrap"
+        style={{ padding: "var(--card-pad) var(--card-pad) var(--space-2)" }}
+      >
+        <div className="panel-title">{title}</div>
+        {!compact && (
+          <div className="row" style={{ gap: "var(--space-4)" }}>
+            <span className="t-xs t-tertiary">{hint}</span>
+            <div className="seg">
+              {(["weekly", "monthly", "yearly"] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  className="seg-opt"
+                  onClick={() => setPeriod(p)}
+                  {...(period === p ? { "data-on": "true" } : {})}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
-      <div style={{ padding: "0 4px 8px" }}>
+      <div style={{ padding: "0 var(--space-1) var(--space-2)" }}>
         <Sankey
           nodes={nodes.map((n) => ({ id: n.id, label: n.label, value: n.valueCents, color: n.color, depth: n.depth, kind: n.kind }))}
           links={links.map((l) => ({ from: l.from, to: l.to, value: l.valueCents }))}
@@ -185,13 +173,13 @@ function FocusPanel({
       </div>
       <div style={{ padding: "16px 18px", overflow: "auto", flex: 1, minHeight: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: 3, background: node.color, flex: "none" }} />
-          <span style={{ fontSize: 11, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--color-neutral-500)", fontWeight: 600 }}>
+          <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: "var(--radius-sm)", background: node.color, flex: "none" }} />
+          <span style={{ fontSize: "var(--text-2xs)", letterSpacing: ".05em", textTransform: "uppercase", color: "var(--content-tertiary)", fontWeight: 600 }}>
             {node.id === "saved" ? "kept this month" : isIncome ? "money in" : "spending"}
           </span>
         </div>
-        <h3 style={{ margin: "6px 0 2px", fontSize: 19, fontWeight: 600 }}>{node.label}</h3>
-        <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: 28, letterSpacing: "-.02em" }}>
+        <h3 style={{ margin: "6px 0 2px", fontSize: "var(--text-xl)", fontWeight: 600 }}>{node.label}</h3>
+        <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: "var(--text-3xl)", letterSpacing: "-.02em" }}>
           {formatCentsWhole(node.valueCents * periodFactor)}
         </div>
         <div style={{ height: 1, background: "var(--color-divider)", margin: "14px 0" }} />
@@ -201,8 +189,8 @@ function FocusPanel({
           <>
             <div style={{ display: "flex", flexDirection: "column" }}>
               {txns.map((t) => (
-                <div key={t.id} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "7px 0", borderBottom: "1px solid color-mix(in srgb, var(--color-text) 8%, transparent)", fontSize: 12.5 }}>
-                  <span style={{ color: "var(--color-neutral-500)", flex: "none", width: 44 }}>{t.postedAt.slice(5)}</span>
+                <div key={t.id} style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "7px 0", borderBottom: "1px solid color-mix(in srgb, var(--color-text) 8%, transparent)", fontSize: "var(--text-sm)" }}>
+                  <span style={{ color: "var(--content-tertiary)", flex: "none", width: 44 }}>{t.postedAt.slice(5)}</span>
                   <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.merchantName}</span>
                   <span style={{ fontWeight: 600, whiteSpace: "nowrap", color: t.amountCents > 0 ? "var(--color-positive)" : "var(--color-text)" }}>
                     {formatCents(t.amountCents, { signed: true })}
@@ -219,7 +207,7 @@ function FocusPanel({
             </Button>
           </>
         ) : (
-          <p style={{ fontSize: 13, color: "var(--color-neutral-400)", lineHeight: 1.6 }}>
+          <p style={{ fontSize: "var(--text-sm)", color: "var(--content-tertiary)", lineHeight: 1.6 }}>
             {node.id === "saved"
               ? "Money that came in and didn't go out — this is what moved your net worth up this month."
               : node.id === "hub"

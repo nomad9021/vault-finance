@@ -8,7 +8,7 @@ export interface FieldProps extends InputHTMLAttributes<HTMLInputElement> {
   error?: string | undefined;
 }
 
-/** Labeled input following the design's `.field > label` + `.input` pattern. */
+/** Labelled input following the `.field > label` + `.input` pattern. */
 export function Field({ label, hint, error, id, className, ...rest }: FieldProps) {
   const autoId = useId();
   const inputId = id ?? autoId;
@@ -22,13 +22,11 @@ export function Field({ label, hint, error, id, className, ...rest }: FieldProps
         {...rest}
       />
       {error ? (
-        <div role="alert" style={{ fontSize: 12, color: "var(--color-negative)", marginTop: 5 }}>
+        <div role="alert" className="field-error">
           {error}
         </div>
       ) : hint ? (
-        <div className="text-muted" style={{ fontSize: 12, marginTop: 5 }}>
-          {hint}
-        </div>
+        <div className="field-hint">{hint}</div>
       ) : null}
     </div>
   );

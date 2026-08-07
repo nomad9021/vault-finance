@@ -89,12 +89,12 @@ export function SetupScreen() {
           onChange={(e) => setConfirm(e.target.value)}
           error={confirm && confirm !== password ? "Passwords don't match." : undefined}
         />
-        <p className="text-muted" style={{ fontSize: 12, lineHeight: 1.6, margin: 0 }}>
+        <p className="text-muted" style={{ fontSize: "var(--text-xs)", lineHeight: 1.6, margin: 0 }}>
           The AI assistant is off by default. You can connect a provider later
           in Settings if you want it.
         </p>
         {error && (
-          <div role="alert" style={{ fontSize: 13, color: "var(--color-negative)" }}>
+          <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
             {error}
           </div>
         )}
