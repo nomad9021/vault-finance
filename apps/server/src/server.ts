@@ -10,6 +10,18 @@ const app = await buildApp({
   ...(tls ? { https: tls } : {}),
 });
 
+// The guided installer generates a random database password, but running
+// `docker compose up` directly falls back to the vault/vault default. Postgres
+// isn't published to the host, so this isn't remotely exploitable — it still
+// means anything that reaches the Docker network owns the data.
+if (/:\/\/vault:vault@/.test(config.databaseUrl)) {
+  app.log.warn(
+    "Postgres is using the default vault/vault credentials. Set POSTGRES_PASSWORD " +
+      "in docker/.env (or run installers/server/install-server.sh) and recreate the " +
+      "postgres volume to change it.",
+  );
+}
+
 try {
   await app.listen({ port: config.port, host: config.host });
   app.log.info(

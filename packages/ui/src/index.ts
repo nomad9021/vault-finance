@@ -16,6 +16,7 @@ export * from "./primitives/Tabs.js";
 export * from "./primitives/Banner.js";
 export * from "./primitives/Select.js";
 export * from "./primitives/EmptyState.js";
+export * from "./primitives/ErrorBoundary.js";
 export * from "./primitives/ListRow.js";
 export * from "./primitives/Money.js";
 export * from "./primitives/ProgressBar.js";

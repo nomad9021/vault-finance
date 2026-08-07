@@ -157,3 +157,94 @@ describe("authorization: data endpoints reject anonymous access", () => {
     expect(res.statusCode).toBe(401);
   });
 });
+
+describe("hardening: secrets are encrypted at rest", () => {
+  it("stores the TOTP secret as ciphertext, not the plaintext seed", async () => {
+    const setup = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/2fa/setup",
+      headers: auth,
+    });
+    expect(setup.statusCode).toBe(200);
+    const plaintextSeed: string = setup.json().secret;
+    expect(plaintextSeed).toBeTruthy();
+
+    // Read the raw column — the API would hand back the decrypted value, which
+    // would prove nothing about what actually sits on disk.
+    const row = await app.db.query.users.findFirst({
+      where: (t, { eq }) => eq(t.email, "owner@vault.home"),
+    });
+    expect(row?.totpSecret).toBeTruthy();
+    expect(row!.totpSecret).toMatch(/^v1\./);
+    // The thing a leaked pg_dump must not contain.
+    expect(row!.totpSecret).not.toContain(plaintextSeed);
+  });
+
+  it("still verifies codes against the encrypted secret", async () => {
+    // Round-trip through the real enable path: this only passes if the stored
+    // ciphertext decrypts back to the seed the authenticator is using.
+    const setup = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/2fa/setup",
+      headers: auth,
+    });
+    const seed: string = setup.json().secret;
+    const { currentTotpCode } = await import("../src/modules/auth/totp.js");
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/2fa/enable",
+      headers: auth,
+      payload: { code: currentTotpCode(seed) },
+    });
+    expect(res.statusCode).toBe(204);
+  });
+
+  it("stores the AI API key as ciphertext", async () => {
+    const key = "sk-test-do-not-store-me-in-the-clear";
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/ai/settings",
+      headers: auth,
+      payload: {
+        provider: "openai",
+        model: "gpt-4o-mini",
+        apiKey: key,
+        enabled: false,
+      },
+    });
+    expect(res.statusCode).toBeLessThan(400);
+
+    const row = await app.db.query.aiSettings.findFirst();
+    expect(row?.apiKey).toBeTruthy();
+    expect(row!.apiKey).toMatch(/^v1\./);
+    expect(row!.apiKey).not.toContain(key);
+  });
+});
+
+describe("hardening: CORS is not reflective", () => {
+  it("does not grant a hostile origin read access", async () => {
+    // /auth/profiles is deliberately unauthenticated (the phone viewer needs
+    // it before login) and lists household member names. Reflecting the origin
+    // would let any page a member visits read that cross-origin.
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/profiles",
+      headers: { origin: "https://evil.example" },
+    });
+    expect(res.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  it("still allows loopback origins for browser-based development", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/profiles",
+      headers: { origin: "http://localhost:5173" },
+    });
+    expect(res.headers["access-control-allow-origin"]).toBe("http://localhost:5173");
+  });
+
+  it("allows callers that send no Origin at all (native clients)", async () => {
+    const res = await app.inject({ method: "GET", url: "/api/v1/auth/profiles" });
+    expect(res.statusCode).toBe(200);
+  });
+});

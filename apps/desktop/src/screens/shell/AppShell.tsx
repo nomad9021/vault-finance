@@ -1,4 +1,4 @@
-import { Banner, Button, CommandPalette, type Command } from "@vault/ui";
+import { Banner, Button, CommandPalette, ErrorBoundary, type Command } from "@vault/ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLayoutMode } from "../../lib/useLayout.js";
 import { useApp } from "../../state/store.js";
@@ -128,7 +128,12 @@ export function AppShell() {
         )}
 
         <div className="app-scroll">
-          <PageBody page={page} filter={filter} onNavigate={navigate} />
+          {/* Scoped to the page body so a crash leaves the sidebar, header and
+              command palette usable — you can just navigate away. Keyed on the
+              page so moving elsewhere clears the error automatically. */}
+          <ErrorBoundary resetKeys={[page]}>
+            <PageBody page={page} filter={filter} onNavigate={navigate} />
+          </ErrorBoundary>
         </div>
 
         {narrow && (
