@@ -23,8 +23,12 @@ interface PayoffResult {
   trajectory: number[];
 }
 
-/** Month-by-month simulation: minimums on all debts + extra to the target debt. */
-function simulate(debts: Debt[], extraCents: number, strategy: Strategy): PayoffResult {
+/**
+ * Month-by-month simulation: minimums on all debts + extra to the target debt.
+ * Exported for tests — this is the arithmetic behind every payoff figure shown,
+ * and a wrong number here looks entirely plausible on screen.
+ */
+export function simulate(debts: Debt[], extraCents: number, strategy: Strategy): PayoffResult {
   const balances = debts.map((d) => d.balanceCents);
   const order = debts
     .map((_, i) => i)
