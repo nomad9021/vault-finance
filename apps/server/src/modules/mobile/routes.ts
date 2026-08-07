@@ -12,7 +12,10 @@ const ICON_MASKABLE_PNG = readFileSync(new URL("./app-icon-maskable.png", import
 const ICON_VER = "3";
 // Same idea for the stylesheet: it is cached hard, so its URL carries a
 // version that changes whenever the shared design system does.
-const CSS_VER = "2";
+// Bump whenever the shared stylesheet changes — /vault.css is served
+// `immutable` for a week, so a phone that already loaded the page will keep the
+// old CSS until this URL changes.
+const CSS_VER = "3";
 
 /**
  * A tiny, dependency-free, **read-only** phone viewer served on the same origin
@@ -145,8 +148,6 @@ const PAGE = /* html */ `<!doctype html>
     background: var(--color-bg); display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: var(--space-4);
   }
-  /* The diagram is wider than any phone; it scrolls inside its panel. */
-  .sankey-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 calc(var(--card-pad) * -1); padding: 0 var(--card-pad); }
 </style></head>
 <body>
 
@@ -387,51 +388,108 @@ const PAGE = /* html */ `<!doctype html>
       +(projected.length?'<path d="'+proj+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-dasharray="4 4" stroke-opacity="0.55" vector-effect="non-scaling-stroke"/>':'')
       +'<circle cx="'+x(last).toFixed(1)+'" cy="'+y(history[last]).toFixed(1)+'" r="3" fill="'+color+'"/></svg>';
   }
-  function sankeySvg(nodes,links){
-    var W=700,NW=6,PAD=22,X0=44,X1=636,GAP=9,MIN_NODE=3,ROW_MIN=24,MIN_LINK=2,BASE_H=360;
-    var depths=Array.from(new Set(nodes.map(function(n){return n.depth}))).sort(function(a,b){return a-b});
-    var maxDepth=depths[depths.length-1]||0;
-    var xFor=function(d){return maxDepth===0?X0:X0+(d*(X1-X0))/maxDepth};
-    var sumIn={},sumOut={};
-    links.forEach(function(l){sumOut[l.from]=(sumOut[l.from]||0)+l.value;sumIn[l.to]=(sumIn[l.to]||0)+l.value});
-    var mag=function(n){return Math.max(n.value,sumIn[n.id]||0,sumOut[n.id]||0)};
-    var byDepth={};nodes.forEach(function(n){(byDepth[n.depth]=byDepth[n.depth]||[]).push(n)});
-    var maxColSum=1;Object.keys(byDepth).forEach(function(d){maxColSum=Math.max(maxColSum,byDepth[d].reduce(function(s,n){return s+mag(n)},0))});
-    var scale=(BASE_H-2*PAD)/maxColSum;
-    var barH=function(n){return Math.max(MIN_NODE,mag(n)*scale)};
-    var slotH=function(n){return Math.max(ROW_MIN,barH(n))};
-    var colH=function(ns){return ns.reduce(function(s,n){return s+slotH(n)},0)+Math.max(0,ns.length-1)*GAP};
-    var contentH=0;Object.keys(byDepth).forEach(function(d){contentH=Math.max(contentH,colH(byDepth[d]))});
-    var H=Math.max(BASE_H,Math.ceil(contentH+2*PAD));
-    var placed={},parentsOf={};
-    links.forEach(function(l){(parentsOf[l.to]=parentsOf[l.to]||[]).push(l.from)});
-    depths.forEach(function(d,di){
-      var ns=(byDepth[d]||[]).slice();
-      if(di===0){ns.sort(function(a,b){return mag(b)-mag(a)})}
-      else{var bary=function(n){var ps=(parentsOf[n.id]||[]).map(function(id){return placed[id]}).filter(Boolean);if(!ps.length)return 9e15;return ps.reduce(function(s,p){return s+(p.y+p.h/2)},0)/ps.length};ns.sort(function(a,b){return bary(a)-bary(b)})}
-      var totalH=colH(ns);var y=(H-totalH)/2;
-      ns.forEach(function(n){var slot=slotH(n),h=barH(n);placed[n.id]={n:n,x:xFor(d),y:y+(slot-h)/2,h:h};y+=slot+GAP});
+  /**
+   * Phone-native cash-flow diagram.
+   *
+   * The desktop version is a four-column diagram 700px wide. Transplanted to a
+   * ~343px screen it had to live in a horizontal scroller, so less than half
+   * was ever visible and the labels crowded into slivers — it read as broken.
+   *
+   * This collapses the graph to the two columns that carry the meaning on a
+   * phone — total income on the left, top-level categories on the right — and
+   * spends the reclaimed width on labels instead of a third and fourth column.
+   * Bar heights stay value-proportional, but every row gets a minimum slot so
+   * a 1%-of-income category still has a readable label. The deeper levels are
+   * still reachable by tapping through to the category.
+   */
+  function sankeySvg(nodes){
+    var W=340, NW=9, PAD=12, X0=6, X1=92, LX=X1+NW+9;
+    var GAP=7, ROW_MIN=34, MIN_BAR=5, FLOW_H=250, MAX_ROWS=7;
+
+    // depth 2 is the top-level category band; anything deeper is already
+    // rolled into its parent's value by the server.
+    var cats=nodes.filter(function(n){return n.kind==="category"&&n.depth===2});
+    if(!cats.length)cats=nodes.filter(function(n){return n.kind==="category"});
+    var rows=cats.concat(nodes.filter(function(n){return n.kind==="saved"}))
+      .filter(function(n){return n.value>0})
+      .sort(function(a,b){return b.value-a.value});
+    if(!rows.length)return "";
+
+    // Past seven bars the slivers stop being legible; fold the tail into one.
+    if(rows.length>MAX_ROWS+1){
+      var tail=rows.slice(MAX_ROWS);
+      rows=rows.slice(0,MAX_ROWS).concat([{
+        id:"__other",
+        label:"Other ("+tail.length+")",
+        value:tail.reduce(function(s,n){return s+n.value},0),
+        color:"#9397ab"
+      }]);
+    }
+
+    var total=rows.reduce(function(s,n){return s+n.value},0)||1;
+    var bar=function(n){return Math.max(MIN_BAR,(n.value/total)*FLOW_H)};
+    var slot=function(n){return Math.max(ROW_MIN,bar(n))};
+    var H=Math.ceil(rows.reduce(function(s,n){return s+slot(n)},0)+(rows.length-1)*GAP+2*PAD);
+
+    var out=['<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cash flow by category">'];
+
+    // Left column: one income bar as tall as the flows leaving it, centred.
+    var flowH=rows.reduce(function(s,n){return s+bar(n)},0);
+    var inY=(H-flowH)/2;
+    out.push('<rect x="'+X0+'" y="'+inY.toFixed(1)+'" width="'+NW+'" height="'+flowH.toFixed(1)+'" rx="3" fill="var(--color-positive)"/>');
+
+    // Ribbons, stacked in the same order as the rows so none cross.
+    var y=PAD, sy=inY;
+    var placed=[];
+    rows.forEach(function(n){
+      var h=bar(n), s=slot(n), ty=y+(s-h)/2, mx=(X0+NW+X1)/2;
+      out.push('<path d="M'+(X0+NW)+','+sy.toFixed(1)+' C'+mx+','+sy.toFixed(1)+' '+mx+','+ty.toFixed(1)+' '+X1+','+ty.toFixed(1)
+        +' L'+X1+','+(ty+h).toFixed(1)+' C'+mx+','+(ty+h).toFixed(1)+' '+mx+','+(sy+h).toFixed(1)+' '+(X0+NW)+','+(sy+h).toFixed(1)+' Z" fill="'+(n.color||"#9397ab")+'" fill-opacity="0.38"/>');
+      placed.push({n:n,ty:ty,h:h});
+      sy+=h; y+=s+GAP;
     });
-    var outC={},inC={};
-    var ordered=links.slice().sort(function(a,b){var sa=(placed[a.from]||{}).y||0,sb=(placed[b.from]||{}).y||0;if(sa!==sb)return sa-sb;return((placed[a.to]||{}).y||0)-((placed[b.to]||{}).y||0)});
-    var out=['<svg viewBox="0 0 '+W+' '+H+'" style="width:'+W+'px;height:auto;display:block" xmlns="http://www.w3.org/2000/svg">'];
-    ordered.forEach(function(l){var s=placed[l.from],t=placed[l.to];if(!s||!t)return;var h=l.value>0?l.value*scale:MIN_LINK;
-      var sy=outC[l.from]!=null?outC[l.from]:s.y, ty=inC[l.to]!=null?inC[l.to]:t.y, sx=s.x+NW, tx=t.x, mx=(sx+tx)/2;
-      var col=t.n.color||"#9397ab";
-      var d="M"+sx+","+sy+" C"+mx+","+sy+" "+mx+","+ty+" "+tx+","+ty+" L"+tx+","+(ty+h)+" C"+mx+","+(ty+h)+" "+mx+","+(sy+h)+" "+sx+","+(sy+h)+" Z";
-      out.push('<path d="'+d+'" fill="'+col+'" fill-opacity="0.4"/>');
-      outC[l.from]=sy+h; inC[l.to]=ty+h;
+
+    // Right column: bar, then name and amount in the reclaimed width.
+    placed.forEach(function(p){
+      var cy=p.ty+p.h/2;
+      var pct=Math.round((p.n.value/total)*100);
+      out.push('<rect x="'+X1+'" y="'+p.ty.toFixed(1)+'" width="'+NW+'" height="'+p.h.toFixed(1)+'" rx="3" fill="'+(p.n.color||"#9397ab")+'"/>');
+      out.push('<text x="'+LX+'" y="'+(cy-1).toFixed(1)+'" font-size="12.5" font-weight="600" fill="var(--content-primary)" font-family="var(--font-body)">'+esc(p.n.label)+'</text>');
+      out.push('<text x="'+LX+'" y="'+(cy+12).toFixed(1)+'" font-size="11" fill="var(--content-tertiary)" font-family="var(--font-body)">'+esc(fmt(p.n.value))+' · '+pct+'%</text>');
     });
-    Object.keys(placed).forEach(function(id){var p=placed[id];var right=p.n.depth===0||p.n.kind==="hub";var lx=right?p.x+NW+6:p.x-6;var anc=right?"start":"end";var cy=p.y+p.h/2;
-      out.push('<rect x="'+p.x+'" y="'+p.y.toFixed(1)+'" width="'+NW+'" height="'+p.h.toFixed(1)+'" rx="1.5" fill="'+p.n.color+'"/>');
-      out.push('<text x="'+lx+'" y="'+(cy-2).toFixed(1)+'" text-anchor="'+anc+'" font-size="10" font-weight="600" fill="#e9e9ed" font-family="system-ui">'+esc(p.n.label)+'</text>');
-      out.push('<text x="'+lx+'" y="'+(cy+9).toFixed(1)+'" text-anchor="'+anc+'" font-size="9" fill="#9397ab" font-family="system-ui">'+esc(fmt(p.n.value))+'</text>');
-    });
-    out.push("</svg>");
+
+    out.push('</svg>');
     return out.join("");
   }
 
   // ── screens ─────────────────────────────────────────────────────────────
+  function monthName(iso){
+    var parts=String(iso).split("-");
+    var d=new Date(Date.UTC(+parts[0],+parts[1]-1,1));
+    return d.toLocaleDateString(undefined,{month:"long",year:"numeric",timeZone:"UTC"});
+  }
+  function dayLabel(iso){
+    var d=new Date(iso+"T00:00:00Z"), now=new Date();
+    var today=now.toISOString().slice(0,10);
+    var yest=new Date(now.getTime()-86400000).toISOString().slice(0,10);
+    if(iso===today)return "Today";
+    if(iso===yest)return "Yesterday";
+    return d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric",timeZone:"UTC"});
+  }
+  var TYPE_LABEL={checking:"Checking",savings:"Savings",credit_card:"Credit card",
+    investment:"Investment",loan:"Loan",mortgage:"Mortgage",other:"Other"};
+
+  /** Label + amount over a proportional bar — budgets, bills, goals, allocation. */
+  function barBlock(name,rightText,frac,color,over){
+    var wrap=el("div");wrap.style.marginBottom="var(--space-4)";
+    var line=el("div","row-between t-sm");
+    line.appendChild(el("div","truncate t-medium",name));
+    line.appendChild(el("div","num "+(over?"neg":"t-tertiary"),rightText));
+    wrap.appendChild(line);
+    wrap.appendChild(bar(frac,over?"var(--color-negative)":(color||null)));
+    return wrap;
+  }
+
   async function renderHome(root){
     var accounts=(await tryApi("/accounts",{})).accounts||[];
     var months=(await tryApi("/cashflow/summary?months=2",{})).months||[];
@@ -450,6 +508,7 @@ const PAGE = /* html */ `<!doctype html>
     root.appendChild(nw);
 
     var m=months[months.length-1]||{};
+    if(m.month)root.appendChild(el("div","eyebrow",monthName(m.month)));
     var g=el("div","grid");
     [["Income",fmt(m.incomeCents||0),""],
      ["Spending",fmt(m.spendingCents||0),""],
@@ -462,16 +521,29 @@ const PAGE = /* html */ `<!doctype html>
     root.appendChild(g);
 
     if((sankey.links||[]).length){
-      var s=panel("Cash flow","Where the money went");
-      var sc=el("div","sankey-scroll");
-      var holder=el("div");
-      holder.innerHTML=sankeySvg(
-        sankey.nodes.map(function(n){return {id:n.id,label:n.label,value:n.valueCents,color:n.color,depth:n.depth,kind:n.kind}}),
-        sankey.links.map(function(l){return {from:l.from,to:l.to,value:l.valueCents}})
-      );
-      sc.appendChild(holder);s.appendChild(sc);
-      s.appendChild(el("div","panel-sub","Swipe the diagram sideways to follow the flow."));
-      root.appendChild(s);
+      var svg=sankeySvg(sankey.nodes.map(function(n){
+        return {id:n.id,label:n.label,value:n.valueCents,color:n.color,depth:n.depth,kind:n.kind};
+      }));
+      if(svg){
+        var s=panel("Cash flow","Where this month's income went");
+        var holder=el("div");
+        holder.innerHTML=svg;   // built entirely from esc()'d strings
+        s.appendChild(holder);
+        root.appendChild(s);
+      }
+    }
+
+    // Top spending categories — the detail the diagram compresses away.
+    var cats=(sankey.nodes||[]).filter(function(n){return n.kind==="category"&&n.depth===2&&n.valueCents>0})
+      .sort(function(a,b){return b.valueCents-a.valueCents});
+    if(cats.length){
+      var top=cats.slice(0,6);
+      var maxV=top[0].valueCents||1;
+      var tp=panel("Top spending",monthName(sankey.month||(m.month||"")));
+      top.forEach(function(c){
+        tp.appendChild(barBlock(c.label,fmt(c.valueCents),c.valueCents/maxV,c.color,false));
+      });
+      root.appendChild(tp);
     }
 
     if(points.length>=2){
@@ -498,29 +570,90 @@ const PAGE = /* html */ `<!doctype html>
     var accounts=(await tryApi("/accounts",{})).accounts||[];
     var live=accounts.filter(function(a){return a.balanceCents!==0});
     if(!live.length){root.appendChild(empty("No accounts","Accounts added on the desktop app show up here."));return}
-    var p=panel("Accounts",live.length+" with a balance");
-    var list=el("div","list list-divided");
-    live.forEach(function(a){
-      list.appendChild(listRow(a.name,String(a.type||"").replace(/_/g," "),
-        fmt(a.balanceCents),a.balanceCents<0?"neg":"",
-        function(){ view.detail={type:"account",id:a.id,name:a.name}; render() }));
+
+    var assets=live.filter(function(a){return !a.isLiability});
+    var debts=live.filter(function(a){return a.isLiability});
+    var sum=function(rows){return rows.reduce(function(s,a){return s+a.balanceCents},0)};
+
+    var head=panel();
+    var hg=el("div","grid");
+    [["Assets",fmt(sum(assets)),"pos"],["Liabilities",fmt(sum(debts)),debts.length?"neg":""]]
+      .forEach(function(r){
+        var c=el("div","col-6");var p=el("div","panel");
+        p.appendChild(statRow(r[0],r[1],r[2]));
+        c.appendChild(p);hg.appendChild(c);
+      });
+    root.appendChild(hg);
+
+    // Grouped by type with subtotals, mirroring the desktop Accounts page.
+    var groups={};
+    live.forEach(function(a){(groups[a.type]=groups[a.type]||[]).push(a)});
+    Object.keys(groups).forEach(function(type){
+      var rows=groups[type];
+      var p=panel(TYPE_LABEL[type]||type,fmt(sum(rows)));
+      var list=el("div","list list-divided");
+      rows.forEach(function(a){
+        list.appendChild(listRow(a.name,
+          [a.institution,a.mask?"••"+a.mask:null].filter(Boolean).join(" · ")||null,
+          fmt(a.balanceCents),a.balanceCents<0?"neg":"",
+          function(){ view.detail={type:"account",id:a.id,name:a.name}; render() }));
+      });
+      p.appendChild(list);root.appendChild(p);
     });
-    p.appendChild(list);root.appendChild(p);
   }
 
   async function renderTransactions(root){
-    var txns=(await tryApi("/transactions?limit=50",{})).transactions||[];
+    var res=await tryApi("/transactions?limit=200",{});
+    var txns=res.transactions||[];
     if(!txns.length){root.appendChild(empty("No transactions","Nothing recorded yet."));return}
     var accounts=(await tryApi("/accounts",{})).accounts||[];
-    var byId={};accounts.forEach(function(a){byId[a.id]=a.name});
-    var p=panel("Recent","Last "+txns.length);
-    var list=el("div","list list-divided");
-    txns.forEach(function(t){
-      list.appendChild(listRow(t.merchantName,
-        t.postedAt.slice(5)+" · "+(byId[t.accountId]||"—"),
-        fmt2(t.amountCents), t.amountCents>0?"pos":""));
-    });
-    p.appendChild(list);root.appendChild(p);
+    var cats=(await tryApi("/categories",{})).categories||[];
+    var acctName={};accounts.forEach(function(a){acctName[a.id]=a.name});
+    var catById={};cats.forEach(function(c){catById[c.id]=c});
+
+    var box=el("div");
+    var search=el("input","input");
+    search.type="search";
+    search.placeholder="Search merchants…";
+    search.setAttribute("aria-label","Search transactions");
+    box.appendChild(search);
+    root.appendChild(box);
+
+    var listHost=el("div");
+    root.appendChild(listHost);
+
+    function draw(q){
+      listHost.textContent="";
+      var needle=q.trim().toLowerCase();
+      var rows=needle
+        ? txns.filter(function(t){return (t.merchantName||"").toLowerCase().indexOf(needle)>=0})
+        : txns;
+      if(!rows.length){
+        listHost.appendChild(empty("Nothing matches","Try a different merchant name."));
+        return;
+      }
+      // Grouped by day, so a long ledger stays scannable on a small screen.
+      var byDay={},order=[];
+      rows.forEach(function(t){
+        var d=t.postedAt.slice(0,10);
+        if(!byDay[d]){byDay[d]=[];order.push(d)}
+        byDay[d].push(t);
+      });
+      order.forEach(function(d){
+        var dayTotal=byDay[d].reduce(function(s,t){return s+t.amountCents},0);
+        var p=panel(dayLabel(d),fmt(dayTotal));
+        var list=el("div","list list-divided");
+        byDay[d].forEach(function(t){
+          var cat=t.categoryId?catById[t.categoryId]:null;
+          list.appendChild(listRow(t.merchantName,
+            [(cat&&cat.name)||"Uncategorized",acctName[t.accountId]].filter(Boolean).join(" · "),
+            fmt2(t.amountCents), t.amountCents>0?"pos":""));
+        });
+        p.appendChild(list);listHost.appendChild(p);
+      });
+    }
+    search.addEventListener("input",function(){draw(search.value)});
+    draw("");
   }
 
   async function renderAccountDetail(root,detail){
@@ -530,14 +663,20 @@ const PAGE = /* html */ `<!doctype html>
     back.onclick=function(){ view.detail=null; render() };
     root.appendChild(back);
 
-    var res=await tryApi("/transactions?limit=50&accountId="+encodeURIComponent(detail.id),{});
+    var res=await tryApi("/transactions?limit=100&accountId="+encodeURIComponent(detail.id),{});
     var txns=res.transactions||[];
+    var cats=(await tryApi("/categories",{})).categories||[];
+    var catById={};cats.forEach(function(c){catById[c.id]=c});
+
     var p=panel(detail.name, txns.length? txns.length+" recent transactions" : null);
     if(!txns.length){p.appendChild(empty("Nothing here yet","No transactions on this account."))}
     else{
       var list=el("div","list list-divided");
       txns.forEach(function(t){
-        list.appendChild(listRow(t.merchantName,t.postedAt.slice(5),fmt2(t.amountCents),t.amountCents>0?"pos":""));
+        var cat=t.categoryId?catById[t.categoryId]:null;
+        list.appendChild(listRow(t.merchantName,
+          t.postedAt.slice(5)+((cat&&cat.name)?" · "+cat.name:""),
+          fmt2(t.amountCents),t.amountCents>0?"pos":""));
       });
       p.appendChild(list);
     }
@@ -551,61 +690,90 @@ const PAGE = /* html */ `<!doctype html>
     var cats=(await tryApi("/categories",{})).categories||[];
     var byId={};cats.forEach(function(c){byId[c.id]=c});
 
+    var over=ts>tb, left=tb-ts;
     var p=panel("This month",pct(Math.min(1,ts/tb))+" of budget used");
-    var head=el("div","row-baseline");
-    head.appendChild(el("div","stat-value",fmt(ts)));
-    head.appendChild(el("div","t-sm t-tertiary","of "+fmt(tb)));
-    p.appendChild(head);
-    p.appendChild(bar(ts/tb, ts>tb?"var(--color-negative)":null));
+    var headline=el("div","row-baseline");
+    headline.appendChild(el("div","stat-value",fmt(ts)));
+    headline.appendChild(el("div","t-sm t-tertiary","of "+fmt(tb)));
+    p.appendChild(headline);
+    p.appendChild(bar(ts/tb, over?"var(--color-negative)":null));
+    p.appendChild(el("div","t-xs "+(over?"neg":"t-tertiary"),
+      over? fmt(-left)+" over budget" : fmt(left)+" left"));
     root.appendChild(p);
 
     var rows=(b.budgets||[]).slice().sort(function(x,y){return y.spentCents-x.spentCents});
     if(rows.length){
-      var d=panel("By category");
+      var d=panel("By category",rows.length+" tracked");
       rows.forEach(function(r){
         var cat=byId[r.categoryId]||{};
-        var over=r.spentCents>r.amountCents;
-        var wrap=el("div");wrap.style.marginBottom="var(--space-3)";
-        var line=el("div","row-between t-sm");
-        line.appendChild(el("div","truncate",cat.name||"Category"));
-        var v=el("div","num"+(over?" neg":" t-tertiary"),fmt(r.spentCents)+" / "+fmt(r.amountCents));
-        line.appendChild(v);
-        wrap.appendChild(line);
-        wrap.appendChild(bar(r.amountCents>0?r.spentCents/r.amountCents:0, over?"var(--color-negative)":(cat.color||null)));
-        d.appendChild(wrap);
+        var o=r.spentCents>r.amountCents;
+        d.appendChild(barBlock(cat.name||"Category",
+          fmt(r.spentCents)+" / "+fmt(r.amountCents),
+          r.amountCents>0?r.spentCents/r.amountCents:0, cat.color, o));
       });
       root.appendChild(d);
     }
   }
 
   async function renderBills(root){
-    var bills=(await tryApi("/bills",{})).bills||[];
+    var data=await tryApi("/bills",{});
+    var bills=data.bills||[];
     if(!bills.length){root.appendChild(empty("No bills tracked","Recurring bills show up here."));return}
-    var p=panel("Upcoming","Soonest first");
-    var list=el("div","list list-divided");
-    bills.forEach(function(b){
-      var due=b.daysUntilDue<0?Math.abs(b.daysUntilDue)+"d overdue"
-             :b.daysUntilDue===0?"Due today":"Due in "+b.daysUntilDue+"d";
-      var r=listRow(b.name,due,fmt(b.amountCents));
-      if(b.daysUntilDue<=2){var s=r.querySelector(".list-row-sub");if(s)s.className="list-row-sub neg"}
-      list.appendChild(r);
+
+    var due=data.totalDueCents||0, saved=data.totalSavedCents||0;
+    var hg=el("div","grid");
+    [["Upcoming",fmt(due),""],["Set aside",fmt(saved),"pos"]].forEach(function(r){
+      var c=el("div","col-6");var pp=el("div","panel");
+      pp.appendChild(statRow(r[0],r[1],r[2]));
+      c.appendChild(pp);hg.appendChild(c);
     });
-    p.appendChild(list);root.appendChild(p);
+    root.appendChild(hg);
+
+    var p=panel("Upcoming","Soonest first");
+    bills.forEach(function(b){
+      var dueText=b.daysUntilDue<0?Math.abs(b.daysUntilDue)+"d overdue"
+        :b.daysUntilDue===0?"Due today":b.daysUntilDue===1?"Due tomorrow":"Due in "+b.daysUntilDue+"d";
+      var funded=b.savedCents>=b.amountCents;
+      var wrap=el("div");wrap.style.marginBottom="var(--space-4)";
+      var line=el("div","row-between t-sm");
+      var left=el("div","truncate");
+      left.appendChild(el("span","t-medium",b.name));
+      var sub=el("div","t-xs "+(b.daysUntilDue<=2?"neg":"t-tertiary"),dueText);
+      left.appendChild(sub);
+      line.appendChild(left);
+      line.appendChild(el("div","list-row-amount",fmt(b.amountCents)));
+      wrap.appendChild(line);
+      // Sinking-fund progress: how much is already put by for this bill.
+      wrap.appendChild(bar(b.amountCents>0?b.savedCents/b.amountCents:0,
+        funded?"var(--color-positive)":(b.color||null)));
+      wrap.appendChild(el("div","t-xs t-tertiary",
+        fmt(b.savedCents)+" of "+fmt(b.amountCents)+" set aside"+(funded?" · fully funded":"")));
+      p.appendChild(wrap);
+    });
+    root.appendChild(p);
   }
 
   async function renderGoals(root){
     var goals=(await tryApi("/goals",{})).goals||[];
     if(!goals.length){root.appendChild(empty("No savings goals","Goals you set show up here."));return}
-    var p=panel("Goals");
+    var totalSaved=goals.reduce(function(s,g){return s+g.savedCents},0);
+    var totalTarget=goals.reduce(function(s,g){return s+g.targetCents},0);
+
+    var head=panel("Goals",goals.length+" tracked");
+    var hl=el("div","row-baseline");
+    hl.appendChild(el("div","stat-value",fmt(totalSaved)));
+    hl.appendChild(el("div","t-sm t-tertiary","of "+fmt(totalTarget)));
+    head.appendChild(hl);
+    head.appendChild(bar(totalTarget>0?totalSaved/totalTarget:0));
+    root.appendChild(head);
+
+    var p=panel("Each goal");
     goals.forEach(function(g){
       var frac=g.targetCents>0?Math.min(1,g.savedCents/g.targetCents):0;
-      var wrap=el("div");wrap.style.marginBottom="var(--space-4)";
-      var line=el("div","row-between t-sm");
-      line.appendChild(el("div","t-medium truncate",g.name));
-      line.appendChild(el("div","num t-tertiary",fmt(g.savedCents)+" / "+fmt(g.targetCents)));
-      wrap.appendChild(line);
-      wrap.appendChild(bar(frac,g.color||null));
-      p.appendChild(wrap);
+      var funded=g.savedCents>=g.targetCents;
+      p.appendChild(barBlock(g.name,
+        funded?"funded":fmt(g.savedCents)+" / "+fmt(g.targetCents),
+        frac,g.color,false));
     });
     root.appendChild(p);
   }
@@ -615,6 +783,7 @@ const PAGE = /* html */ `<!doctype html>
     var value=d.totalValueCents||0, cost=d.totalCostBasisCents||0;
     if(!value){root.appendChild(empty("No holdings","Positions you track show up here."));return}
     var gain=value-cost, gpct=cost>0?(gain/cost)*100:0;
+
     var p=panel("Portfolio");
     p.appendChild(el("div","stat-value",fmt(value)));
     p.appendChild(el("div","stat-delta "+(gain>=0?"pos":"neg"),
@@ -623,18 +792,28 @@ const PAGE = /* html */ `<!doctype html>
 
     var alloc=d.allocation||[];
     if(alloc.length){
-      var a=panel("Allocation");
-      alloc.slice(0,10).forEach(function(s){
-        var wrap=el("div");wrap.style.marginBottom="var(--space-3)";
-        var line=el("div","row-between t-sm");
-        line.appendChild(el("div","t-medium",s.symbol));
-        line.appendChild(el("div","num t-tertiary",pct(s.share)));
-        wrap.appendChild(line);
-        wrap.appendChild(bar(s.share));
-        a.appendChild(wrap);
+      var a=panel("Allocation",alloc.length+" positions");
+      alloc.slice(0,12).forEach(function(s){
+        a.appendChild(barBlock(s.symbol,pct(s.share),s.share,null,false));
       });
       root.appendChild(a);
     }
+
+    // Per-account holdings — the detail the allocation ring flattens out.
+    (d.accounts||[]).forEach(function(acct){
+      if(!acct.holdings||!acct.holdings.length)return;
+      var ap=panel(acct.name,fmt(acct.holdingsValueCents||0));
+      var list=el("div","list list-divided");
+      acct.holdings.forEach(function(h){
+        // Gain belongs in the subtitle: tinting the market value by it would
+        // read as though the position itself were negative.
+        var g2=h.costBasisCents!=null?h.marketValueCents-h.costBasisCents:null;
+        var sub=[h.quantity?h.quantity+" units":null,
+          g2==null?null:(g2>=0?"+":"−")+fmt(Math.abs(g2))].filter(Boolean).join(" · ");
+        list.appendChild(listRow(h.symbol,sub||null,fmt(h.marketValueCents),""));
+      });
+      ap.appendChild(list);root.appendChild(ap);
+    });
   }
 
   var RENDERERS={
