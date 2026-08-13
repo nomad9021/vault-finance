@@ -15,7 +15,7 @@ const ICON_VER = "3";
 // Bump whenever the shared stylesheet changes — /vault.css is served
 // `immutable` for a week, so a phone that already loaded the page will keep the
 // old CSS until this URL changes.
-const CSS_VER = "4";
+const CSS_VER = "5";
 
 /**
  * A tiny, dependency-free, **read-only** phone viewer served on the same origin
@@ -146,6 +146,12 @@ const PAGE = /* html */ `<!doctype html>
   /* The diagram is the desktop's exact geometry, so it is wider than the
      screen and scrolls inside its panel. */
   .sankey-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 calc(var(--card-pad) * -1); padding: 0 var(--card-pad); }
+  /* base.css sets a global svg max-width of 100% for every other image here.
+     That silently overrode the diagram's inline width, crushing 1240px down to
+     the card (~341px): captions rendered at 3.4px and the scroller had nothing
+     to scroll, so the "swipe sideways" hint was false. The diagram is the one
+     SVG here that must exceed its container. */
+  .sankey-scroll svg { max-width: none; }
   #lock {
     position: fixed; inset: 0; z-index: var(--z-modal);
     background: var(--color-bg); display: flex; flex-direction: column;
@@ -595,11 +601,31 @@ const PAGE = /* html */ `<!doctype html>
     return wrap;
   }
 
+  /**
+   * Which month Home shows — the same rule the desktop dashboard uses.
+   * Month-to-date framing means that in the first days of a month there is
+   * nothing to draw: income and spending both read $0 and the diagram shows a
+   * $0 income node feeding 100%-of-nothing, which reads as broken. Fall back to
+   * the most recent month that actually has activity.
+   *
+   * Derived from the trends the page already loads, so it costs no request.
+   */
+  function defaultMonth(points){
+    var now=new Date().toISOString().slice(0,7);
+    var current=points.filter(function(p){return p.month===now})[0];
+    if(!current||current.incomeCents>0||current.spendingCents>0)return now;
+    var active=points.filter(function(p){return p.incomeCents>0||p.spendingCents>0})
+      .map(function(p){return p.month}).sort();
+    return active.length?active[active.length-1]:now;
+  }
+
   async function renderHome(root){
     var accounts=(await tryApi("/accounts",{})).accounts||[];
-    var months=(await tryApi("/cashflow/summary?months=2",{})).months||[];
     var points=(await tryApi("/cashflow/trends?months=6",{})).points||[];
-    var sankey=await tryApi("/cashflow/sankey",{nodes:[],links:[]});
+    var month=defaultMonth(points);
+    var isCurrent=month===new Date().toISOString().slice(0,7);
+    var months=(await tryApi("/cashflow/summary?months=6",{})).months||[];
+    var sankey=await tryApi("/cashflow/sankey?month="+encodeURIComponent(month),{nodes:[],links:[]});
 
     var net=accounts.reduce(function(s,a){return s+(a.balanceCents||0)},0);
     var nw=panel();
@@ -612,12 +638,21 @@ const PAGE = /* html */ `<!doctype html>
     }
     root.appendChild(nw);
 
-    var m=months[months.length-1]||{};
-    if(m.month)root.appendChild(el("div","eyebrow",monthName(m.month)));
+    var m=months.filter(function(x){return x.month===month})[0]||months[months.length-1]||{};
+    var head=el("div","row-between wrap");
+    head.appendChild(el("div","eyebrow",monthName(month)));
+    if(!isCurrent){
+      // Never let a fallback month masquerade as the current one.
+      head.appendChild(el("div","t-xs t-tertiary",monthName(new Date().toISOString().slice(0,7))+" has no activity yet"));
+    }
+    root.appendChild(head);
     var g=el("div","grid");
     [["Income",fmt(m.incomeCents||0),""],
      ["Spending",fmt(m.spendingCents||0),""],
-     ["Savings rate",(m.savingsRate!=null?pct(m.savingsRate):"—"),(m.savingsRate||0)>=0?"pos":"neg"]
+     // A null rate rendered as a green em-dash, which reads as a broken value
+     // rather than "no data". Only tint when there is a number to tint.
+     ["Savings rate",(m.savingsRate!=null?pct(m.savingsRate):"—"),
+       m.savingsRate==null?"t-tertiary":(m.savingsRate>=0?"pos":"neg")]
     ].forEach(function(row){
       var c=el("div","col-4");var p=el("div","panel");
       p.appendChild(statRow(row[0],row[1],row[2]));
