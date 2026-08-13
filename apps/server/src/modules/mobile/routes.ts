@@ -15,7 +15,7 @@ const ICON_VER = "3";
 // Bump whenever the shared stylesheet changes — /vault.css is served
 // `immutable` for a week, so a phone that already loaded the page will keep the
 // old CSS until this URL changes.
-const CSS_VER = "3";
+const CSS_VER = "4";
 
 /**
  * A tiny, dependency-free, **read-only** phone viewer served on the same origin
@@ -143,6 +143,9 @@ const PAGE = /* html */ `<!doctype html>
     background: none; border: 1px solid var(--color-divider); cursor: pointer; color: inherit;
   }
   .prof[data-on] { border-color: var(--color-accent); background: var(--color-accent-soft); }
+  /* The diagram is the desktop's exact geometry, so it is wider than the
+     screen and scrolls inside its panel. */
+  .sankey-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 calc(var(--card-pad) * -1); padding: 0 var(--card-pad); }
   #lock {
     position: fixed; inset: 0; z-index: var(--z-modal);
     background: var(--color-bg); display: flex; flex-direction: column;
@@ -188,8 +191,9 @@ const PAGE = /* html */ `<!doctype html>
 <script>
 (function(){
   "use strict";
-  var token=null, sel=null, hiddenAt=0, logoutTimer=null;
-  var IDLE_MS=4*60*1000; // sign out after ~4 min in the background
+  var token=null, sel=null, hiddenAt=0, logoutTimer=null, idleTimer=null;
+  // Applies both to time spent backgrounded and to untouched time with the app open.
+  var IDLE_MS=4*60*1000;
   var $=function(id){return document.getElementById(id)};
   var cache={};           // endpoint -> parsed JSON, filled once per session
   var view={tab:"home", page:null, detail:null};
@@ -215,10 +219,25 @@ const PAGE = /* html */ `<!doctype html>
 
   // ── privacy lock ────────────────────────────────────────────────────────
   function lock(){ if(!token) return; $("lock").hidden=false; hiddenAt=Date.now(); clearTimeout(logoutTimer); logoutTimer=setTimeout(logout, IDLE_MS); }
-  function onVisible(){ if(!token){ $("lock").hidden=true; return; } clearTimeout(logoutTimer); if(Date.now()-hiddenAt>IDLE_MS){ logout(); } }
+  function onVisible(){ if(!token){ $("lock").hidden=true; return; } clearTimeout(logoutTimer); if(Date.now()-hiddenAt>IDLE_MS){ logout(); } idleReset(); }
   document.addEventListener("visibilitychange", function(){ document.hidden ? lock() : onVisible(); });
   window.addEventListener("pagehide", lock);
-  $("lock").addEventListener("click", function(){ if(token) $("lock").hidden=true; });
+  $("lock").addEventListener("click", function(){ if(token) $("lock").hidden=true; idleReset(); });
+
+  // ── idle sign-out while the app is open ─────────────────────────────────
+  // Backgrounding the app already signs out after IDLE_MS. A phone left awake
+  // on the dashboard was staying signed in indefinitely, which is the same
+  // exposure with none of the protection — so untouched time counts too.
+  function idleReset(){
+    if(!token)return;
+    clearTimeout(idleTimer);
+    idleTimer=setTimeout(function(){ if(token) logout(); }, IDLE_MS);
+  }
+  ["touchstart","pointerdown","keydown","scroll","input"].forEach(function(ev){
+    // Passive + capture: never delay a gesture, and still see events that a
+    // handler below might stop propagating.
+    document.addEventListener(ev, idleReset, {passive:true, capture:true});
+  });
 
   async function api(path){
     if(cache[path]) return cache[path];
@@ -232,7 +251,7 @@ const PAGE = /* html */ `<!doctype html>
 
   function logout(){
     token=null;sel=null;cache={};view={tab:"home",page:null,detail:null};
-    clearTimeout(logoutTimer);
+    clearTimeout(logoutTimer);clearTimeout(idleTimer);
     $("lock").hidden=true;$("app").hidden=true;$("scroll").textContent="";
     $("login").hidden=false;$("pwbox").hidden=true;
     $("pw").value="";$("code").value="";$("code").hidden=true;
@@ -271,7 +290,7 @@ const PAGE = /* html */ `<!doctype html>
     var body={userId:sel.id,password:pw,deviceName:"Phone viewer (web)",platform:"ios"};
     if(!$("code").hidden&&code)body.totpCode=code;
     var r=await fetch("/api/v1/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
-    if(r.ok){var d=await r.json();token=d.accessToken;$("login").hidden=true;$("app").hidden=false;buildTabs();render();return}
+    if(r.ok){var d=await r.json();token=d.accessToken;$("login").hidden=true;$("app").hidden=false;buildTabs();render();idleReset();return}
     var c2="";try{c2=(await r.json()).error.code}catch(e){}
     if(c2==="TOTP_REQUIRED"){$("code").hidden=false;$("code").focus();return}
     if(c2==="TOTP_INVALID"){$("code").hidden=false;showErr("That code isn't right — use the current one.");return}
@@ -389,80 +408,166 @@ const PAGE = /* html */ `<!doctype html>
       +'<circle cx="'+x(last).toFixed(1)+'" cy="'+y(history[last]).toFixed(1)+'" r="3" fill="'+color+'"/></svg>';
   }
   /**
-   * Phone-native cash-flow diagram.
+   * A faithful port of the desktop Sankey (packages/ui/src/charts/Sankey.tsx).
    *
-   * The desktop version is a four-column diagram 700px wide. Transplanted to a
-   * ~343px screen it had to live in a horizontal scroller, so less than half
-   * was ever visible and the labels crowded into slivers — it read as broken.
+   * Every constant, the barycenter column ordering, the link-stacking cursors,
+   * the per-flow source-to-target gradients and the label geometry are copied
+   * from it deliberately — an earlier approximation used its own smaller
+   * constants and flat ribbons, and the result visibly did not match the
+   * desktop app.
    *
-   * This collapses the graph to the two columns that carry the meaning on a
-   * phone — total income on the left, top-level categories on the right — and
-   * spends the reclaimed width on labels instead of a third and fourth column.
-   * Bar heights stay value-proportional, but every row gets a minimum slot so
-   * a 1%-of-income category still has a readable label. The deeper levels are
-   * still reachable by tapping through to the category.
+   * Because the geometry is identical it is also 1240 units wide, so on a phone
+   * it lives in a horizontal scroller at native size rather than being squashed
+   * to fit. Squashing is what makes the 12.5px captions illegible.
+   *
+   * If these ever diverge again, diff them against the desktop component.
    */
-  function sankeySvg(nodes){
-    var W=340, NW=9, PAD=12, X0=6, X1=92, LX=X1+NW+9;
-    var GAP=7, ROW_MIN=34, MIN_BAR=5, FLOW_H=250, MAX_ROWS=7;
+  var SK={BASE_H:600,W:1240,NW:6,PAD:40,X0:64,X1:1176,GAP:14,MIN_NODE:4,ROW_MIN:34,MIN_LINK:2};
 
-    // depth 2 is the top-level category band; anything deeper is already
-    // rolled into its parent's value by the server.
-    var cats=nodes.filter(function(n){return n.kind==="category"&&n.depth===2});
-    if(!cats.length)cats=nodes.filter(function(n){return n.kind==="category"});
-    var rows=cats.concat(nodes.filter(function(n){return n.kind==="saved"}))
-      .filter(function(n){return n.value>0})
-      .sort(function(a,b){return b.value-a.value});
-    if(!rows.length)return "";
+  function rgba(hex,alpha){
+    var m=/^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+    if(!m)return hex;
+    var n=parseInt(m[1],16);
+    return "rgba("+((n>>16)&255)+", "+((n>>8)&255)+", "+(n&255)+", "+alpha+")";
+  }
 
-    // Past seven bars the slivers stop being legible; fold the tail into one.
-    if(rows.length>MAX_ROWS+1){
-      var tail=rows.slice(MAX_ROWS);
-      rows=rows.slice(0,MAX_ROWS).concat([{
-        id:"__other",
-        label:"Other ("+tail.length+")",
-        value:tail.reduce(function(s,n){return s+n.value},0),
-        color:"#9397ab"
-      }]);
-    }
+  function sankeyLayout(nodes,links){
+    var depths=Array.from(new Set(nodes.map(function(n){return n.depth}))).sort(function(a,b){return a-b});
+    var maxDepth=depths[depths.length-1]||0;
+    var xFor=function(d){return maxDepth===0?SK.X0:SK.X0+(d*(SK.X1-SK.X0))/maxDepth};
 
-    var total=rows.reduce(function(s,n){return s+n.value},0)||1;
-    var bar=function(n){return Math.max(MIN_BAR,(n.value/total)*FLOW_H)};
-    var slot=function(n){return Math.max(ROW_MIN,bar(n))};
-    var H=Math.ceil(rows.reduce(function(s,n){return s+slot(n)},0)+(rows.length-1)*GAP+2*PAD);
+    var sumIn={},sumOut={};
+    links.forEach(function(l){
+      sumOut[l.from]=(sumOut[l.from]||0)+l.value;
+      sumIn[l.to]=(sumIn[l.to]||0)+l.value;
+    });
+    var magnitude=function(n){return Math.max(n.value,sumIn[n.id]||0,sumOut[n.id]||0)};
 
-    var out=['<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cash flow by category">'];
+    var byDepth={};
+    nodes.forEach(function(n){(byDepth[n.depth]=byDepth[n.depth]||[]).push(n)});
+    var maxColSum=1;
+    Object.keys(byDepth).forEach(function(d){
+      maxColSum=Math.max(maxColSum,byDepth[d].reduce(function(s,n){return s+magnitude(n)},0));
+    });
+    var scale=(SK.BASE_H-2*SK.PAD)/maxColSum;
 
-    // Left column: one income bar as tall as the flows leaving it, centred.
-    var flowH=rows.reduce(function(s,n){return s+bar(n)},0);
-    var inY=(H-flowH)/2;
-    out.push('<rect x="'+X0+'" y="'+inY.toFixed(1)+'" width="'+NW+'" height="'+flowH.toFixed(1)+'" rx="3" fill="var(--color-positive)"/>');
+    var barHeight=function(n){return Math.max(SK.MIN_NODE,magnitude(n)*scale)};
+    var slotHeight=function(n){return Math.max(SK.ROW_MIN,barHeight(n))};
+    var columnHeight=function(ns){
+      return ns.reduce(function(s,n){return s+slotHeight(n)},0)+Math.max(0,ns.length-1)*SK.GAP;
+    };
+    var contentH=0;
+    Object.keys(byDepth).forEach(function(d){contentH=Math.max(contentH,columnHeight(byDepth[d]))});
+    var H=Math.max(SK.BASE_H,Math.ceil(contentH+2*SK.PAD));
 
-    // Ribbons, stacked in the same order as the rows so none cross.
-    var y=PAD, sy=inY;
-    var placed=[];
-    rows.forEach(function(n){
-      var h=bar(n), s=slot(n), ty=y+(s-h)/2, mx=(X0+NW+X1)/2;
-      out.push('<path d="M'+(X0+NW)+','+sy.toFixed(1)+' C'+mx+','+sy.toFixed(1)+' '+mx+','+ty.toFixed(1)+' '+X1+','+ty.toFixed(1)
-        +' L'+X1+','+(ty+h).toFixed(1)+' C'+mx+','+(ty+h).toFixed(1)+' '+mx+','+(sy+h).toFixed(1)+' '+(X0+NW)+','+(sy+h).toFixed(1)+' Z" fill="'+(n.color||"#9397ab")+'" fill-opacity="0.38"/>');
-      placed.push({n:n,ty:ty,h:h});
-      sy+=h; y+=s+GAP;
+    var placed={},parentsOf={};
+    links.forEach(function(l){(parentsOf[l.to]=parentsOf[l.to]||[]).push(l.from)});
+
+    depths.forEach(function(d,di){
+      var ns=(byDepth[d]||[]).slice();
+      if(di===0){
+        ns.sort(function(a,b){return magnitude(b)-magnitude(a)});
+      }else{
+        var bary=function(n){
+          var ps=(parentsOf[n.id]||[]).map(function(id){return placed[id]}).filter(Boolean);
+          if(!ps.length)return Number.MAX_SAFE_INTEGER;
+          return ps.reduce(function(s,p){return s+(p.y+p.h/2)},0)/ps.length;
+        };
+        ns.sort(function(a,b){return bary(a)-bary(b)});
+      }
+      var totalH=columnHeight(ns);
+      var y=(H-totalH)/2;
+      ns.forEach(function(n){
+        var slot=slotHeight(n),h=barHeight(n);
+        placed[n.id]={n:n,x:xFor(d),y:y+(slot-h)/2,h:h};
+        y+=slot+SK.GAP;
+      });
     });
 
-    // Right column: bar, then name and amount in the reclaimed width.
-    placed.forEach(function(p){
-      var cy=p.ty+p.h/2;
-      var pct=Math.round((p.n.value/total)*100);
-      out.push('<rect x="'+X1+'" y="'+p.ty.toFixed(1)+'" width="'+NW+'" height="'+p.h.toFixed(1)+'" rx="3" fill="'+(p.n.color||"#9397ab")+'"/>');
-      out.push('<text x="'+LX+'" y="'+(cy-1).toFixed(1)+'" font-size="12.5" font-weight="600" fill="var(--content-primary)" font-family="var(--font-body)">'+esc(p.n.label)+'</text>');
-      out.push('<text x="'+LX+'" y="'+(cy+12).toFixed(1)+'" font-size="11" fill="var(--content-tertiary)" font-family="var(--font-body)">'+esc(fmt(p.n.value))+' · '+pct+'%</text>');
+    var outCursor={},inCursor={};
+    var ordered=links.slice().sort(function(a,b){
+      var sa=(placed[a.from]||{}).y||0, sb=(placed[b.from]||{}).y||0;
+      if(sa!==sb)return sa-sb;
+      return ((placed[a.to]||{}).y||0)-((placed[b.to]||{}).y||0);
+    });
+    var placedLinks=[];
+    ordered.forEach(function(l){
+      var s=placed[l.from],t=placed[l.to];
+      if(!s||!t)return;
+      var h=l.value>0?l.value*scale:SK.MIN_LINK;
+      var sy=outCursor[l.from]!=null?outCursor[l.from]:s.y;
+      var ty=inCursor[l.to]!=null?inCursor[l.to]:t.y;
+      placedLinks.push({from:l.from,to:l.to,sx:s.x+SK.NW,sy:sy,tx:t.x,ty:ty,t:h});
+      outCursor[l.from]=sy+h;
+      inCursor[l.to]=ty+h;
     });
 
-    out.push('</svg>');
+    return {nodes:placed,links:placedLinks,height:H};
+  }
+
+  function sankeySvg(nodes,links){
+    if(!nodes.length||!links.length)return "";
+    var geo=sankeyLayout(nodes,links);
+    var seed=Math.random().toString(36).slice(2,8);
+    var hubColor="#9397ab";
+
+    var colorById={},depthById={};
+    nodes.forEach(function(n){colorById[n.id]=n.color;depthById[n.id]=n.depth});
+    var linkColor=function(id){return colorById[id]||hubColor};
+
+    // Percentages read as each node's share of total income (hub = 100%).
+    var hub=nodes.filter(function(n){return n.kind==="hub"})[0];
+    var rootTotal=(hub&&hub.value>0)?hub.value
+      :nodes.filter(function(n){return n.depth===0}).reduce(function(s,n){return s+n.value},0)
+        ||nodes.reduce(function(m,n){return Math.max(m,n.value)},0);
+
+    var flowKey=function(l){
+      return (depthById[l.to]||0)>=(depthById[l.from]||0)?l.to:l.from;
+    };
+    var linkPath=function(l){
+      var mx=(l.sx+l.tx)/2;
+      return "M"+l.sx+","+l.sy+" C"+mx+","+l.sy+" "+mx+","+l.ty+" "+l.tx+","+l.ty
+        +" L"+l.tx+","+(l.ty+l.t)+" C"+mx+","+(l.ty+l.t)+" "+mx+","+(l.sy+l.t)+" "+l.sx+","+(l.sy+l.t)+" Z";
+    };
+
+    var out=['<svg viewBox="0 0 '+SK.W+' '+geo.height+'" style="width:'+SK.W+'px;height:auto;display:block" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cash flow diagram">'];
+
+    // Per-flow gradient blending the source colour into the target colour —
+    // the desktop's signature, and the biggest visual difference from a flat fill.
+    out.push("<defs>");
+    geo.links.forEach(function(l,i){
+      var key=flowKey(l);
+      var c1=l.from===key?linkColor(key):hubColor;
+      var c2=l.to===key?linkColor(key):hubColor;
+      out.push('<linearGradient id="flow-'+seed+'-'+i+'" gradientUnits="userSpaceOnUse" x1="'+l.sx+'" x2="'+l.tx+'" y1="0" y2="0">'
+        +'<stop offset="0%" stop-color="'+rgba(c1,0.55)+'"/>'
+        +'<stop offset="100%" stop-color="'+rgba(c2,0.55)+'"/></linearGradient>');
+    });
+    out.push("</defs>");
+
+    geo.links.forEach(function(l,i){
+      out.push('<path d="'+linkPath(l)+'" fill="url(#flow-'+seed+'-'+i+')" opacity="0.72"/>');
+    });
+
+    Object.keys(geo.nodes).forEach(function(id){
+      var p=geo.nodes[id], n=p.n;
+      // Income sources and the hub label to the RIGHT; every spending node
+      // labels to the LEFT so the deepest column grows inward.
+      var right=n.depth===0||n.kind==="hub";
+      var anchor=right?"start":"end";
+      var lx=right?p.x+SK.NW+10:p.x-10;
+      var cy=p.y+p.h/2;
+      var pctOf=rootTotal>0?(n.value/rootTotal)*100:0;
+      var caption=rootTotal>0?fmt(n.value)+" ("+pctOf.toFixed(1)+"%)":fmt(n.value);
+      out.push('<rect x="'+p.x+'" y="'+p.y.toFixed(1)+'" width="'+SK.NW+'" height="'+p.h.toFixed(1)+'" rx="1.5" fill="'+linkColor(id)+'"/>');
+      out.push('<text x="'+lx+'" y="'+(cy-3).toFixed(1)+'" text-anchor="'+anchor+'" font-family="var(--font-heading)" font-weight="600" font-size="12.5" fill="var(--color-text)">'+esc(n.label)+'</text>');
+      out.push('<text x="'+lx+'" y="'+(cy+12).toFixed(1)+'" text-anchor="'+anchor+'" font-family="var(--font-body)" font-size="11.5" fill="var(--color-neutral-500)">'+esc(caption)+'</text>');
+    });
+
+    out.push("</svg>");
     return out.join("");
   }
 
-  // ── screens ─────────────────────────────────────────────────────────────
   function monthName(iso){
     var parts=String(iso).split("-");
     var d=new Date(Date.UTC(+parts[0],+parts[1]-1,1));
@@ -521,14 +626,23 @@ const PAGE = /* html */ `<!doctype html>
     root.appendChild(g);
 
     if((sankey.links||[]).length){
-      var svg=sankeySvg(sankey.nodes.map(function(n){
-        return {id:n.id,label:n.label,value:n.valueCents,color:n.color,depth:n.depth,kind:n.kind};
-      }));
+      var svg=sankeySvg(
+        sankey.nodes.map(function(n){
+          return {id:n.id,label:n.label,value:n.valueCents,color:n.color,depth:n.depth,kind:n.kind};
+        }),
+        sankey.links.map(function(l){return {from:l.from,to:l.to,value:l.valueCents}})
+      );
       if(svg){
         var s=panel("Cash flow","Where this month's income went");
+        // Rendered at the desktop's native 1240 units so the captions stay the
+        // same size they are there. That is wider than any phone, so it scrolls
+        // sideways rather than being squashed into illegibility.
+        var sc=el("div","sankey-scroll");
         var holder=el("div");
         holder.innerHTML=svg;   // built entirely from esc()'d strings
-        s.appendChild(holder);
+        sc.appendChild(holder);
+        s.appendChild(sc);
+        s.appendChild(el("div","panel-sub","Swipe the diagram sideways to follow the flow."));
         root.appendChild(s);
       }
     }

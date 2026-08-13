@@ -102,11 +102,11 @@
   --sidebar-w: 244px;
   --rail-w: 68px;
   --tabbar-h: 56px;
-  /* Reserve for the home indicator, minus the slack a full inset leaves. The
-     raw inset (~34px on iPhones) pushes the tab row visibly high; clearing the
-     indicator only needs about half of it. Collapses to 0 on devices without
-     one, so nothing changes in a desktop browser. */
-  --tabbar-safe: max(env(safe-area-inset-bottom, 0px) - 16px, 0px);
+  /* Deliberately no safe-area reservation: the bar sits flush against the
+     bottom edge. Reserving env(safe-area-inset-bottom) left the row floating
+     visibly high, and the viewer is used as an installed PWA where there is no
+     browser chrome underneath it. */
+  --tabbar-safe: 0px;
   --focus-ring-width: 2px;
 
   /* — z layers — */
