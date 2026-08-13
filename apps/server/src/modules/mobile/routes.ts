@@ -251,7 +251,7 @@ const PAGE = /* html */ `<!doctype html>
 
   function logout(){
     token=null;sel=null;cache={};view={tab:"home",page:null,detail:null};
-    clearTimeout(logoutTimer);
+    clearTimeout(logoutTimer);clearTimeout(idleTimer);
     $("lock").hidden=true;$("app").hidden=true;$("scroll").textContent="";
     $("login").hidden=false;$("pwbox").hidden=true;
     $("pw").value="";$("code").value="";$("code").hidden=true;
@@ -290,7 +290,7 @@ const PAGE = /* html */ `<!doctype html>
     var body={userId:sel.id,password:pw,deviceName:"Phone viewer (web)",platform:"ios"};
     if(!$("code").hidden&&code)body.totpCode=code;
     var r=await fetch("/api/v1/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
-    if(r.ok){var d=await r.json();token=d.accessToken;$("login").hidden=true;$("app").hidden=false;buildTabs();render();return}
+    if(r.ok){var d=await r.json();token=d.accessToken;$("login").hidden=true;$("app").hidden=false;buildTabs();render();idleReset();return}
     var c2="";try{c2=(await r.json()).error.code}catch(e){}
     if(c2==="TOTP_REQUIRED"){$("code").hidden=false;$("code").focus();return}
     if(c2==="TOTP_INVALID"){$("code").hidden=false;showErr("That code isn't right — use the current one.");return}
