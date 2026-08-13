@@ -15,7 +15,7 @@ const ICON_VER = "3";
 // Bump whenever the shared stylesheet changes — /vault.css is served
 // `immutable` for a week, so a phone that already loaded the page will keep the
 // old CSS until this URL changes.
-const CSS_VER = "5";
+const CSS_VER = "6";
 
 /**
  * A tiny, dependency-free, **read-only** phone viewer served on the same origin
@@ -143,15 +143,6 @@ const PAGE = /* html */ `<!doctype html>
     background: none; border: 1px solid var(--color-divider); cursor: pointer; color: inherit;
   }
   .prof[data-on] { border-color: var(--color-accent); background: var(--color-accent-soft); }
-  /* The diagram is the desktop's exact geometry, so it is wider than the
-     screen and scrolls inside its panel. */
-  .sankey-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 calc(var(--card-pad) * -1); padding: 0 var(--card-pad); }
-  /* base.css sets a global svg max-width of 100% for every other image here.
-     That silently overrode the diagram's inline width, crushing 1240px down to
-     the card (~341px): captions rendered at 3.4px and the scroller had nothing
-     to scroll, so the "swipe sideways" hint was false. The diagram is the one
-     SVG here that must exceed its container. */
-  .sankey-scroll svg { max-width: none; }
   #lock {
     position: fixed; inset: 0; z-index: var(--z-modal);
     background: var(--color-bg); display: flex; flex-direction: column;
@@ -428,7 +419,18 @@ const PAGE = /* html */ `<!doctype html>
    *
    * If these ever diverge again, diff them against the desktop component.
    */
-  var SK={BASE_H:600,W:1240,NW:6,PAD:40,X0:64,X1:1176,GAP:14,MIN_NODE:4,ROW_MIN:34,MIN_LINK:2};
+  // Phone-tuned constants for the *same* algorithm. The desktop renders this
+  // diagram at 1240 units into a wide card, so its 12.5-unit captions land at
+  // 12.5px. Fitting that same 1240 into a ~343px phone card is a 0.277 scale,
+  // which would put those captions at 3.4px.
+  //
+  // So the layout maths, column ordering, link stacking, gradients and label
+  // rules are all unchanged — only the type, bar width, row height and padding
+  // are scaled up in source units so they survive the fit and land at roughly
+  // 12px / 10.5px / 5.5px on screen. The diagram then fits the width with no
+  // sideways scrolling.
+  var SK={BASE_H:600,W:1240,NW:20,PAD:60,X0:64,X1:1176,GAP:24,MIN_NODE:10,ROW_MIN:90,MIN_LINK:6,
+          FONT_MAIN:43,FONT_SUB:38,LABEL_DX:36,LINE_UP:10,LINE_DOWN:40};
 
   function rgba(hex,alpha){
     var m=/^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
@@ -511,6 +513,21 @@ const PAGE = /* html */ `<!doctype html>
     return {nodes:placed,links:placedLinks,height:H};
   }
 
+  /**
+   * Clip a caption to the room between its column and the neighbouring one.
+   * Long category names ("Unallocated / savings") otherwise run backwards out
+   * of their column and collide with the previous one. Width is estimated from
+   * the font size — SVG has no text-overflow, and measuring would mean laying
+   * the text out first.
+   */
+  function fitLabel(text,maxUnits,fontSize){
+    var per=fontSize*0.56;                      // mean advance for Inter-ish text
+    var max=Math.floor(maxUnits/per);
+    if(max<2)return "";
+    if(text.length<=max)return text;
+    return text.slice(0,Math.max(1,max-1)).replace(/[\s/-]+$/,"")+"\u2026";
+  }
+
   function sankeySvg(nodes,links){
     if(!nodes.length||!links.length)return "";
     var geo=sankeyLayout(nodes,links);
@@ -536,7 +553,7 @@ const PAGE = /* html */ `<!doctype html>
         +" L"+l.tx+","+(l.ty+l.t)+" C"+mx+","+(l.ty+l.t)+" "+mx+","+(l.sy+l.t)+" "+l.sx+","+(l.sy+l.t)+" Z";
     };
 
-    var out=['<svg viewBox="0 0 '+SK.W+' '+geo.height+'" style="width:'+SK.W+'px;height:auto;display:block" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cash flow diagram">'];
+    var out=['<svg viewBox="0 0 '+SK.W+' '+geo.height+'" style="width:100%;height:auto;display:block" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Cash flow diagram">'];
 
     // Per-flow gradient blending the source colour into the target colour —
     // the desktop's signature, and the biggest visual difference from a flat fill.
@@ -561,13 +578,24 @@ const PAGE = /* html */ `<!doctype html>
       // labels to the LEFT so the deepest column grows inward.
       var right=n.depth===0||n.kind==="hub";
       var anchor=right?"start":"end";
-      var lx=right?p.x+SK.NW+10:p.x-10;
+      var lx=right?p.x+SK.NW+SK.LABEL_DX:p.x-SK.LABEL_DX;
       var cy=p.y+p.h/2;
       var pctOf=rootTotal>0?(n.value/rootTotal)*100:0;
       var caption=rootTotal>0?fmt(n.value)+" ("+pctOf.toFixed(1)+"%)":fmt(n.value);
+      // Room available before the label runs into the neighbouring column.
+      var colXs=Object.keys(geo.nodes).map(function(k){return geo.nodes[k].x});
+      var room;
+      if(right){
+        var nextX=colXs.filter(function(c){return c>p.x+1}).sort(function(a,b){return a-b})[0];
+        room=(nextX!=null?nextX:SK.W)-(p.x+SK.NW+SK.LABEL_DX)-SK.LABEL_DX;
+      }else{
+        var prevX=colXs.filter(function(c){return c<p.x-1}).sort(function(a,b){return b-a})[0];
+        room=(p.x-SK.LABEL_DX)-((prevX!=null?prevX+SK.NW:0)+SK.LABEL_DX);
+      }
+      room=Math.max(0,room);
       out.push('<rect x="'+p.x+'" y="'+p.y.toFixed(1)+'" width="'+SK.NW+'" height="'+p.h.toFixed(1)+'" rx="1.5" fill="'+linkColor(id)+'"/>');
-      out.push('<text x="'+lx+'" y="'+(cy-3).toFixed(1)+'" text-anchor="'+anchor+'" font-family="var(--font-heading)" font-weight="600" font-size="12.5" fill="var(--color-text)">'+esc(n.label)+'</text>');
-      out.push('<text x="'+lx+'" y="'+(cy+12).toFixed(1)+'" text-anchor="'+anchor+'" font-family="var(--font-body)" font-size="11.5" fill="var(--color-neutral-500)">'+esc(caption)+'</text>');
+      out.push('<text x="'+lx+'" y="'+(cy-SK.LINE_UP).toFixed(1)+'" text-anchor="'+anchor+'" font-family="var(--font-heading)" font-weight="600" font-size="'+SK.FONT_MAIN+'" fill="var(--color-text)">'+esc(fitLabel(n.label,room,SK.FONT_MAIN))+'</text>');
+      out.push('<text x="'+lx+'" y="'+(cy+SK.LINE_DOWN).toFixed(1)+'" text-anchor="'+anchor+'" font-family="var(--font-body)" font-size="'+SK.FONT_SUB+'" fill="var(--color-neutral-500)">'+esc(fitLabel(caption,room,SK.FONT_SUB))+'</text>');
     });
 
     out.push("</svg>");
@@ -668,16 +696,10 @@ const PAGE = /* html */ `<!doctype html>
         sankey.links.map(function(l){return {from:l.from,to:l.to,value:l.valueCents}})
       );
       if(svg){
-        var s=panel("Cash flow","Where this month's income went");
-        // Rendered at the desktop's native 1240 units so the captions stay the
-        // same size they are there. That is wider than any phone, so it scrolls
-        // sideways rather than being squashed into illegibility.
-        var sc=el("div","sankey-scroll");
+        var s=panel("Cash flow","Where "+monthName(month)+"'s income went");
         var holder=el("div");
         holder.innerHTML=svg;   // built entirely from esc()'d strings
-        sc.appendChild(holder);
-        s.appendChild(sc);
-        s.appendChild(el("div","panel-sub","Swipe the diagram sideways to follow the flow."));
+        s.appendChild(holder);
         root.appendChild(s);
       }
     }
