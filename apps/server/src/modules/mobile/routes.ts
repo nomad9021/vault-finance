@@ -339,12 +339,22 @@ const PAGE = /* html */ `<!doctype html>
   // the two navigate identically. The viewer is read-only, so "More" carries
   // the reports summary instead of settings.
   var TABS=[
-    {id:"home", label:"Home", icon:"home", pages:[{id:"home", label:"Overview"}]},
-    {id:"money",label:"Money",icon:"wallet",pages:[{id:"accounts",label:"Accounts"},{id:"transactions",label:"Transactions"}]},
-    {id:"plan", label:"Plan", icon:"target",pages:[{id:"budgets",label:"Budgets"},{id:"bills",label:"Bills"}]},
-    {id:"grow", label:"Grow", icon:"trendUp",pages:[{id:"goals",label:"Goals"},{id:"investments",label:"Investments"}]}
+    {id:"home", label:"Home", icon:"home", pages:[{id:"home", label:"Overview"},{id:"insights",label:"Insights"}]},
+    {id:"money",label:"Money",icon:"wallet",pages:[{id:"accounts",label:"Accounts"},{id:"transactions",label:"Transactions"},{id:"subscriptions",label:"Subscriptions"}]},
+    {id:"plan", label:"Plan", icon:"target",pages:[{id:"budgets",label:"Budgets"},{id:"bills",label:"Bills"},{id:"giving",label:"Giving"}]},
+    {id:"grow", label:"Grow", icon:"trendUp",pages:[{id:"goals",label:"Goals"},{id:"investments",label:"Investments"},{id:"networth",label:"Net worth"}]}
   ];
   function tabOf(id){for(var i=0;i<TABS.length;i++)if(TABS[i].id===id)return TABS[i];return TABS[0]}
+  // Which tab owns a page, so an insight can carry you to the screen that
+  // explains it. Returns null for pages this read-only viewer doesn't have
+  // (the desktop's cash-flow planner, for one) — callers then render a plain
+  // row rather than a dead button.
+  function locate(pageId){
+    for(var i=0;i<TABS.length;i++)
+      for(var j=0;j<TABS[i].pages.length;j++)
+        if(TABS[i].pages[j].id===pageId)return {tab:TABS[i].id,page:pageId};
+    return null;
+  }
 
   // Where each screen was scrolled to. Backing out of a drill-in should return
   // you to the row you tapped, not to the top of a long list you then have to
@@ -1061,9 +1071,232 @@ const PAGE = /* html */ `<!doctype html>
     });
   }
 
+  async function renderInsights(root){
+    var d=await tryApi("/insights",{});
+    var list=d.insights||[];
+    if(!list.length){root.appendChild(empty("Nothing needs attention",
+      "Overspent budgets, underfunded bills and stalled goals appear here."));return}
+
+    var crit=d.criticalCount||0, warn=d.warningCount||0;
+    var hg=el("div","grid");
+    [["Urgent",String(crit),crit?"neg":"pos"],["Worth a look",String(warn),""]].forEach(function(r){
+      var c=el("div","col-6");var pp=el("div","panel");
+      pp.appendChild(statRow(r[0],r[1],r[2]));
+      c.appendChild(pp);hg.appendChild(c);
+    });
+    root.appendChild(hg);
+
+    // Same four buckets as the desktop, in the same order — worst first, so the
+    // top of the screen is always the thing most worth reading.
+    [["critical","Needs attention","neg"],["warning","Worth a look","neg"],
+     ["info","For information",""],["good","Going well","pos"]].forEach(function(g){
+      var items=list.filter(function(i){return i.severity===g[0]});
+      if(!items.length)return;
+      var p=panel(g[1],items.length+(items.length===1?" item":" items"));
+      items.forEach(function(i){
+        var where=locate(i.page);
+        // Tappable only when this viewer actually has the destination.
+        var wrap=el(where?"button":"div");
+        if(where){
+          wrap.className="list-row";
+          wrap.onclick=function(){ go(function(){ view={tab:where.tab,page:where.page,detail:null} }) };
+        }
+        wrap.style.marginBottom="var(--space-4)";
+        wrap.style.display="block";
+        wrap.style.textAlign="left";
+        wrap.style.width="100%";
+        var line=el("div","row-between t-sm");
+        line.appendChild(el("div","truncate t-medium",i.title));
+        if(i.amountCents!=null)
+          line.appendChild(el("div","num "+(g[2]||"t-tertiary"),fmt(i.amountCents)));
+        wrap.appendChild(line);
+        wrap.appendChild(el("div","t-xs t-tertiary",i.detail));
+        p.appendChild(wrap);
+      });
+      root.appendChild(p);
+    });
+  }
+
+  async function renderSubscriptions(root){
+    var d=await tryApi("/subscriptions",{});
+    var subs=d.subscriptions||[];
+    if(!subs.length){root.appendChild(empty("No recurring charges found",
+      "These are detected from your transaction history — nothing to enter by hand."));return}
+
+    var hg=el("div","grid");
+    [["Per month",fmt(d.monthlyTotalCents||0),""],["Per year",fmt(d.yearlyTotalCents||0),""]]
+      .forEach(function(r){
+        var c=el("div","col-6");var pp=el("div","panel");
+        pp.appendChild(statRow(r[0],r[1],r[2]));
+        c.appendChild(pp);hg.appendChild(c);
+      });
+    root.appendChild(hg);
+
+    function subRow(sc){
+      var wrap=el("div");wrap.style.marginBottom="var(--space-4)";
+      var line=el("div","row-between t-sm");
+      line.appendChild(el("div","truncate t-medium",sc.merchantName));
+      line.appendChild(el("div","list-row-amount",fmt(sc.amountCents)));
+      wrap.appendChild(line);
+      var bits=[sc.cadence,fmt(sc.monthlyCents)+"/mo",
+        (sc.stale?"was due ":"next ")+sc.nextExpectedAt];
+      wrap.appendChild(el("div","t-xs t-tertiary",bits.join(" · ")));
+      // The evidence behind the guess, so a wrong one is arguable rather than
+      // mysterious — same reasoning as the desktop page.
+      var notes=[];
+      if(sc.priceIncreaseCents!=null&&!sc.stale)notes.push("up "+fmt(sc.priceIncreaseCents)+" since last charge");
+      if(sc.billId)notes.push("tracked as a bill");
+      notes.push("from "+sc.occurrences+" charges · "+pct(sc.confidence)+" regular");
+      wrap.appendChild(el("div","t-xs "+(sc.priceIncreaseCents!=null&&!sc.stale?"neg":"t-tertiary"),
+        notes.join(" · ")));
+      return wrap;
+    }
+
+    var active=subs.filter(function(x){return !x.stale});
+    var stale=subs.filter(function(x){return x.stale});
+    if(active.length){
+      var p=panel("Active",active.length+" detected");
+      active.forEach(function(x){p.appendChild(subRow(x))});
+      root.appendChild(p);
+    }
+    if(stale.length){
+      var sp=panel("Possibly cancelled","Charged regularly, then stopped");
+      stale.forEach(function(x){sp.appendChild(subRow(x))});
+      root.appendChild(sp);
+    }
+  }
+
+  async function renderGiving(root){
+    var d=await tryApi("/giving",{});
+    var funds=d.funds||[];
+    if(!funds.length){root.appendChild(empty("No giving tracked",
+      "Recurring giving and gift funds you set up appear here."));return}
+
+    var hg=el("div","grid");
+    [["Giving · mo",fmt(d.monthlyGivingCents||0),""],
+     ["Gifts · mo",fmt(d.monthlyGiftCents||0),""],
+     ["Given this year",fmt(d.givenThisYearCents||0),"pos"]].forEach(function(r){
+      var c=el("div","col-4");var pp=el("div","panel");
+      pp.appendChild(statRow(r[0],r[1],r[2]));
+      c.appendChild(pp);hg.appendChild(c);
+    });
+    root.appendChild(hg);
+
+    var recurring=funds.filter(function(f){return f.kind==="giving"});
+    var gifts=funds.filter(function(f){return f.kind==="gift"});
+
+    if(recurring.length){
+      var p=panel("Recurring giving",recurring.length+(recurring.length===1?" commitment":" commitments"));
+      var list=el("div","list list-divided");
+      recurring.forEach(function(f){
+        var sub=[f.recipient||null,
+          f.givenThisYearCents>0?fmt(f.givenThisYearCents)+" given this year":null]
+          .filter(Boolean).join(" · ");
+        list.appendChild(listRow(f.name,sub||"per month",fmt(f.monthlyCents),""));
+      });
+      p.appendChild(list);root.appendChild(p);
+    }
+
+    if(gifts.length){
+      var gp=panel("Gift funds","Saving toward an occasion");
+      gifts.forEach(function(f){
+        var target=f.targetCents||0;
+        var funded=target>0&&f.savedCents>=target;
+        var behind=f.neededMonthlyCents!=null&&f.neededMonthlyCents>f.monthlyCents;
+        var wrap=el("div");wrap.style.marginBottom="var(--space-4)";
+        var line=el("div","row-between t-sm");
+        line.appendChild(el("div","truncate t-medium",f.name));
+        line.appendChild(el("div","list-row-amount",fmt(f.monthlyCents)+"/mo"));
+        wrap.appendChild(line);
+        var when=f.occasionDate?f.occasionDate+(f.daysUntilOccasion!=null&&f.daysUntilOccasion>=0
+          ? " · in "+f.daysUntilOccasion+"d" : ""):"no date set";
+        wrap.appendChild(el("div","t-xs t-tertiary",when));
+        if(target>0){
+          wrap.appendChild(bar(f.savedCents/target,funded?"var(--color-positive)":(f.color||null)));
+          // Being short with a date attached is the whole point of a gift fund,
+          // so say what it would actually take rather than only the progress.
+          var note=fmt(f.savedCents)+" of "+fmt(target)+" saved";
+          if(funded)note+=" · ready";
+          else if(behind)note+=" · needs "+fmt(f.neededMonthlyCents)+"/mo to be ready";
+          wrap.appendChild(el("div","t-xs "+(behind?"neg":"t-tertiary"),note));
+        }
+        gp.appendChild(wrap);
+      });
+      root.appendChild(gp);
+    }
+  }
+
+  async function renderNetWorth(root){
+    var accounts=(await tryApi("/accounts",{})).accounts||[];
+    if(!accounts.length){root.appendChild(empty("No accounts yet",
+      "Net worth is everything you own minus everything you owe."));return}
+    var points=(await tryApi("/cashflow/trends?months=12",{})).points||[];
+
+    var assets=accounts.filter(function(a){return !a.isLiability});
+    var debts=accounts.filter(function(a){return a.isLiability});
+    var assetTotal=assets.reduce(function(s,a){return s+a.balanceCents},0);
+    // Liability balances are stored negative; owed is the magnitude.
+    var owed=debts.reduce(function(s,a){return s+Math.abs(a.balanceCents)},0);
+    var net=assetTotal-owed;
+
+    var hist=points.map(function(p){return p.netWorthCents});
+    var last=hist.length?hist[hist.length-1]:net;
+    var prev=hist.length>1?hist[hist.length-2]:last;
+    var delta=last-prev;
+
+    var head=panel("Net worth",points.length?"last "+points.length+" months":null);
+    head.appendChild(el("div","stat-value",fmt(net)));
+    if(hist.length>1)head.appendChild(el("div","stat-delta "+(delta>=0?"pos":"neg"),
+      (delta>=0?"▲ ":"▼ ")+fmt(Math.abs(delta))+" this month"));
+    if(hist.length>=2){
+      var w=el("div");
+      w.innerHTML=spark(hist,project(hist,3),delta>=0?"var(--color-positive)":"var(--color-negative)");
+      head.appendChild(w);
+    }
+    root.appendChild(head);
+
+    var hg=el("div","grid");
+    [["Own",fmt(assetTotal),"pos"],["Owe",fmt(owed),owed?"neg":""]].forEach(function(r){
+      var c=el("div","col-6");var pp=el("div","panel");
+      pp.appendChild(statRow(r[0],r[1],r[2]));
+      c.appendChild(pp);hg.appendChild(c);
+    });
+    root.appendChild(hg);
+
+    // Grouped by account type so three savings accounts read as one line of the
+    // story, with the individual balances still underneath.
+    function breakdown(title,rows,total,color){
+      if(!rows.length)return;
+      var byType={};
+      rows.forEach(function(a){ (byType[a.type]=byType[a.type]||[]).push(a) });
+      var groups=Object.keys(byType).map(function(t){
+        return {type:t,list:byType[t],
+          total:byType[t].reduce(function(s,a){return s+Math.abs(a.balanceCents)},0)};
+      }).sort(function(a,b){return b.total-a.total});
+
+      var p=panel(title,fmt(total));
+      groups.forEach(function(g){
+        p.appendChild(barBlock(TYPE_LABEL[g.type]||g.type,fmt(g.total),
+          total>0?g.total/total:0,color,false));
+        var list=el("div","list list-divided");
+        g.list.sort(function(a,b){return Math.abs(b.balanceCents)-Math.abs(a.balanceCents)})
+          .forEach(function(a){
+            list.appendChild(listRow(a.name,a.institution||null,
+              fmt(Math.abs(a.balanceCents)),""));
+          });
+        p.appendChild(list);
+      });
+      root.appendChild(p);
+    }
+    breakdown("What you own",assets,assetTotal,"var(--color-positive)");
+    breakdown("What you owe",debts,owed,"var(--color-negative)");
+  }
+
   var RENDERERS={
     home:renderHome, accounts:renderAccounts, transactions:renderTransactions,
-    budgets:renderBudgets, bills:renderBills, goals:renderGoals, investments:renderInvestments
+    insights:renderInsights, subscriptions:renderSubscriptions,
+    budgets:renderBudgets, bills:renderBills, giving:renderGiving,
+    goals:renderGoals, investments:renderInvestments, networth:renderNetWorth
   };
 
   // Restoring has to wait for the content to exist — an empty scroller has no
