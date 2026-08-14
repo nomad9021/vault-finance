@@ -217,11 +217,18 @@
     transform var(--dur) var(--ease),
     border-color var(--dur) var(--ease);
 }
-.clickable:hover {
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
+@media (hover: hover) {
+  .clickable:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+  }
 }
-.clickable:active { transform: none; }
+/* Presses read as the surface taking weight, not merely as "hover, cancelled" —
+   which is all this was on touch, where there is no hover to cancel. */
+.clickable:active {
+  transform: scale(0.985);
+  transition-duration: 0s;
+}
 
 .hr {
   height: 1px;
@@ -298,6 +305,48 @@
 .btn-ghost:hover:not(:disabled) {
   background: color-mix(in srgb, var(--color-text) 8%, transparent);
   color: var(--content-primary);
+}
+.btn-ghost:active:not(:disabled) {
+  background: color-mix(in srgb, var(--color-text) 12%, transparent);
+  color: var(--content-primary);
+  transition-duration: 0s;
+}
+
+/* Translucent chrome: a frosted pane rather than a painted control. Used for
+   the header's account avatar and Ask-AI button, which sit on the blurred
+   header bar and shouldn't compete with the page content behind it. */
+.btn-glass {
+  background: color-mix(in srgb, var(--color-text) 10%, transparent);
+  border-color: color-mix(in srgb, var(--color-text) 15%, transparent);
+  color: var(--content-primary);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.btn-glass:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-text) 17%, transparent);
+  border-color: color-mix(in srgb, var(--color-text) 24%, transparent);
+}
+.btn-glass:active:not(:disabled) {
+  background: color-mix(in srgb, var(--color-text) 22%, transparent);
+  transition-duration: 0s;
+}
+
+/* Same treatment for the avatar, which otherwise renders as a solid disc of
+   the user's colour. The colour survives as a faint tint via --avatar-tint. */
+.avatar.avatar-glass {
+  background: color-mix(in srgb, var(--avatar-tint, var(--color-text)) 22%, transparent);
+  /* .avatar sets a dark ink for its solid disc and is declared later in this
+     file, so at equal specificity it would win and leave dark text on a
+     translucent ground. Qualifying with .avatar settles it by specificity
+     rather than by source order. */
+  color: var(--content-primary);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-text) 18%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: background var(--dur-fast) var(--ease);
+}
+.avatar.avatar-glass:hover {
+  background: color-mix(in srgb, var(--avatar-tint, var(--color-text)) 32%, transparent);
 }
 
 .btn-danger { color: var(--color-negative); border-color: var(--color-negative); }
@@ -527,11 +576,27 @@ select.input {
   font: inherit;
   color: inherit;
   border-radius: var(--radius-md);
-  transition: background var(--dur-fast) var(--ease);
+  transition:
+    background var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease-out);
 }
 button.list-row, .list-row[role="button"] { cursor: pointer; }
-button.list-row:hover, .list-row-hover:hover {
-  background: color-mix(in srgb, var(--color-text) 5%, transparent);
+/* Hover is a pointer-only affordance. On touch it "sticks" after a tap and
+   leaves the row looking selected long after you've moved on, so it is gated
+   to devices that actually have a pointer. Touch gets the press state below. */
+@media (hover: hover) {
+  button.list-row:hover, .list-row-hover:hover {
+    background: color-mix(in srgb, var(--color-text) 5%, transparent);
+  }
+}
+/* Feedback belongs on pointer-*down*, not on release. These rows open a screen
+   that has to fetch before it can paint, so without this a tap looked ignored
+   for as long as the network took. `transition-duration: 0s` makes the press
+   instant while the release still eases back through the rule above. */
+button.list-row:active, .list-row[role="button"]:active {
+  background: color-mix(in srgb, var(--color-text) 9%, transparent);
+  transform: scale(0.985);
+  transition-duration: 0s;
 }
 .list-divided > .list-row + .list-row,
 .row-div + .row-div { border-top: 1px solid var(--hairline); }
@@ -788,7 +853,13 @@ button.list-row:hover, .list-row-hover:hover {
   -webkit-tap-highlight-color: transparent;
 }
 .tab-item[data-active] { color: var(--color-accent); }
-.tab-item-icon { width: 22px; height: 22px; display: grid; place-items: center; }
+.tab-item-icon {
+  width: 22px; height: 22px; display: grid; place-items: center;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+.tab-item:active { color: var(--content-secondary); }
+.tab-item:active .tab-item-icon { transform: scale(0.86); transition-duration: 0s; }
+.tab-item[data-active]:active { color: var(--color-accent); }
 
 /* In-page tabs — used by the consolidated Budgets / Cash Flow pages. */
 .tabs {
@@ -813,7 +884,10 @@ button.list-row:hover, .list-row-hover:hover {
   white-space: nowrap;
   transition: color var(--dur-fast) var(--ease);
 }
-.tab:hover { color: var(--content-primary); }
+@media (hover: hover) {
+  .tab:hover { color: var(--content-primary); }
+}
+.tab:active { color: var(--content-primary); opacity: 0.6; transition-duration: 0s; }
 .tab[data-active] { color: var(--content-primary); font-weight: 600; }
 .tab[data-active]::after {
   content: "";
@@ -839,7 +913,9 @@ button.list-row:hover, .list-row-hover:hover {
   font-weight: 600;
   padding: var(--space-2) 0;
   min-height: 40px;
+  transition: opacity var(--dur-fast) var(--ease-out);
 }
+.back-btn:active { opacity: 0.5; transition-duration: 0s; }
 
 /* ══════════════════════════════════════════════════════════════════════════
    Feedback
