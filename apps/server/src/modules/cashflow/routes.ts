@@ -658,6 +658,41 @@ export default async function cashflowRoutes(app: FastifyInstance) {
     emitGivingBranch("giving:hub", "Giving", "#b47ef0", givingMonthlyTotal, givingRecurring);
     emitGivingBranch("gifts:hub", "Gift savings", "#ec6a9c", giftsMonthlyTotal, givingGifts);
 
+    // A Sankey only tells the truth while every node's inflow equals its
+    // outflow. Plans are not capped by income — you can budget more bills, debt,
+    // savings and giving than you actually earn — and when that happens the
+    // hub's outflows exceed the income feeding it, so the diagram silently draws
+    // branches far thicker than the income bar they claim to come from.
+    //
+    // Rather than hide it, name it: the gap becomes its own income-side source.
+    // The hub balances again, and the diagram says the plan needs money that
+    // isn't arriving.
+    const committedCents =
+      totalSpendingCents +
+      billsMonthlyTotal +
+      debtMonthlyTotal +
+      savingsMonthlyTotal +
+      givingMonthlyTotal +
+      giftsMonthlyTotal;
+    const shortfallCents = Math.max(0, committedCents - totalIncomeCents);
+    if (shortfallCents > 0) {
+      nodes.push({
+        id: "income:shortfall",
+        label: "Not covered by income",
+        valueCents: shortfallCents,
+        color: "#e25c5c",
+        depth: 0,
+        kind: "income",
+        categoryId: null,
+        accountId: null,
+        section: "income",
+        entityId: null,
+      });
+      links.push({ from: "income:shortfall", to: "hub", valueCents: shortfallCents });
+      const hub = nodes.find((n) => n.id === "hub");
+      if (hub) hub.valueCents = totalIncomeCents + shortfallCents;
+    }
+
     return { month, nodes, links, totalIncomeCents, totalSpendingCents };
   });
 }

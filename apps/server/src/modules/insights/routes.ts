@@ -10,6 +10,7 @@ import {
   savingsGoals,
   transactions,
 } from "../../db/schema.js";
+import { daysUntilDue } from "../bills/due.js";
 
 /**
  * Rule-based insights.
@@ -140,11 +141,12 @@ export default async function insightRoutes(app: FastifyInstance) {
     // ── bills due but not funded ──
     const billRows = await app.db.select().from(bills).where(isNull(bills.archivedAt));
     const today = new Date();
-    const todayDay = today.getUTCDate();
     for (const bill of billRows) {
-      const daysAway = bill.dueDay - todayDay;
-      const dueSoon = daysAway >= 0 && daysAway <= 7;
-      if (!dueSoon || bill.autopay) continue;
+      // Shared with the bills endpoint so the two can't disagree about when a
+      // bill lands — subtracting day-of-month numbers silently skips every bill
+      // that falls early next month.
+      const daysAway = daysUntilDue(bill.dueDay, today);
+      if (daysAway > 7 || bill.autopay) continue;
       const short = bill.amountCents - bill.savedCents;
       if (short > 0) {
         insights.push({

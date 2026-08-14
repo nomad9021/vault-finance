@@ -28,9 +28,10 @@ function shortDate(iso: string): string {
  */
 export function SubscriptionsPage({ onNavigate }: { onNavigate: Navigate }) {
   const client = useApp((s) => s.client);
-  const { data, loading } = useData(() => client.subscriptions(), [client]);
+  const { data, loading, reload: reloadSubs } = useData(() => client.subscriptions(), [client]);
   const { data: billData, reload: reloadBills } = useData(() => client.bills(), [client]);
   const [tracking, setTracking] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   if (loading && !data) return <Spinner label="Scanning for recurring charges" />;
 
@@ -44,6 +45,7 @@ export function SubscriptionsPage({ onNavigate }: { onNavigate: Navigate }) {
   // of the cash-flow diagram and gets due-date reminders.
   const trackAsBill = async (sub: Subscription) => {
     setTracking(sub.id);
+    setError(null);
     try {
       await client.createBill({
         name: sub.merchantName,
@@ -53,7 +55,15 @@ export function SubscriptionsPage({ onNavigate }: { onNavigate: Navigate }) {
         ...(sub.categoryId ? { categoryId: sub.categoryId } : {}),
         ...(sub.accountId ? { accountId: sub.accountId } : {}),
       });
+      // The "tracked as a bill" badge is computed server-side inside the
+      // subscriptions response, so refreshing only the bills list left the row
+      // looking untouched — the click appeared to do nothing at all.
+      reloadSubs();
       reloadBills();
+    } catch (err) {
+      // Without this the rejection vanished into the void and the button simply
+      // stopped spinning, which reads as "it worked".
+      setError(err instanceof Error ? err.message : "Couldn't track that as a bill.");
     } finally {
       setTracking(null);
     }
@@ -61,6 +71,11 @@ export function SubscriptionsPage({ onNavigate }: { onNavigate: Navigate }) {
 
   return (
     <div className="page">
+      {error && (
+        <div role="alert" className="panel" style={{ color: "var(--color-negative)" }}>
+          {error}
+        </div>
+      )}
       <div className="page-head">
         <div className="grid" style={{ flex: 1, minWidth: 0 }}>
           <div className="col-4">

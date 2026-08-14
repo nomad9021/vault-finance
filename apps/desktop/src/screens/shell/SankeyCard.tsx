@@ -155,13 +155,21 @@ function FocusPanel({
   // Group headers and aggregates ("Bills", "Total income", "Unspent") have no
   // transactions of their own — skip the request rather than showing a spinner
   // that resolves to nothing.
+  //
+  // Income is explicitly not in that set: an income source is an aggregate of
+  // real deposits and listing them is the whole point of clicking it. Treating
+  // every non-spending section as a header silently emptied that panel.
+  const isPlannedHeader =
+    node.section === "bills" ||
+    node.section === "debt" ||
+    node.section === "savings" ||
+    node.section === "giving";
   const isAggregate =
-    node.kind === "hub" ||
-    node.kind === "saved" ||
-    (node.section !== undefined && node.section !== "spending" && !node.entityId);
+    node.kind === "hub" || node.kind === "saved" || (isPlannedHeader && !node.entityId);
 
   useEffect(() => {
     if (isAggregate || (!node.accountId && !node.categoryId && node.section !== "spending")) {
+      // "Other income" and the shortfall stub genuinely have no rows behind them.
       setTxns([]);
       return;
     }
@@ -316,6 +324,11 @@ function SectionEditor({
 }) {
   const client = useApp((s) => s.client);
   const [amount, setAmount] = useState("");
+  // What's currently stored. Tracked separately from the fetched entity because
+  // saving doesn't refetch it — comparing against the stale fetched value left
+  // the form permanently "dirty", so Save stayed lit and the confirmation never
+  // appeared even though the write had succeeded.
+  const [baseline, setBaseline] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -391,7 +404,9 @@ function SectionEditor({
   // Hydrate the field once the entity arrives; keep whatever the user has typed
   // if they got there first.
   useEffect(() => {
-    if (entity) setAmount((entity.cents / 100).toFixed(2));
+    if (!entity) return;
+    setAmount((entity.cents / 100).toFixed(2));
+    setBaseline(entity.cents);
   }, [entity]);
 
   const { data: accountData } = useData(
@@ -406,7 +421,7 @@ function SectionEditor({
   if (!entity) return null;
 
   const cents = parseAmountToCents(amount);
-  const dirty = cents !== null && cents !== entity.cents;
+  const dirty = cents !== null && cents !== baseline;
 
   const save = async () => {
     if (cents === null || busy) return;
@@ -414,6 +429,7 @@ function SectionEditor({
     setError(null);
     try {
       await entity.save(cents);
+      setBaseline(cents);
       setSaved(true);
       onChanged?.();
     } catch (err) {

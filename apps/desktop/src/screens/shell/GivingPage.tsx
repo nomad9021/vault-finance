@@ -362,7 +362,10 @@ function GivingDialog({
         kind,
         recipient: recipient.trim() || null,
         monthlyCents,
-        savedCents,
+        // Only write the set-aside when it's ours to write. A linked fund shows
+        // the account's balance instead, and sending 0 for it would quietly
+        // destroy the manual figure the fund would fall back to if unlinked.
+        ...(accountId ? {} : { savedCents }),
         targetCents: kind === "gift" ? (targetCents ?? null) : null,
         occasionDate: kind === "gift" ? occasionDate || null : null,
         accountId: accountId || null,

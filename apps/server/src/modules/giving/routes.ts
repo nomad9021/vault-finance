@@ -122,6 +122,17 @@ export default async function givingRoutes(app: FastifyInstance) {
 
   app.get("/giving", async () => {
     const funds = await listAll();
+    // Per fund, givenThisYearCents is "spending in this fund's category" — so
+    // two funds pointed at the same category each report all of it. Summing
+    // those would bill the household twice for money that left once, so the
+    // total counts each category a single time.
+    const countedCategories = new Set<string>();
+    let givenThisYearCents = 0;
+    for (const fund of funds) {
+      if (!fund.categoryId || countedCategories.has(fund.categoryId)) continue;
+      countedCategories.add(fund.categoryId);
+      givenThisYearCents += fund.givenThisYearCents;
+    }
     return {
       funds,
       monthlyGivingCents: funds
@@ -131,7 +142,7 @@ export default async function givingRoutes(app: FastifyInstance) {
         .filter((f) => f.kind === "gift")
         .reduce((s, f) => s + f.monthlyCents, 0),
       totalSavedCents: funds.reduce((s, f) => s + f.savedCents, 0),
-      givenThisYearCents: funds.reduce((s, f) => s + f.givenThisYearCents, 0),
+      givenThisYearCents,
     };
   });
 
