@@ -27,7 +27,6 @@ export function Sidebar({ page, onNavigate }: { page: PageId; onNavigate: (p: Pa
     >
       <div style={{ padding: "var(--space-5) var(--space-4) var(--space-4)" }}>
         <div className="brand">
-          <AppMark size={28} />
           <div style={{ minWidth: 0 }}>
             <div className="brand-name truncate">Vault Finance</div>
             <div className="brand-sub">Household finance</div>

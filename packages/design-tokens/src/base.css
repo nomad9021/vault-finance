@@ -175,11 +175,47 @@ button, input, select, textarea {
   100% { transform: scale(1); opacity: 1; }
 }
 
+/* Reduced motion is not "no feedback" — it is feedback without the vestibular
+   part. Movement (translate, scale, parallax) goes; the cues that tell you
+   something actually changed — colour, opacity, elevation — stay, at speed. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+    transition-property: opacity, color, background-color, border-color, box-shadow !important;
+    transition-duration: var(--dur-fast) !important;
   }
+  /* A screen change still has to register as a change, so the rising entrance
+     becomes a plain cross-fade rather than disappearing altogether. */
+  .page { animation: fadeIn var(--dur) var(--ease) both !important; }
+}
+
+/* Frosted chrome becomes frosted-solid: the blur is the part that costs
+   legibility, so raise the opacity and drop it rather than thinning it. */
+@media (prefers-reduced-transparency: reduce) {
+  .tabbar, .app-header, .sheet {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--color-surface) !important;
+  }
+  /* Scrims are dimming, not chrome — they must stay see-through or they stop
+     being a scrim. Only the blur goes; the dim deepens to compensate. */
+  .scrim, .palette-backdrop {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: color-mix(in srgb, #000 62%, transparent) !important;
+  }
+}
+
+/* High contrast wants defined edges, not soft ones: solid grounds and a
+   border that is actually visible against them. */
+@media (prefers-contrast: more) {
+  .tabbar, .app-header, .sheet, .panel {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: var(--color-surface) !important;
+    border-color: var(--content-secondary) !important;
+  }
+  .hr, .tabs { border-color: var(--content-tertiary); }
 }

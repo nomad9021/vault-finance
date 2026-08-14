@@ -2,7 +2,6 @@ import { Avatar, Button, Icon } from "@vault/ui";
 import { useEffect, useRef, useState } from "react";
 import type { LayoutMode } from "../../lib/useLayout.js";
 import { useApp } from "../../state/store.js";
-import { AppMark } from "../AuthLayout.js";
 import type { PageId } from "./nav.js";
 
 export function Header({
@@ -42,8 +41,6 @@ export function Header({
   return (
     <header className="app-header">
       <div className="row" style={{ minWidth: 0, gap: "var(--space-3)" }}>
-        {/* At narrow widths the sidebar is gone, so the header carries the mark. */}
-        {narrow && <AppMark size={24} />}
         <h1 className="truncate" style={{ font: "inherit", fontWeight: 600, fontSize: "var(--text-lg)", margin: 0 }}>
           {title}
         </h1>
@@ -62,7 +59,7 @@ export function Header({
         )}
 
         {aiVisible && !narrow && (
-          <Button variant="primary" icon="sparkle" onClick={() => onNavigate("assistant")}>
+          <Button variant="glass" icon="sparkle" onClick={() => onNavigate("assistant")}>
             Ask AI
           </Button>
         )}
@@ -73,6 +70,7 @@ export function Header({
             color={user?.avatarColor ?? "var(--color-accent)"}
             size={32}
             title="Account"
+            translucent
             onClick={() => setMenuOpen((v) => !v)}
           />
           {menuOpen && (

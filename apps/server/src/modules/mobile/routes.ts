@@ -15,7 +15,7 @@ const ICON_VER = "3";
 // Bump whenever the shared stylesheet changes — /vault.css is served
 // `immutable` for a week, so a phone that already loaded the page will keep the
 // old CSS until this URL changes.
-const CSS_VER = "6";
+const CSS_VER = "7";
 
 /**
  * A tiny, dependency-free, **read-only** phone viewer served on the same origin
@@ -114,22 +114,59 @@ const PAGE = /* html */ `<!doctype html>
   /* Phone shell geometry only — every colour, size and radius below comes
      from the shared token layer. Nothing here re-defines the look. */
   body { overscroll-behavior-y: none; }
-  #app { display: flex; flex-direction: column; height: 100dvh; }
+  /* The chrome floats *over* the content instead of boxing it in: the scroller
+     spans the full height and the bars sit on top of it. That is the only way
+     their translucency means anything — a bar in the flex flow has nothing but
+     page background behind it, so the blur blurs nothing. Their measured
+     heights come back as --m-head-h / --m-foot-h (set in JS) and become the
+     scroller's padding, so nothing is ever trapped underneath. */
+  #app { position: relative; height: 100dvh; overflow: hidden; }
   #scroll {
-    flex: 1;
+    position: absolute;
+    inset: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
-    padding: var(--space-4) var(--space-4) var(--space-6);
+    padding:
+      calc(var(--m-head-h, 56px) + var(--space-4))
+      var(--space-4)
+      calc(var(--m-foot-h, 64px) + var(--space-6));
   }
+  /* Enter and exit along the same path. A drill-in arrives from the right, so
+     backing out of it leaves to the right — the gesture that got you in is
+     visibly the one being undone. Lateral moves keep the neutral rise. */
+  @keyframes pageInRight { from { opacity: 0; transform: translate3d(20px,0,0); } to { opacity: 1; transform: none; } }
+  @keyframes pageInLeft { from { opacity: 0; transform: translate3d(-20px,0,0); } to { opacity: 1; transform: none; } }
   #scroll > .page { animation: fadeUp var(--dur) var(--ease-out) both; }
+  /* Horizontal pans belong to the back gesture — but only on a drill-in, which
+     is the only place that gesture exists. touch-action intersects down the
+     ancestor chain, so scoping this to the page (rather than the scroller)
+     is what keeps the Sankey's own sideways scroller draggable on Home. */
+  #scroll > .page[data-detail] { touch-action: pan-y; }
+  #scroll > .page[data-dir="in"] { animation: pageInRight var(--dur) var(--ease-out) both; }
+  #scroll > .page[data-dir="out"] { animation: pageInLeft var(--dur) var(--ease-out) both; }
   .m-head {
-    flex: none;
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: var(--z-sticky);
     display: flex;
     align-items: center;
     gap: var(--space-3);
     padding: max(env(safe-area-inset-top), var(--space-3)) var(--space-4) var(--space-3);
-    border-bottom: 1px solid var(--color-divider);
+    background: color-mix(in srgb, var(--color-bg) 72%, transparent);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
   }
+  /* A scroll edge, not a hairline: the material fades out where it meets the
+     content instead of ruling a line across the screen. */
+  .m-head::after {
+    content: "";
+    position: absolute;
+    left: 0; right: 0; top: 100%;
+    height: 12px;
+    pointer-events: none;
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--color-bg) 72%, transparent), transparent);
+  }
+  #tabbar { position: absolute; bottom: 0; left: 0; right: 0; z-index: var(--z-sticky); }
   .mark {
     width: 26px; height: 26px; border-radius: 8px; flex: none;
     background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-section-glow) 100%);
@@ -143,6 +180,8 @@ const PAGE = /* html */ `<!doctype html>
     background: none; border: 1px solid var(--color-divider); cursor: pointer; color: inherit;
   }
   .prof[data-on] { border-color: var(--color-accent); background: var(--color-accent-soft); }
+  .prof { transition: transform var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease); }
+  .prof:active { transform: scale(0.96); transition-duration: 0s; }
   #lock {
     position: fixed; inset: 0; z-index: var(--z-modal);
     background: var(--color-bg); display: flex; flex-direction: column;
@@ -307,13 +346,43 @@ const PAGE = /* html */ `<!doctype html>
   ];
   function tabOf(id){for(var i=0;i<TABS.length;i++)if(TABS[i].id===id)return TABS[i];return TABS[0]}
 
+  // Where each screen was scrolled to. Backing out of a drill-in should return
+  // you to the row you tapped, not to the top of a long list you then have to
+  // find your place in again — the way back has to undo the way in exactly.
+  var scrollMem={};
+  function viewKey(v){ return v.tab+"/"+v.page+(v.detail?"/"+v.detail.type+":"+v.detail.id:"") }
+  // Every navigation goes through here so the outgoing screen's position is
+  // banked before the model changes underneath it.
+  function go(mutate,dir){
+    scrollMem[viewKey(view)]=$("scroll").scrollTop;
+    mutate();
+    render(dir);
+  }
+
+  // The floating bars overlay the scroller, so their real heights have to
+  // become its padding. Measured rather than assumed: the safe-area inset and
+  // the user's text-size setting both move them.
+  // Guarded on purpose: a resize while signed out measures hidden bars as 0px,
+  // and writing that once would poison the custom property for good — the
+  // padding falls back only when the variable is *unset*, never when it is a
+  // valid 0px. Content would then sit underneath the chrome permanently.
+  function measureChrome(){
+    if($("app").hidden) return;
+    var st=document.documentElement.style;
+    var head=document.querySelector(".m-head"), foot=$("tabbar");
+    if(head&&head.offsetHeight) st.setProperty("--m-head-h", head.offsetHeight+"px");
+    if(foot&&foot.offsetHeight) st.setProperty("--m-foot-h", foot.offsetHeight+"px");
+  }
+  window.addEventListener("resize", measureChrome);
+  window.addEventListener("orientationchange", measureChrome);
+
   function buildTabs(){
     var bar=$("tabbar");bar.textContent="";
     TABS.forEach(function(t){
       var b=el("button","tab-item");
       var ic=el("span","tab-item-icon");ic.innerHTML=svgIcon(ICONS[t.icon]);
       b.appendChild(ic);b.appendChild(document.createTextNode(t.label));
-      b.onclick=function(){ view={tab:t.id,page:t.pages[0].id,detail:null}; render() };
+      b.onclick=function(){ go(function(){ view={tab:t.id,page:t.pages[0].id,detail:null} }) };
       b.dataset.tab=t.id;
       bar.appendChild(b);
     });
@@ -767,7 +836,7 @@ const PAGE = /* html */ `<!doctype html>
         list.appendChild(listRow(a.name,
           [a.institution,a.mask?"••"+a.mask:null].filter(Boolean).join(" · ")||null,
           fmt(a.balanceCents),a.balanceCents<0?"neg":"",
-          function(){ view.detail={type:"account",id:a.id,name:a.name}; render() }));
+          function(){ go(function(){ view.detail={type:"account",id:a.id,name:a.name} }, "in") }));
       });
       p.appendChild(list);root.appendChild(p);
     });
@@ -831,7 +900,7 @@ const PAGE = /* html */ `<!doctype html>
     var back=el("button","back-btn");
     back.innerHTML=svgIcon(ICONS.chevronLeft,17);
     back.appendChild(document.createTextNode(" Accounts"));
-    back.onclick=function(){ view.detail=null; render() };
+    back.onclick=function(){ go(function(){ view.detail=null }, "out") };
     root.appendChild(back);
 
     var res=await tryApi("/transactions?limit=100&accountId="+encodeURIComponent(detail.id),{});
@@ -992,7 +1061,14 @@ const PAGE = /* html */ `<!doctype html>
     budgets:renderBudgets, bills:renderBills, goals:renderGoals, investments:renderInvestments
   };
 
-  async function render(){
+  // Restoring has to wait for the content to exist — an empty scroller has no
+  // height to scroll, so setting scrollTop before the paint silently clamps to 0.
+  function restoreScroll(root,want){
+    if(!want)return;
+    requestAnimationFrame(function(){ root.scrollTop=want });
+  }
+
+  async function render(dir){
     var tab=tabOf(view.tab);
     if(!view.page||!tab.pages.some(function(p){return p.id===view.page}))view.page=tab.pages[0].id;
     syncTabs();
@@ -1001,15 +1077,25 @@ const PAGE = /* html */ `<!doctype html>
     var root=$("scroll");
     root.textContent="";
     var page=el("div","page");
+    if(dir)page.dataset.dir=dir;
+    if(view.detail)page.dataset.detail="1";
+    // The entrance keyframes fill forwards, and a filling animation outranks
+    // inline styles — which would leave the swipe gesture below unable to move
+    // this element at all. Once it has landed the animation is dropped so the
+    // page is plain, transformable content again.
+    page.addEventListener("animationend", function(){ page.style.animation="none" });
     root.appendChild(page);
-    $("scroll").scrollTop=0;
+    var want = dir==="out" ? (scrollMem[viewKey(view)]||0) : 0;
+    root.scrollTop=0;
+    measureChrome();
 
     if(view.detail){
       await renderAccountDetail(page,view.detail);
+      restoreScroll(root,want);
       return;
     }
 
-    var strip=pageTabs(tab,view.page,function(id){view.page=id;render()});
+    var strip=pageTabs(tab,view.page,function(id){ go(function(){ view.page=id }) });
     if(strip)page.appendChild(strip);
 
     var body=el("div","stack");
@@ -1026,7 +1112,124 @@ const PAGE = /* html */ `<!doctype html>
       fresh.appendChild(el("div","t-xs t-tertiary",
         "Nothing here is stored on your phone. Locks when you leave; signs out after ~4 min away."));
     }
+    restoreScroll(root,want);
   }
+
+
+  // ── swipe back ──────────────────────────────────────────────────────────
+  // A drill-in that you can only leave by hitting a small target in the corner
+  // is a screen you are held in. Dragging from the left edge pulls it back out
+  // along the exact path it arrived on.
+  //
+  // Springs rather than CSS transitions, because a transition cannot be caught
+  // mid-flight: this one starts from wherever the page currently *is* and
+  // inherits whatever velocity the finger left behind, so grabbing a page that
+  // is already flying away and pulling it back is continuous rather than a cut.
+  function spring(from,to,vel,onFrame,onDone,damping,response){
+    var z=damping==null?1:damping, w=2*Math.PI/(response==null?0.4:response);
+    var x=from, v=vel, last=performance.now(), raf=0, dead=false;
+    function step(now){
+      var dt=Math.min((now-last)/1000,1/30); last=now;
+      v+=(-w*w*(x-to)-2*z*w*v)*dt;
+      x+=v*dt;
+      if(Math.abs(x-to)<0.5&&Math.abs(v)<12){ onFrame(to); if(onDone)onDone(); return }
+      onFrame(x);
+      raf=requestAnimationFrame(step);
+    }
+    raf=requestAnimationFrame(step);
+    return {
+      cancel:function(){ if(!dead){dead=true;cancelAnimationFrame(raf)} },
+      x:function(){return x}, v:function(){return v}
+    };
+  }
+
+  // Apple's projection curve (Designing Fluid Interfaces) — where a flick would
+  // coast to rest, so a fast short flick commits and a slow long drag does not.
+  function projectEnd(v){ var d=0.998; return (v/1000)*d/(1-d) }
+
+  // Past the left edge there is nothing to reveal, so resistance builds instead
+  // of the page simply stopping dead against an invisible wall.
+  function rubberband(over,dim){ var c=0.55; return (over*dim*c)/(dim+c*Math.abs(over)) }
+
+  var drag=null, backAnim=null;
+
+  function setPageX(page,x){
+    var w=window.innerWidth||1;
+    page.style.transform = x ? "translate3d("+x.toFixed(2)+"px,0,0)" : "";
+    // The page thins as it leaves so the layer underneath reads as arriving,
+    // rather than one opaque slab sliding off another.
+    page.style.opacity = String(Math.max(0, 1 - (Math.max(0,x)/w)*0.6));
+  }
+
+  function endBack(page){
+    page.style.transform=""; page.style.opacity="";
+    go(function(){ view.detail=null }, "out");
+  }
+
+  $("app").addEventListener("pointerdown", function(e){
+    if(!token || !view.detail) return;          // only a drill-in can be backed out of
+    if(e.pointerType==="mouse") return;
+    if(e.clientX > 28) return;                  // edge gesture, same as the OS
+    var page=$("scroll").firstChild; if(!page) return;
+    // Interrupting a settle picks up its live position and speed — never the
+    // value it was heading toward, which is what makes a grab jump.
+    var x0=0, v0=0;
+    if(backAnim){ x0=backAnim.x(); v0=backAnim.v(); backAnim.cancel(); backAnim=null; }
+    drag={ id:e.pointerId, page:page, startX:e.clientX, startY:e.clientY,
+           base:x0, x:x0, v:v0, axis:0,
+           hist:[{t:performance.now(), x:e.clientX}] };
+    try{ $("app").setPointerCapture(e.pointerId) }catch(err){}
+  });
+
+  $("app").addEventListener("pointermove", function(e){
+    if(!drag || e.pointerId!==drag.id) return;
+    var dx=e.clientX-drag.startX, dy=e.clientY-drag.startY;
+    // Detect both plausible gestures, then commit once intent is clear —
+    // roughly 10px of hysteresis, so a vertical scroll is never stolen.
+    if(!drag.axis){
+      if(Math.abs(dx)<10 && Math.abs(dy)<10) return;
+      drag.axis = Math.abs(dx) > Math.abs(dy) ? 1 : -1;
+      if(drag.axis===-1){ drag=null; return }
+    }
+    var now=performance.now();
+    drag.hist.push({t:now,x:e.clientX});
+    if(drag.hist.length>5) drag.hist.shift();
+
+    var w=window.innerWidth||1;
+    var raw=drag.base+dx;
+    drag.x = raw>=0 ? raw : -rubberband(-raw, w);
+    setPageX(drag.page, drag.x);
+  });
+
+  function releaseBack(e){
+    if(!drag || e.pointerId!==drag.id) return;
+    var d=drag; drag=null;
+    try{ $("app").releasePointerCapture(d.id) }catch(err){}
+    if(!d.axis){ return }
+
+    // Velocity from the last few samples, not the final pair — one stray event
+    // at release should not decide the outcome.
+    var h=d.hist, first=h[0], last=h[h.length-1];
+    var dt=(last.t-first.t)/1000;
+    var v = dt>0 ? (last.x-first.x)/dt : 0;
+
+    var w=window.innerWidth||1;
+    // Commit on where the flick is *going*, not where the finger stopped.
+    var projected=d.x+projectEnd(v);
+    var commit = projected > w*0.4;
+
+    if(commit){
+      // Bounce only because a throw preceded it; the handoff keeps the finger's
+      // own speed so there is no seam between dragging and animating.
+      backAnim=spring(d.x, w, v, function(x){ setPageX(d.page,x) },
+        function(){ backAnim=null; endBack(d.page) }, 0.9, 0.32);
+    }else{
+      backAnim=spring(d.x, 0, v, function(x){ setPageX(d.page,x) },
+        function(){ backAnim=null; d.page.style.transform=""; d.page.style.opacity="" }, 1, 0.35);
+    }
+  }
+  $("app").addEventListener("pointerup", releaseBack);
+  $("app").addEventListener("pointercancel", releaseBack);
 
   $("signin").onclick=signin;
   $("pw").addEventListener("keydown",function(e){if(e.key==="Enter")signin()});
