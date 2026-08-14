@@ -21,14 +21,18 @@ import type { IconName } from "@vault/ui";
 
 export type PageId =
   | "dashboard"
+  | "insights"
   | "accounts"
   | "transactions"
   | "income"
+  | "subscriptions"
   | "budgets"
   | "bills"
   | "cashflow"
+  | "giving"
   | "investments"
   | "goals"
+  | "networth"
   | "reports"
   | "assistant"
   | "settings";
@@ -67,6 +71,13 @@ export const NAV_GROUPS: NavGroup[] = [
         title: "Dashboard",
         keywords: "overview home summary net worth",
       },
+      {
+        id: "insights",
+        label: "Insights",
+        icon: "alert",
+        title: "Insights",
+        keywords: "alerts warnings overspent attention what needs doing",
+      },
     ],
   },
   {
@@ -94,6 +105,13 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: "income",
         title: "Income",
         keywords: "paycheck salary earnings deposits",
+      },
+      {
+        id: "subscriptions",
+        label: "Subscriptions",
+        icon: "refresh",
+        title: "Subscriptions",
+        keywords: "recurring charges streaming memberships cancel price increase",
       },
     ],
   },
@@ -125,6 +143,13 @@ export const NAV_GROUPS: NavGroup[] = [
         // The debt payoff planner moved here from Savings Goals.
         keywords: "income vs spending trends debt payoff snowball avalanche",
       },
+      {
+        id: "giving",
+        label: "Giving",
+        icon: "gift",
+        title: "Giving & Gifts",
+        keywords: "charity tithe donations gifts presents christmas birthday sinking fund",
+      },
     ],
   },
   {
@@ -145,6 +170,13 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: "invest",
         title: "Investments",
         keywords: "portfolio holdings stocks allocation returns",
+      },
+      {
+        id: "networth",
+        label: "Net Worth",
+        icon: "scale",
+        title: "Net Worth",
+        keywords: "assets liabilities balance sheet over time what am i worth",
       },
     ],
   },

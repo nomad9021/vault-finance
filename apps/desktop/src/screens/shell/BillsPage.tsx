@@ -6,13 +6,19 @@ import {
   type Bill,
   type BillCadence,
 } from "@vault/shared";
-import { Button, Dialog, Field, MetricCard, Panel, Select, Spinner } from "@vault/ui";
+import { Button, Dialog, Field, MetricCard, Panel, Select, Spinner, Tabs } from "@vault/ui";
 import { useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 
 const BILL_COLORS = ["#6f8ef2", "#ef8354", "#3ecf8e", "#c96f9c", "#d8b23c", "#4db6d0", "#b47ef0"];
 const CADENCES: BillCadence[] = ["weekly", "monthly", "quarterly", "yearly"];
+
+const TABS = [
+  { value: "list" as const, label: "Upcoming" },
+  { value: "calendar" as const, label: "Calendar" },
+];
+type BillTab = (typeof TABS)[number]["value"];
 
 function dueLabel(days: number): { text: string; tone: "over" | "soon" | "ok" } {
   if (days < 0) return { text: `${Math.abs(days)}d overdue`, tone: "over" };
@@ -35,8 +41,9 @@ function dueDateShort(iso: string): string {
  * been set aside toward it (a sinking fund). Set-aside progress is manual via
  * "Set aside" contributions.
  */
-export function BillsPage() {
+export function BillsPage({ initialTab }: { initialTab?: string }) {
   const client = useApp((s) => s.client);
+  const [tab, setTab] = useState<BillTab>(initialTab === "calendar" ? "calendar" : "list");
   const { data, loading, reload } = useData(() => client.bills(), [client]);
   const { data: acctData } = useData(() => client.accounts(true), [client]);
   const [editing, setEditing] = useState<Bill | "new" | null>(null);
@@ -67,12 +74,17 @@ export function BillsPage() {
         </div>
       </div>
 
+      <Tabs items={TABS} value={tab} onChange={setTab} aria-label="Bill views" />
+
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <Button variant="primary" icon="plus" onClick={() => setEditing("new")}>
           Add bill
         </Button>
       </div>
 
+      {tab === "calendar" ? (
+        <BillCalendar bills={bills} onSelect={setEditing} />
+      ) : (
       <Panel title="Upcoming bills" subtitle="Sorted by next due date">
         {bills.length === 0 ? (
           <p className="card-meta">
@@ -146,6 +158,7 @@ export function BillsPage() {
           </div>
         )}
       </Panel>
+      )}
 
       {editing && (
         <BillDialog
@@ -366,5 +379,168 @@ function FundDialog({ bill, onClose, onSaved }: { bill: Bill; onClose: () => voi
         </Button>
       </div>
     </Dialog>
+  );
+}
+
+/**
+ * A month grid of when bills land.
+ *
+ * The list view answers "what's due next"; this answers "when does the money
+ * actually leave", which is a different question and the one that causes
+ * trouble. Four bills on the 1st and nothing after the 15th is invisible in a
+ * sorted list and obvious here — and it's what tells you to move a due date or
+ * hold cash back rather than discovering the shortfall on the day.
+ *
+ * Weekly bills are drawn on every matching day; monthly and longer show on
+ * their due day, clamped to the length of the month so the 31st still appears
+ * in February.
+ */
+function BillCalendar({
+  bills,
+  onSelect,
+}: {
+  bills: Bill[];
+  onSelect: (bill: Bill) => void;
+}) {
+  const today = new Date();
+  const year = today.getUTCFullYear();
+  const monthIndex = today.getUTCMonth();
+  const daysInMonth = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  // Monday-first, matching how most people read a week here.
+  const firstWeekday = (new Date(Date.UTC(year, monthIndex, 1)).getUTCDay() + 6) % 7;
+  const todayDay = today.getUTCDate();
+
+  const byDay = new Map<number, Bill[]>();
+  for (const bill of bills) {
+    const days: number[] =
+      bill.cadence === "weekly"
+        ? Array.from({ length: daysInMonth }, (_, i) => i + 1).filter(
+            (d) => d % 7 === Math.min(bill.dueDay, 7) % 7,
+          )
+        : [Math.min(bill.dueDay, daysInMonth)];
+    for (const day of days) {
+      const list = byDay.get(day) ?? [];
+      list.push(bill);
+      byDay.set(day, list);
+    }
+  }
+
+  const monthTotal = [...byDay.values()]
+    .flat()
+    .reduce((sum, bill) => sum + bill.amountCents, 0);
+  const heaviest = Math.max(1, ...[...byDay.values()].map((list) => list.reduce((s, b) => s + b.amountCents, 0)));
+
+  return (
+    <Panel
+      title={new Date(Date.UTC(year, monthIndex, 1)).toLocaleDateString(undefined, {
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
+      })}
+      subtitle={`${formatCentsWhole(monthTotal)} due across the month`}
+    >
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
+        {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label) => (
+          <div
+            key={label}
+            style={{
+              fontSize: "var(--text-2xs)",
+              fontWeight: 600,
+              letterSpacing: ".04em",
+              textTransform: "uppercase",
+              color: "var(--content-tertiary)",
+              padding: "0 2px 2px",
+            }}
+          >
+            {label}
+          </div>
+        ))}
+        {Array.from({ length: firstWeekday }, (_, i) => (
+          <div key={`pad-${i}`} />
+        ))}
+        {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+          const dayBills = byDay.get(day) ?? [];
+          const dayTotal = dayBills.reduce((s, b) => s + b.amountCents, 0);
+          const isToday = day === todayDay;
+          const isPast = day < todayDay;
+          return (
+            <div
+              key={day}
+              style={{
+                minHeight: 76,
+                borderRadius: "var(--radius-md)",
+                border: isToday
+                  ? "1px solid var(--color-accent)"
+                  : "1px solid var(--color-divider)",
+                background:
+                  dayTotal > 0
+                    ? `color-mix(in srgb, var(--color-accent) ${Math.round((dayTotal / heaviest) * 14) + 3}%, transparent)`
+                    : "transparent",
+                padding: 6,
+                opacity: isPast ? 0.55 : 1,
+                display: "flex",
+                flexDirection: "column",
+                gap: 3,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "var(--text-2xs)",
+                  fontWeight: isToday ? 700 : 500,
+                  color: isToday ? "var(--color-accent)" : "var(--content-tertiary)",
+                }}
+              >
+                {day}
+              </div>
+              {dayBills.map((bill) => (
+                <button
+                  key={`${bill.id}-${day}`}
+                  onClick={() => onSelect(bill)}
+                  title={`${bill.name} · ${formatCentsWhole(bill.amountCents)}`}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                    background: "none",
+                    border: 0,
+                    padding: 0,
+                    font: "inherit",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    color: "var(--color-text)",
+                    fontSize: "var(--text-2xs)",
+                    minWidth: 0,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: 99,
+                      background: bill.color,
+                      flex: "none",
+                    }}
+                  />
+                  <span className="truncate">{bill.name}</span>
+                </button>
+              ))}
+              {dayTotal > 0 && (
+                <div
+                  className="num"
+                  style={{
+                    marginTop: "auto",
+                    fontSize: "var(--text-2xs)",
+                    fontWeight: 600,
+                    color: "var(--content-tertiary)",
+                  }}
+                >
+                  {formatCentsWhole(dayTotal)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Panel>
   );
 }

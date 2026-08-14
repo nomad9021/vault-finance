@@ -274,6 +274,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
                   links={sankeyData!.links}
                   month={sankeyData!.month}
                   onNavigate={onNavigate}
+                  onChanged={reloadSankey}
                 />
               </div>
               <div className="col-6">
@@ -302,6 +303,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
               links={sankeyData!.links}
               month={sankeyData!.month}
               onNavigate={onNavigate}
+              onChanged={reloadSankey}
             />
           )}
         </div>

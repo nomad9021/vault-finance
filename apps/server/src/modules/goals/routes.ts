@@ -67,6 +67,7 @@ export default async function goalRoutes(app: FastifyInstance) {
       name: row.name,
       targetCents: row.targetCents,
       savedCents,
+      monthlyCents: row.monthlyCents,
       linkedAccountId: row.linkedAccountId,
       targetDate: row.targetDate,
       color: row.color,
@@ -97,6 +98,7 @@ export default async function goalRoutes(app: FastifyInstance) {
         name: body.name,
         targetCents: body.targetCents,
         savedCents: body.savedCents,
+        monthlyCents: body.monthlyCents,
         linkedAccountId: body.linkedAccountId ?? null,
         targetDate: body.targetDate ?? null,
         color: body.color,
@@ -114,6 +116,7 @@ export default async function goalRoutes(app: FastifyInstance) {
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(body.targetCents !== undefined ? { targetCents: body.targetCents } : {}),
         ...(body.savedCents !== undefined ? { savedCents: body.savedCents } : {}),
+        ...(body.monthlyCents !== undefined ? { monthlyCents: body.monthlyCents } : {}),
         ...(body.linkedAccountId !== undefined
           ? { linkedAccountId: body.linkedAccountId }
           : {}),

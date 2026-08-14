@@ -2,7 +2,15 @@ import type { MonthSummary, SankeyLink, SankeyNode, SankeyResponse, TrendsRespon
 import { and, eq, gt, gte, isNull, lt, notInArray, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { accounts, bills, categories, debtPlan, transactions } from "../../db/schema.js";
+import {
+  accounts,
+  bills,
+  categories,
+  debtPlan,
+  givingFunds,
+  savingsGoals,
+  transactions,
+} from "../../db/schema.js";
 
 const SummaryQuery = z.object({
   months: z.coerce.number().int().min(1).max(24).default(6),
@@ -26,6 +34,7 @@ function shiftMonth(month: string, delta: number): string {
 // accounts read as distinct flows on the left of the diagram.
 const ACCOUNT_INCOME_COLORS = ["#6f8ef2", "#8b7cf0", "#4db6d0", "#e0a458", "#c96f9c", "#5fbf8f"];
 const DEBT_COLORS = ["#e25c5c", "#ec6a9c", "#e0a458", "#c96f9c", "#d8b23c"];
+const SAVINGS_COLORS = ["#3ecf8e", "#43cfc0", "#4db6d0", "#5fbf8f", "#6f8ef2"];
 
 /** Normalize a bill's per-occurrence amount to an equivalent monthly cost. */
 function billMonthlyCents(amountCents: number, cadence: string): number {
@@ -236,6 +245,8 @@ export default async function cashflowRoutes(app: FastifyInstance) {
           kind: "income",
           categoryId: catId,
           accountId: null,
+          section: "income",
+          entityId: null,
         };
       },
     );
@@ -249,6 +260,8 @@ export default async function cashflowRoutes(app: FastifyInstance) {
         kind: "income",
         categoryId: null,
         accountId: null,
+        section: "income",
+        entityId: null,
       });
     }
 
@@ -295,6 +308,8 @@ export default async function cashflowRoutes(app: FastifyInstance) {
         depth,
         kind: "category",
         categoryId: id,
+        section: "spending",
+        entityId: id,
       });
       // Only show children with actual spend — empty ($0) categories are hidden
       // to keep the diagram readable. Income-kind categories never appear here.
@@ -317,6 +332,8 @@ export default async function cashflowRoutes(app: FastifyInstance) {
           depth: depth + 1,
           kind: "category",
           categoryId: id,
+          section: "spending",
+          entityId: id,
         });
         links.push({ from: `cat:${id}`, to: `cat:${id}:direct`, valueCents: direct });
       }
@@ -368,6 +385,55 @@ export default async function cashflowRoutes(app: FastifyInstance) {
       .sort((a, b) => b.monthly - a.monthly);
     const debtMonthlyTotal = debtItems.reduce((s, d) => s + d.monthly, 0);
 
+    // Savings branch: one leaf per savings goal that has a planned monthly
+    // contribution. A goal with no contribution set isn't a flow — it's a
+    // balance — so it stays off the diagram until the user plans money into it.
+    // Each leaf carries its linked accountId so drill-in shows the account the
+    // money actually lands in.
+    const goalRows = await app.db
+      .select()
+      .from(savingsGoals)
+      .where(isNull(savingsGoals.archivedAt));
+    const activeAccountIds = new Set(accts.filter((a) => !a.archivedAt).map((a) => a.id));
+    const savingsItems = goalRows
+      .map((g) => ({
+        id: g.id,
+        name: g.name,
+        color: g.color,
+        monthly: g.monthlyCents,
+        // Drop a link to an archived account rather than pointing drill-in at
+        // transactions the rest of the diagram deliberately excludes.
+        accountId:
+          g.linkedAccountId && activeAccountIds.has(g.linkedAccountId) ? g.linkedAccountId : null,
+      }))
+      .filter((g) => g.monthly > 0)
+      .sort((a, b) => b.monthly - a.monthly);
+    const savingsMonthlyTotal = savingsItems.reduce((s, g) => s + g.monthly, 0);
+
+    // Giving splits into two branches off the hub because they answer different
+    // questions: recurring giving is money gone for good, gift funds are money
+    // parked until an occasion. Lumping them would hide the difference.
+    const givingRows = await app.db
+      .select()
+      .from(givingFunds)
+      .where(isNull(givingFunds.archivedAt));
+    const givingItems = givingRows
+      .map((f) => ({
+        id: f.id,
+        name: f.name,
+        kind: f.kind,
+        color: f.color,
+        categoryId: f.categoryId,
+        accountId: f.accountId && activeAccountIds.has(f.accountId) ? f.accountId : null,
+        monthly: f.monthlyCents,
+      }))
+      .filter((f) => f.monthly > 0)
+      .sort((a, b) => b.monthly - a.monthly);
+    const givingRecurring = givingItems.filter((f) => f.kind === "giving");
+    const givingGifts = givingItems.filter((f) => f.kind === "gift");
+    const givingMonthlyTotal = givingRecurring.reduce((s, f) => s + f.monthly, 0);
+    const giftsMonthlyTotal = givingGifts.reduce((s, f) => s + f.monthly, 0);
+
     const totalIncomeCents = incomeNodes.reduce((sum, n) => sum + n.valueCents, 0);
     let totalSpendingCents = uncategorizedSpend;
     // All top-level EXPENSE categories, including ones with no spending ($0).
@@ -381,7 +447,10 @@ export default async function cashflowRoutes(app: FastifyInstance) {
       totalSpendingCents > 0 ||
       topLevel.length > 0 ||
       billsMonthlyTotal > 0 ||
-      debtMonthlyTotal > 0
+      debtMonthlyTotal > 0 ||
+      savingsMonthlyTotal > 0 ||
+      givingMonthlyTotal > 0 ||
+      giftsMonthlyTotal > 0
     ) {
       nodes.push({
         id: "hub",
@@ -391,6 +460,8 @@ export default async function cashflowRoutes(app: FastifyInstance) {
         depth: 1,
         kind: "hub",
         categoryId: null,
+        section: "income",
+        entityId: null,
       });
       for (const n of incomeNodes) links.push({ from: n.id, to: "hub", valueCents: n.valueCents });
     }
@@ -410,17 +481,28 @@ export default async function cashflowRoutes(app: FastifyInstance) {
         depth: 2,
         kind: "category",
         categoryId: null,
+        section: "spending",
+        entityId: null,
       });
       links.push({ from: "hub", to: "cat:none", valueCents: uncategorizedSpend });
     }
 
     // Unspent income as its own node so the hub's inflow and outflow balance
     // exactly — the income-sources column and the "Total income" hub bar then
-    // render the same height. Bills and debt payments are carved out of income
-    // too (planned outflows), so saved = income − spending − bills − debt.
+    // render the same height. Every planned outflow is carved out of income
+    // first, so this node is what's genuinely left over and unassigned:
+    // saved = income − spending − bills − debt − savings − giving − gifts.
+    // Money going into a savings goal is NOT counted here — it has a job now,
+    // and showing it twice would overstate what's actually free.
     const savedCents = Math.max(
       0,
-      totalIncomeCents - totalSpendingCents - billsMonthlyTotal - debtMonthlyTotal,
+      totalIncomeCents -
+        totalSpendingCents -
+        billsMonthlyTotal -
+        debtMonthlyTotal -
+        savingsMonthlyTotal -
+        givingMonthlyTotal -
+        giftsMonthlyTotal,
     );
     if (savedCents > 0) {
       nodes.push({
@@ -431,6 +513,8 @@ export default async function cashflowRoutes(app: FastifyInstance) {
         depth: 2,
         kind: "saved",
         categoryId: null,
+        section: "saved",
+        entityId: null,
       });
       links.push({ from: "hub", to: "saved", valueCents: savedCents });
     }
@@ -445,6 +529,8 @@ export default async function cashflowRoutes(app: FastifyInstance) {
         depth: 2,
         kind: "category",
         categoryId: null,
+        section: "bills",
+        entityId: null,
       });
       links.push({ from: "hub", to: "bills:hub", valueCents: billsMonthlyTotal });
       for (const b of billItems) {
@@ -457,6 +543,9 @@ export default async function cashflowRoutes(app: FastifyInstance) {
           kind: "category",
           categoryId: b.categoryId,
           accountId: b.accountId ?? null,
+          section: "bills",
+          entityId: b.id,
+          editableMonthlyCents: b.monthly,
         });
         links.push({ from: "bills:hub", to: `bill:${b.id}`, valueCents: b.monthly });
       }
@@ -474,6 +563,8 @@ export default async function cashflowRoutes(app: FastifyInstance) {
         depth: 2,
         kind: "category",
         categoryId: null,
+        section: "debt",
+        entityId: null,
       });
       links.push({ from: "hub", to: "debt:hub", valueCents: debtMonthlyTotal });
       debtItems.forEach((d, i) => {
@@ -486,13 +577,87 @@ export default async function cashflowRoutes(app: FastifyInstance) {
           kind: "category",
           categoryId: null,
           accountId: d.accountId,
+          section: "debt",
+          entityId: d.accountId,
+          editableMonthlyCents: d.monthly,
         });
         links.push({ from: "debt:hub", to: d.nodeId, valueCents: d.monthly });
       });
     }
 
-    // Unspent income (income − spending) is surfaced as a dashboard stat, not as
-    // a node in the diagram, so the Sankey stays a pure income → spending flow.
+    // Savings branch: hub → "Savings" → one leaf per funded goal.
+    if (savingsMonthlyTotal > 0) {
+      nodes.push({
+        id: "savings:hub",
+        label: "Savings goals",
+        valueCents: savingsMonthlyTotal,
+        color: "#3ecf8e",
+        depth: 2,
+        kind: "category",
+        categoryId: null,
+        section: "savings",
+        entityId: null,
+      });
+      links.push({ from: "hub", to: "savings:hub", valueCents: savingsMonthlyTotal });
+      savingsItems.forEach((g, i) => {
+        nodes.push({
+          id: `goal:${g.id}`,
+          label: g.name,
+          valueCents: g.monthly,
+          color: g.color || SAVINGS_COLORS[i % SAVINGS_COLORS.length]!,
+          depth: 3,
+          kind: "category",
+          categoryId: null,
+          accountId: g.accountId,
+          section: "savings",
+          entityId: g.id,
+          editableMonthlyCents: g.monthly,
+        });
+        links.push({ from: "savings:hub", to: `goal:${g.id}`, valueCents: g.monthly });
+      });
+    }
+
+    // Giving and gift branches, emitted separately (see above).
+    const emitGivingBranch = (
+      hubId: string,
+      label: string,
+      color: string,
+      total: number,
+      items: typeof givingItems,
+    ): void => {
+      if (total <= 0) return;
+      nodes.push({
+        id: hubId,
+        label,
+        valueCents: total,
+        color,
+        depth: 2,
+        kind: "category",
+        categoryId: null,
+        section: "giving",
+        entityId: null,
+      });
+      links.push({ from: "hub", to: hubId, valueCents: total });
+      for (const f of items) {
+        nodes.push({
+          id: `giving:${f.id}`,
+          label: f.name,
+          valueCents: f.monthly,
+          color: f.color,
+          depth: 3,
+          kind: "category",
+          categoryId: f.categoryId,
+          accountId: f.accountId,
+          section: "giving",
+          entityId: f.id,
+          editableMonthlyCents: f.monthly,
+        });
+        links.push({ from: hubId, to: `giving:${f.id}`, valueCents: f.monthly });
+      }
+    };
+    emitGivingBranch("giving:hub", "Giving", "#b47ef0", givingMonthlyTotal, givingRecurring);
+    emitGivingBranch("gifts:hub", "Gift savings", "#ec6a9c", giftsMonthlyTotal, givingGifts);
+
     return { month, nodes, links, totalIncomeCents, totalSpendingCents };
   });
 }

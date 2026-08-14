@@ -774,7 +774,12 @@ const PAGE = /* html */ `<!doctype html>
     }
 
     // Top spending categories — the detail the diagram compresses away.
-    var cats=(sankey.nodes||[]).filter(function(n){return n.kind==="category"&&n.depth===2&&n.valueCents>0})
+    // Planned branches (bills, debt, savings, giving) also sit at depth 2 and
+    // carry kind "category", so filter on the section field: this list is what
+    // was actually spent, not what was planned.
+    var cats=(sankey.nodes||[]).filter(function(n){
+      return n.kind==="category"&&n.depth===2&&n.valueCents>0&&
+        (!n.section||n.section==="spending")})
       .sort(function(a,b){return b.valueCents-a.valueCents});
     if(cats.length){
       var top=cats.slice(0,6);

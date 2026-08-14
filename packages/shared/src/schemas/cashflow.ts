@@ -46,6 +46,28 @@ export type TrendsResponse = z.infer<typeof TrendsResponse>;
 export const SankeyNodeKind = z.enum(["income", "hub", "category", "saved"]);
 export type SankeyNodeKind = z.infer<typeof SankeyNodeKind>;
 
+/**
+ * Which part of the app owns a node — the answer to "if I click this, what am I
+ * actually looking at, and where do I go to change it?".
+ *
+ * `kind` describes how a node is *drawn* (and is deliberately unchanged, so the
+ * chart component and the phone viewer keep working). `section` describes what
+ * it *is*, so the drill-in panel can offer the right editor and the right jump:
+ * a Bills leaf edits a bill, a Savings leaf edits a goal's monthly contribution,
+ * a Giving leaf edits a fund. Spending categories have no single editable row —
+ * they're an aggregate of transactions — so they stay read-only with a jump.
+ */
+export const SankeySection = z.enum([
+  "income",
+  "spending",
+  "bills",
+  "debt",
+  "savings",
+  "giving",
+  "saved",
+]);
+export type SankeySection = z.infer<typeof SankeySection>;
+
 export const SankeyNode = z.object({
   /** "income:<uuid>", "income:other", "hub", "cat:<uuid>", or "saved". */
   id: z.string(),
@@ -60,6 +82,20 @@ export const SankeyNode = z.object({
   /** Set on income nodes, which are grouped by the account the money landed in
    *  — drill-in filters transactions by this account. */
   accountId: z.string().uuid().nullable().optional(),
+  /** Which part of the app owns this node. Absent on older servers. */
+  section: SankeySection.optional(),
+  /**
+   * The row `section` refers to — a bill id, savings-goal id, giving-fund id, or
+   * a debt's account id. Null on group headers and aggregates, which have no
+   * single row behind them.
+   */
+  entityId: z.string().nullable().optional(),
+  /**
+   * The planned monthly amount currently stored for `entityId`, so the drill-in
+   * panel can edit it without refetching the whole section. Editing this is what
+   * changes the node's own thickness on the next load.
+   */
+  editableMonthlyCents: z.number().int().nullable().optional(),
 });
 export type SankeyNode = z.infer<typeof SankeyNode>;
 
