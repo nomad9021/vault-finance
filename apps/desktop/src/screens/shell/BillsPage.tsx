@@ -5,6 +5,7 @@ import {
   type Account,
   type Bill,
   type BillCadence,
+  type Category,
 } from "@vault/shared";
 import { Button, Dialog, Field, MetricCard, Panel, Select, Spinner, Tabs } from "@vault/ui";
 import { useState } from "react";
@@ -46,6 +47,7 @@ export function BillsPage({ initialTab }: { initialTab?: string }) {
   const [tab, setTab] = useState<BillTab>(initialTab === "calendar" ? "calendar" : "list");
   const { data, loading, reload } = useData(() => client.bills(), [client]);
   const { data: acctData } = useData(() => client.accounts(true), [client]);
+  const { data: catData } = useData(() => client.categories(), [client]);
   const [editing, setEditing] = useState<Bill | "new" | null>(null);
   const [funding, setFunding] = useState<Bill | null>(null);
 
@@ -53,6 +55,7 @@ export function BillsPage({ initialTab }: { initialTab?: string }) {
 
   const bills = data?.bills ?? [];
   const accounts = acctData?.accounts ?? [];
+  const categories = catData?.categories ?? [];
   const accountName = new Map(accounts.map((a) => [a.id, a.name]));
   const totalDue = data?.totalDueCents ?? 0;
   const totalSaved = data?.totalSavedCents ?? 0;
@@ -152,6 +155,16 @@ export function BillsPage({ initialTab }: { initialTab?: string }) {
                   >
                     Set aside
                   </button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon="edit"
+                    title="Edit or delete this bill"
+                    style={{ flex: "none" }}
+                    onClick={() => setEditing(b)}
+                  >
+                    Edit
+                  </Button>
                 </div>
               );
             })}
@@ -164,6 +177,7 @@ export function BillsPage({ initialTab }: { initialTab?: string }) {
         <BillDialog
           bill={editing === "new" ? null : editing}
           accounts={accounts.filter((a) => !a.archivedAt)}
+          categories={categories}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -188,11 +202,13 @@ export function BillsPage({ initialTab }: { initialTab?: string }) {
 function BillDialog({
   bill,
   accounts,
+  categories,
   onClose,
   onSaved,
 }: {
   bill: Bill | null;
   accounts: Account[];
+  categories: Category[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -204,6 +220,7 @@ function BillDialog({
   const [cadence, setCadence] = useState<BillCadence>(bill?.cadence ?? "monthly");
   const [autopay, setAutopay] = useState(bill?.autopay ?? false);
   const [accountId, setAccountId] = useState(bill?.accountId ?? "");
+  const [categoryId, setCategoryId] = useState(bill?.categoryId ?? "");
   const [color, setColor] = useState(bill?.color ?? BILL_COLORS[0]!);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -224,6 +241,7 @@ function BillDialog({
       cadence,
       autopay,
       accountId: accountId || null,
+      categoryId: categoryId || null,
       color,
     };
     try {
@@ -304,6 +322,20 @@ function BillDialog({
             {a.name}
           </option>
         ))}
+      </Select>
+      <Select
+        label="Category (optional)"
+        value={categoryId}
+        onChange={(e) => setCategoryId(e.target.value)}
+      >
+        <option value="">No category</option>
+        {categories
+          .filter((c) => c.kind !== "income")
+          .map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
       </Select>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <label className="radio" style={{ cursor: "pointer" }}>

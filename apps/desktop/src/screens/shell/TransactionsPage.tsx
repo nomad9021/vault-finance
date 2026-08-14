@@ -7,7 +7,7 @@ import {
   type ImportResponse,
   type Transaction,
 } from "@vault/shared";
-import { Button, Dialog, Field, Panel, Select, Spinner } from "@vault/ui";
+import { Button, DateField, Dialog, Field, Panel, Select, Spinner } from "@vault/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
@@ -628,13 +628,8 @@ function TransactionDialog({
               hint="Negative = money out, positive = money in."
             />
           </div>
-          <div style={{ width: 160 }}>
-            <Field
-              label="Date"
-              type="date"
-              value={postedAt}
-              onChange={(e) => setPostedAt(e.target.value)}
-            />
+          <div style={{ width: 180 }}>
+            <DateField label="Date" value={postedAt} onChange={setPostedAt} clearable={false} />
           </div>
         </div>
         <Select

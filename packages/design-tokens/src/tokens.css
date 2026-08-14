@@ -116,6 +116,9 @@
   --z-dropdown: 200;
   --z-overlay: 400;
   --z-modal: 500;
+  /* Above modal on purpose: pickers open from fields inside dialogs and are
+     portalled to the body, so they must clear the dialog they belong to. */
+  --z-popover: 550;
   --z-toast: 600;
 }
 

@@ -15,7 +15,7 @@ const ICON_VER = "3";
 // Bump whenever the shared stylesheet changes — /vault.css is served
 // `immutable` for a week, so a phone that already loaded the page will keep the
 // old CSS until this URL changes.
-const CSS_VER = "7";
+const CSS_VER = "8";
 
 /**
  * A tiny, dependency-free, **read-only** phone viewer served on the same origin

@@ -8,6 +8,7 @@ import {
 } from "@vault/shared";
 import {
   Button,
+  DateField,
   Dialog,
   EmptyState,
   Field,
@@ -260,6 +261,15 @@ export function GivingPage({ onNavigate }: { onNavigate: Navigate }) {
                   <Button variant="secondary" size="sm" onClick={() => setFunding(f)}>
                     Set aside
                   </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon="edit"
+                    title="Edit or delete this fund"
+                    onClick={() => setEditing(f)}
+                  >
+                    Edit
+                  </Button>
                   {f.accountId && (
                     <Button
                       variant="ghost"
@@ -327,6 +337,9 @@ function GivingDialog({
   const [monthly, setMonthly] = useState(fund ? (fund.monthlyCents / 100).toFixed(2) : "");
   const [target, setTarget] = useState(fund?.targetCents ? (fund.targetCents / 100).toFixed(2) : "");
   const [occasionDate, setOccasionDate] = useState(fund?.occasionDate ?? "");
+  const [saved, setSaved] = useState(
+    fund && !fund.accountId ? (fund.savedCents / 100).toFixed(2) : "0",
+  );
   const [accountId, setAccountId] = useState(fund?.accountId ?? "");
   const [categoryId, setCategoryId] = useState(fund?.categoryId ?? "");
   const [color, setColor] = useState(fund?.color ?? GIVING_COLORS[0]!);
@@ -335,6 +348,7 @@ function GivingDialog({
   const [error, setError] = useState<string | null>(null);
 
   const monthlyCents = parseAmountToCents(monthly) ?? 0;
+  const savedCents = accountId ? 0 : Math.max(0, parseAmountToCents(saved) ?? 0);
   const targetCents = target ? parseAmountToCents(target) : null;
   const valid = name.trim().length > 0 && monthlyCents >= 0;
 
@@ -348,6 +362,7 @@ function GivingDialog({
         kind,
         recipient: recipient.trim() || null,
         monthlyCents,
+        savedCents,
         targetCents: kind === "gift" ? (targetCents ?? null) : null,
         occasionDate: kind === "gift" ? occasionDate || null : null,
         accountId: accountId || null,
@@ -442,11 +457,12 @@ function GivingDialog({
           )}
         </div>
         {kind === "gift" && (
-          <Field
+          <DateField
             label="Occasion date"
-            type="date"
             value={occasionDate}
-            onChange={(e) => setOccasionDate(e.target.value)}
+            onChange={setOccasionDate}
+            placeholder="When is it needed?"
+            hint="Used to work out what you'd need to set aside each month."
           />
         )}
         <Select
@@ -475,6 +491,15 @@ function GivingDialog({
               </option>
             ))}
         </Select>
+        {!accountId && (
+          <Field
+            label="Set aside so far"
+            value={saved}
+            inputMode="decimal"
+            onChange={(e) => setSaved(e.target.value)}
+            hint="Correct the running total outright; 'Set aside' on the row adds to it."
+          />
+        )}
         <p className="text-muted" style={{ fontSize: "var(--text-xs)", margin: 0, lineHeight: 1.6 }}>
           {accountId
             ? "The set-aside amount follows this account's balance automatically."

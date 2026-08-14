@@ -1,6 +1,7 @@
 export * from "./primitives/Icon.js";
 export * from "./primitives/Button.js";
 export * from "./primitives/Field.js";
+export * from "./primitives/DateField.js";
 export * from "./primitives/Card.js";
 export * from "./primitives/Panel.js";
 export * from "./primitives/MetricCard.js";

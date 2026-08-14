@@ -4,7 +4,7 @@ import {
   type Account,
   type Goal,
 } from "@vault/shared";
-import { Button, Dialog, EmptyState, Field, ProgressBar, Select, Spinner, Tag } from "@vault/ui";
+import { Button, DateField, Dialog, EmptyState, Field, ProgressBar, Select, Spinner, Tag } from "@vault/ui";
 import { useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
@@ -272,12 +272,12 @@ function GoalDialog({
               placeholder="15000.00"
             />
           </div>
-          <div style={{ width: 160 }}>
-            <Field
+          <div style={{ width: 180 }}>
+            <DateField
               label="Target date (optional)"
-              type="date"
               value={targetDate}
-              onChange={(e) => setTargetDate(e.target.value)}
+              onChange={setTargetDate}
+              placeholder="No deadline"
             />
           </div>
         </div>
