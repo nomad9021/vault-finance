@@ -39,7 +39,9 @@ export function SubscriptionsPage({ onNavigate }: { onNavigate: Navigate }) {
   const active = subs.filter((s) => !s.stale);
   const stale = subs.filter((s) => s.stale);
   const increases = subs.filter((s) => s.priceIncreaseCents !== null && !s.stale);
-  const billCount = billData?.bills.length ?? 0;
+  // How many of THESE rows are already tracked — not how many bills exist. The
+  // latter read as "4 of these are handled" when none of them were.
+  const trackedCount = subs.filter((s) => s.billId).length;
 
   // Promote a detected charge into a tracked bill so it joins the Bills branch
   // of the cash-flow diagram and gets due-date reminders.
@@ -120,7 +122,7 @@ export function SubscriptionsPage({ onNavigate }: { onNavigate: Navigate }) {
         <>
           <Panel
             title="Active subscriptions"
-            subtitle={`Detected from your transaction history · ${billCount} tracked as bills`}
+            subtitle={`Detected from your history · ${trackedCount} of ${subs.length} already tracked as bills`}
           >
             {active.length === 0 ? (
               <p className="card-meta">Nothing currently charging on a schedule.</p>

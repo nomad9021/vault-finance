@@ -17,6 +17,10 @@ const RANGES = [
   { value: "24" as const, label: "24 months" },
 ];
 
+function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
 function monthLabel(month: string): string {
   const [y, m] = month.split("-").map(Number) as [number, number];
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, {
@@ -87,7 +91,7 @@ export function NetWorthPage({ onNavigate }: { onNavigate: Navigate }) {
             value={formatCentsWhole(netWorth)}
             delta={`${monthChange >= 0 ? "+" : "−"}${formatCentsWhole(Math.abs(monthChange))} this month`}
             deltaTone={monthChange >= 0 ? "up" : "down"}
-            hint={`${accounts.length} accounts`}
+            hint={plural(accounts.length, "account")}
           />
         </div>
         <div className="col-3">
@@ -95,7 +99,7 @@ export function NetWorthPage({ onNavigate }: { onNavigate: Navigate }) {
             label="Assets"
             value={formatCentsWhole(assetTotal)}
             deltaTone="up"
-            hint={`${assets.length} accounts`}
+            hint={plural(assets.length, "account")}
             onClick={() => onNavigate("accounts")}
           />
         </div>
@@ -104,7 +108,7 @@ export function NetWorthPage({ onNavigate }: { onNavigate: Navigate }) {
             label="Liabilities"
             value={formatCentsWhole(owedTotal)}
             deltaTone={owedTotal > 0 ? "down" : "up"}
-            hint={`${liabilities.length} accounts`}
+            hint={plural(liabilities.length, "account")}
             onClick={() => onNavigate("cashflow", { tab: "debt" })}
           />
         </div>

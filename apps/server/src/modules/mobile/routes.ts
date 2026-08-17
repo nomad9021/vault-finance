@@ -470,7 +470,9 @@ const PAGE = /* html */ `<!doctype html>
     for(var i=0;i<n;i++){num+=(i-xm)*(v[i]-ym);den+=(i-xm)*(i-xm)}var sl=den?num/den:0,ic=ym-sl*xm;
     return Array.from({length:c},function(_,k){return Math.round(ic+sl*(n+k))})}
   function spark(history,projected,color){
-    var all=history.concat(projected);if(all.length<2)return "";
+    // Guard on history: projecting from nothing indexes history[-1] and emits
+    // NaN coordinates (same bug as the desktop TrendChart).
+    var all=history.concat(projected);if(history.length<2)return "";
     var W=300,H=58,pad=5,min=Math.min.apply(null,all),max=Math.max.apply(null,all),span=(max-min)||1;
     var x=function(i){return pad+(i/(all.length-1))*(W-2*pad)},y=function(v){return H-pad-((v-min)/span)*(H-2*pad)};
     var last=history.length-1;

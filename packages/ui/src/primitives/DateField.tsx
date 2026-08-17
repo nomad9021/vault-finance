@@ -102,10 +102,26 @@ export function DateField({
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (popRef.current?.contains(t) || triggerRef.current?.contains(t)) return;
-      // Clicking away commits nothing and closes — and crucially does not let
-      // the click fall through to a dialog backdrop that would close the form.
+      // Clicking away commits nothing and closes the picker. Stopping the
+      // mousedown is not enough on its own: a Dialog backdrop dismisses on
+      // `click`, so the matching click still landed and threw the whole form
+      // away. Swallow that one click too, then stand down — the first click
+      // outside belongs to the picker, and only the next one reaches the page.
       e.preventDefault();
       e.stopPropagation();
+      const swallowClick = (ev: MouseEvent) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        cleanup();
+      };
+      const cleanup = () => {
+        document.removeEventListener("click", swallowClick, true);
+        window.clearTimeout(timer);
+      };
+      // A mousedown that never becomes a click (a drag, a lost pointer) would
+      // otherwise leave the swallower armed and eat an unrelated later click.
+      const timer = window.setTimeout(cleanup, 400);
+      document.addEventListener("click", swallowClick, true);
       close(false);
     };
     const onKey = (e: KeyboardEvent) => {
