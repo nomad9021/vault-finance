@@ -1,6 +1,6 @@
 {
   "name": "vault-finance",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Self-hosted, AI-powered personal finance — your finances, your AI, your server.",
   "license": "MIT",

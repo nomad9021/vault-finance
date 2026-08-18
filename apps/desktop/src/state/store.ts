@@ -8,7 +8,7 @@ import { applyTheme, isTheme, type Theme } from "@vault/design-tokens";
 import { create } from "zustand";
 import { getPlatform, type HostPlatform, type ProbeResult } from "../platform/index.js";
 
-export const APP_VERSION = "0.1.1";
+export const APP_VERSION = "0.1.2";
 
 export type Screen =
   | { name: "boot" }
