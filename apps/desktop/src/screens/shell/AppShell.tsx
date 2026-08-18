@@ -8,12 +8,16 @@ import { BillsPage } from "./BillsPage.js";
 import { BudgetsPage } from "./BudgetsPage.js";
 import { CashFlowPage } from "./CashFlowPage.js";
 import { DashboardPage } from "./DashboardPage.js";
+import { GivingPage } from "./GivingPage.js";
 import { GoalsPage } from "./GoalsPage.js";
 import { Header } from "./Header.js";
 import { IncomePage } from "./IncomePage.js";
+import { InsightsPage } from "./InsightsPage.js";
 import { InvestmentsPage } from "./InvestmentsPage.js";
+import { NetWorthPage } from "./NetWorthPage.js";
 import { ReportsPage } from "./ReportsPage.js";
 import { SettingsPage } from "./SettingsPage.js";
+import { SubscriptionsPage } from "./SubscriptionsPage.js";
 import { TransactionsPage } from "./TransactionsPage.js";
 import { Rail, Sidebar } from "./Sidebar.js";
 import { GroupTabs, TabBar } from "./TabBar.js";
@@ -169,6 +173,8 @@ function PageBody({
   switch (page) {
     case "dashboard":
       return <DashboardPage onNavigate={onNavigate} />;
+    case "insights":
+      return <InsightsPage onNavigate={onNavigate} />;
     case "accounts":
       return <AccountsPage onNavigate={onNavigate} />;
     case "transactions":
@@ -181,16 +187,22 @@ function PageBody({
       );
     case "income":
       return <IncomePage onNavigate={onNavigate} />;
+    case "subscriptions":
+      return <SubscriptionsPage onNavigate={onNavigate} />;
     case "budgets":
       return <BudgetsPage onNavigate={onNavigate} {...(filter.tab ? { initialTab: filter.tab } : {})} />;
     case "bills":
-      return <BillsPage />;
+      return <BillsPage {...(filter.tab ? { initialTab: filter.tab } : {})} />;
     case "cashflow":
       return <CashFlowPage {...(filter.tab ? { initialTab: filter.tab } : {})} />;
+    case "giving":
+      return <GivingPage onNavigate={onNavigate} />;
     case "investments":
       return <InvestmentsPage onNavigate={onNavigate} />;
     case "goals":
       return <GoalsPage onNavigate={onNavigate} />;
+    case "networth":
+      return <NetWorthPage onNavigate={onNavigate} />;
     case "reports":
       return <ReportsPage onNavigate={onNavigate} />;
     case "assistant":

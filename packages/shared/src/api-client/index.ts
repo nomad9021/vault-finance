@@ -80,6 +80,14 @@ import {
   type CreateBillRequest,
   type UpdateBillRequest,
 } from "../schemas/bills.js";
+import {
+  GivingFund,
+  GivingListResponse,
+  type CreateGivingFundRequest,
+  type UpdateGivingFundRequest,
+} from "../schemas/giving.js";
+import { SubscriptionListResponse } from "../schemas/subscriptions.js";
+import { InsightListResponse } from "../schemas/insights.js";
 import { DebtPlan, type UpdateDebtPlanRequest } from "../schemas/debts.js";
 import { MonthlyReport, YearlyReport } from "../schemas/reports.js";
 
@@ -597,6 +605,33 @@ export class ApiClient {
   }
   deleteBill(id: string) {
     return this.request(z.undefined(), "DELETE", `/bills/${id}`);
+  }
+
+  // ── Giving & gift funds ──
+  giving() {
+    return this.request(GivingListResponse, "GET", "/giving");
+  }
+  createGivingFund(body: CreateGivingFundRequest) {
+    return this.request(GivingFund, "POST", "/giving", body);
+  }
+  updateGivingFund(id: string, body: UpdateGivingFundRequest) {
+    return this.request(GivingFund, "PATCH", `/giving/${id}`, body);
+  }
+  contributeGivingFund(id: string, deltaCents: number) {
+    return this.request(GivingFund, "POST", `/giving/${id}/contribute`, { deltaCents });
+  }
+  deleteGivingFund(id: string) {
+    return this.request(z.undefined(), "DELETE", `/giving/${id}`);
+  }
+
+  // ── Detected subscriptions ──
+  subscriptions() {
+    return this.request(SubscriptionListResponse, "GET", "/subscriptions");
+  }
+
+  // ── Insights ──
+  insights() {
+    return this.request(InsightListResponse, "GET", "/insights");
   }
 
   // ── Debt plan ──

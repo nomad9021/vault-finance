@@ -41,7 +41,12 @@ export function TrendChart({
   emptyLabel = "Not enough history",
 }: TrendChartProps) {
   const all = [...history, ...projected];
-  if (all.length < 2) {
+  // Guard on the history, not the combined series. A caller that projects from
+  // an empty history — which every page does for one render, before its data
+  // arrives — otherwise passed this check on the projected points alone, and
+  // then indexed history[-1]: x(-1) lands at -288 and y(undefined) is NaN, so
+  // the SVG came out malformed and the console filled with attribute errors.
+  if (history.length < 2) {
     return (
       <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--content-tertiary)", fontSize: "var(--text-xs)" }}>
         {emptyLabel}

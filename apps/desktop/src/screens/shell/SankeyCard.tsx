@@ -1,14 +1,43 @@
-import { formatCents, formatCentsWhole, type SankeyLink, type SankeyNode, type Transaction } from "@vault/shared";
-import { Button, Sankey, Spinner } from "@vault/ui";
+import {
+  formatCents,
+  formatCentsWhole,
+  parseAmountToCents,
+  type Account,
+  type SankeyLink,
+  type SankeyNode,
+  type SankeySection,
+  type Transaction,
+} from "@vault/shared";
+import { Button, Field, Sankey, Spinner } from "@vault/ui";
 import { useEffect, useState } from "react";
+import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
-import type { NavFilter, Navigate } from "./AppShell.js";
+import type { NavFilter, Navigate, PageId } from "./AppShell.js";
 
 type Period = "weekly" | "monthly" | "yearly";
 const PERIOD_FACTOR: Record<Period, number> = {
   weekly: 12 / 52,
   monthly: 1,
   yearly: 12,
+};
+
+/**
+ * Where each kind of node lives in the app, and what the drill-in panel offers
+ * for it. This is the table that makes the diagram a control surface rather
+ * than a picture: every branch on the Sankey has an owning page, and the ones
+ * backed by a single editable row also get an inline amount field.
+ */
+const SECTION_TARGET: Record<
+  SankeySection,
+  { page: PageId; label: string; tab?: string }
+> = {
+  income: { page: "income", label: "Income" },
+  spending: { page: "transactions", label: "Transactions" },
+  bills: { page: "bills", label: "Bills" },
+  debt: { page: "cashflow", label: "Debt payoff", tab: "debt" },
+  savings: { page: "goals", label: "Savings goals" },
+  giving: { page: "giving", label: "Giving" },
+  saved: { page: "cashflow", label: "Cash flow" },
 };
 
 /**
@@ -23,6 +52,7 @@ export function SankeyCard({
   links,
   month,
   onNavigate,
+  onChanged,
   title = "Cash flow",
   hint = "Click any node to drill in",
   compact = false,
@@ -31,6 +61,8 @@ export function SankeyCard({
   links: SankeyLink[];
   month: string;
   onNavigate: Navigate;
+  /** Called after an inline edit so the page can refetch the diagram. */
+  onChanged?: () => void;
   title?: string;
   hint?: string;
   /** Side-by-side mode: drop the period toggle and hint so the card can halve. */
@@ -90,7 +122,8 @@ export function SankeyCard({
           isIncome={isIncomeSide}
           periodFactor={pf}
           onClose={() => setFocus(null)}
-          onViewAll={(filter) => onNavigate("transactions", filter)}
+          onNavigate={onNavigate}
+          {...(onChanged ? { onChanged } : {})}
         />
       )}
     </div>
@@ -104,29 +137,39 @@ function FocusPanel({
   isIncome,
   periodFactor,
   onClose,
-  onViewAll,
+  onNavigate,
+  onChanged,
 }: {
   side: "left" | "right";
   month: string;
-  node: {
-    id: string;
-    label: string;
-    valueCents: number;
-    color: string;
-    categoryId: string | null;
-    accountId?: string | null | undefined;
-  };
+  node: SankeyNode;
   isIncome: boolean;
   periodFactor: number;
   onClose: () => void;
-  onViewAll: (filter: NavFilter) => void;
+  onNavigate: Navigate;
+  onChanged?: () => void;
 }) {
   const client = useApp((s) => s.client);
   const [txns, setTxns] = useState<Transaction[] | null>(null);
 
+  // Group headers and aggregates ("Bills", "Total income", "Unspent") have no
+  // transactions of their own — skip the request rather than showing a spinner
+  // that resolves to nothing.
+  //
+  // Income is explicitly not in that set: an income source is an aggregate of
+  // real deposits and listing them is the whole point of clicking it. Treating
+  // every non-spending section as a header silently emptied that panel.
+  const isPlannedHeader =
+    node.section === "bills" ||
+    node.section === "debt" ||
+    node.section === "savings" ||
+    node.section === "giving";
+  const isAggregate =
+    node.kind === "hub" || node.kind === "saved" || (isPlannedHeader && !node.entityId);
+
   useEffect(() => {
-    // "Saved", the hub, and planned group headers have no direct transactions.
-    if (node.id === "saved" || node.id === "hub" || node.id === "bills:hub" || node.id === "debt:hub") {
+    if (isAggregate || (!node.accountId && !node.categoryId && node.section !== "spending")) {
+      // "Other income" and the shortfall stub genuinely have no rows behind them.
       setTxns([]);
       return;
     }
@@ -146,7 +189,17 @@ function FocusPanel({
     return () => {
       cancelled = true;
     };
-  }, [client, node.id, node.categoryId, node.accountId, month, isIncome]);
+  }, [client, node.id, node.categoryId, node.accountId, node.section, isAggregate, month, isIncome]);
+
+  const target = node.section ? SECTION_TARGET[node.section] : null;
+  const jumpFilter: NavFilter = {
+    ...(node.section === "spending" || node.section === "income"
+      ? node.accountId
+        ? { accountId: node.accountId }
+        : { categoryId: node.categoryId ?? "none" }
+      : {}),
+    ...(target?.tab ? { tab: target.tab } : {}),
+  };
 
   return (
     <div
@@ -175,13 +228,41 @@ function FocusPanel({
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: "var(--radius-sm)", background: node.color, flex: "none" }} />
           <span style={{ fontSize: "var(--text-2xs)", letterSpacing: ".05em", textTransform: "uppercase", color: "var(--content-tertiary)", fontWeight: 600 }}>
-            {node.id === "saved" ? "kept this month" : isIncome ? "money in" : "spending"}
+            {node.kind === "saved"
+              ? "left over"
+              : isIncome
+                ? "money in"
+                : node.section && node.section !== "spending"
+                  ? `planned ${node.section}`
+                  : "spending"}
           </span>
         </div>
         <h3 style={{ margin: "6px 0 2px", fontSize: "var(--text-xl)", fontWeight: 600 }}>{node.label}</h3>
         <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: "var(--text-3xl)", letterSpacing: "-.02em" }}>
           {formatCentsWhole(node.valueCents * periodFactor)}
         </div>
+
+        {node.section && node.entityId && (
+          <SectionEditor
+            section={node.section}
+            entityId={node.entityId}
+            onNavigate={onNavigate}
+            {...(onChanged ? { onChanged } : {})}
+          />
+        )}
+
+        {target && (
+          <Button
+            variant="secondary"
+            size="sm"
+            iconEnd="arrowRight"
+            style={{ marginTop: "var(--space-3)", alignSelf: "flex-start" }}
+            onClick={() => onNavigate(target.page, jumpFilter)}
+          >
+            {node.entityId || node.section === "spending" ? `Manage in ${target.label}` : `Open ${target.label}`}
+          </Button>
+        )}
+
         <div style={{ height: 1, background: "var(--color-divider)", margin: "14px 0" }} />
         {txns === null ? (
           <Spinner label="Loading transactions" />
@@ -201,21 +282,201 @@ function FocusPanel({
             <Button
               variant="ghost"
               style={{ marginTop: 12 }}
-              onClick={() => onViewAll(node.accountId ? { accountId: node.accountId } : { categoryId: node.categoryId ?? "none" })}
+              onClick={() => onNavigate("transactions", node.accountId ? { accountId: node.accountId } : { categoryId: node.categoryId ?? "none" })}
             >
               View in Transactions →
             </Button>
           </>
         ) : (
           <p style={{ fontSize: "var(--text-sm)", color: "var(--content-tertiary)", lineHeight: 1.6 }}>
-            {node.id === "saved"
-              ? "Money that came in and didn't go out — this is what moved your net worth up this month."
-              : node.id === "hub"
+            {node.kind === "saved"
+              ? "Income that no plan has claimed yet — after spending, bills, debt, savings and giving. This is what's genuinely free to assign."
+              : node.kind === "hub"
                 ? "Everything that flowed in this month, before spending."
-                : "No individual transactions to show here."}
+                : node.section && node.section !== "spending" && !node.entityId
+                  ? "A planned group — open the section to change what's inside it."
+                  : "No individual transactions to show here."}
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Inline editor for the row behind a planned node.
+ *
+ * The point is to change a number without losing your place in the diagram: you
+ * clicked "Groceries" on the Bills branch because it looked wrong, so fix it
+ * here. Anything structural — adding a bill, deleting a goal, changing a
+ * cadence — stays on the owning page, reached by the button below this.
+ */
+function SectionEditor({
+  section,
+  entityId,
+  onNavigate,
+  onChanged,
+}: {
+  section: SankeySection;
+  entityId: string;
+  onNavigate: Navigate;
+  onChanged?: () => void;
+}) {
+  const client = useApp((s) => s.client);
+  const [amount, setAmount] = useState("");
+  // What's currently stored. Tracked separately from the fetched entity because
+  // saving doesn't refetch it — comparing against the stale fetched value left
+  // the form permanently "dirty", so Save stayed lit and the confirmation never
+  // appeared even though the write had succeeded.
+  const [baseline, setBaseline] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Each section's editable amount means something slightly different, so the
+  // entity is fetched rather than inferred from the node's rendered value —
+  // a yearly bill's node shows a monthly twelfth, which is not what you edit.
+  const { data: entity, loading } = useData(async () => {
+    if (section === "bills") {
+      const bill = (await client.bills()).bills.find((b) => b.id === entityId);
+      return bill
+        ? {
+            label: bill.cadence === "monthly" ? "Amount per month" : `Amount per ${bill.cadence.replace("ly", "")}`,
+            cents: bill.amountCents,
+            note: `Due day ${bill.dueDay} · ${bill.cadence}${bill.autopay ? " · autopay" : ""}`,
+            accountId: bill.accountId,
+            save: (cents: number) => client.updateBill(entityId, { amountCents: cents }),
+          }
+        : null;
+    }
+    if (section === "savings") {
+      const goal = (await client.goals()).goals.find((g) => g.id === entityId);
+      return goal
+        ? {
+            label: "Contribution per month",
+            cents: goal.monthlyCents,
+            note: `${formatCentsWhole(goal.savedCents)} saved of ${formatCentsWhole(goal.targetCents)}`,
+            accountId: goal.linkedAccountId,
+            save: (cents: number) => client.updateGoal(entityId, { monthlyCents: cents }),
+          }
+        : null;
+    }
+    if (section === "giving") {
+      const fund = (await client.giving()).funds.find((f) => f.id === entityId);
+      return fund
+        ? {
+            label: fund.kind === "gift" ? "Set aside per month" : "Given per month",
+            cents: fund.monthlyCents,
+            note:
+              fund.kind === "gift" && fund.targetCents
+                ? `${formatCentsWhole(fund.savedCents)} saved of ${formatCentsWhole(fund.targetCents)}${fund.occasionDate ? ` by ${fund.occasionDate}` : ""}`
+                : (fund.recipient ?? "Recurring giving"),
+            accountId: fund.accountId,
+            save: (cents: number) => client.updateGivingFund(entityId, { monthlyCents: cents }),
+          }
+        : null;
+    }
+    if (section === "debt") {
+      const plan = await client.debtPlan();
+      const override = plan.overrides[entityId];
+      const account = (await client.accounts()).accounts.find((a) => a.id === entityId);
+      if (!account && !override) return null;
+      return {
+        label: "Minimum payment per month",
+        cents: override?.minCents ?? 0,
+        note: account ? `${account.name} · ${formatCentsWhole(Math.abs(account.balanceCents))} owed` : "Planned debt payment",
+        accountId: entityId,
+        // Overrides are a single JSON blob, so a partial write would drop every
+        // other debt's tweaks — merge into the fetched plan and send it whole.
+        save: (cents: number) =>
+          client.updateDebtPlan({
+            ...plan,
+            overrides: {
+              ...plan.overrides,
+              [entityId]: { ...(plan.overrides[entityId] ?? {}), minCents: cents },
+            },
+          }),
+      };
+    }
+    return null;
+  }, [client, section, entityId]);
+
+  // Hydrate the field once the entity arrives; keep whatever the user has typed
+  // if they got there first.
+  useEffect(() => {
+    if (!entity) return;
+    setAmount((entity.cents / 100).toFixed(2));
+    setBaseline(entity.cents);
+  }, [entity]);
+
+  const { data: accountData } = useData(
+    () => (entity?.accountId ? client.accounts() : Promise.resolve(null)),
+    [client, entity?.accountId],
+  );
+  const linkedAccount: Account | undefined = entity?.accountId
+    ? accountData?.accounts.find((a) => a.id === entity.accountId)
+    : undefined;
+
+  if (loading && !entity) return <Spinner label="Loading" />;
+  if (!entity) return null;
+
+  const cents = parseAmountToCents(amount);
+  const dirty = cents !== null && cents !== baseline;
+
+  const save = async () => {
+    if (cents === null || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await entity.save(cents);
+      setBaseline(cents);
+      setSaved(true);
+      onChanged?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save that.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: "var(--space-4)", display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+      <div className="t-sm t-tertiary">{entity.note}</div>
+      <Field
+        label={entity.label}
+        value={amount}
+        inputMode="decimal"
+        onChange={(e) => {
+          setAmount(e.target.value);
+          setSaved(false);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") void save();
+        }}
+      />
+      <div className="row" style={{ gap: "var(--space-2)", alignItems: "center" }}>
+        <Button variant="primary" size="sm" onClick={() => void save()} disabled={!dirty || busy}>
+          {busy ? <Spinner label="Saving" /> : "Save"}
+        </Button>
+        {saved && !dirty && <span className="t-xs" style={{ color: "var(--color-positive)" }}>Saved</span>}
+      </div>
+      {linkedAccount && (
+        <Button
+          variant="ghost"
+          size="sm"
+          iconEnd="arrowRight"
+          title="View this account's transactions"
+          style={{ alignSelf: "flex-start" }}
+          onClick={() => onNavigate("transactions", { accountId: linkedAccount.id })}
+        >
+          {linkedAccount.name} · {formatCentsWhole(linkedAccount.balanceCents)}
+        </Button>
+      )}
+      {error && (
+        <div role="alert" className="t-xs" style={{ color: "var(--color-negative)" }}>
+          {error}
+        </div>
+      )}
     </div>
   );
 }

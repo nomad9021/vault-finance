@@ -85,6 +85,13 @@
       "when": 1784582400000,
       "tag": "0011_user_totp",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784586000000,
+      "tag": "0012_giving_funds",
+      "breakpoints": true
     }
   ]
 }

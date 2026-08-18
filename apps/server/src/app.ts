@@ -20,12 +20,15 @@ import cashflowRoutes from "./modules/cashflow/routes.js";
 import categorizeRoutes from "./modules/categorize/routes.js";
 import categoryRoutes from "./modules/categories/routes.js";
 import debtRoutes from "./modules/debts/routes.js";
+import givingRoutes from "./modules/giving/routes.js";
 import goalRoutes from "./modules/goals/routes.js";
+import insightRoutes from "./modules/insights/routes.js";
 import investmentRoutes from "./modules/investments/routes.js";
 import reportRoutes from "./modules/reports/routes.js";
 import metaRoutes from "./modules/meta/routes.js";
 import mobileRoutes from "./modules/mobile/routes.js";
 import setupRoutes from "./modules/setup/routes.js";
+import subscriptionRoutes from "./modules/subscriptions/routes.js";
 import transactionRoutes from "./modules/transactions/routes.js";
 
 /**
@@ -105,6 +108,9 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       await api.register(investmentRoutes);
       await api.register(goalRoutes);
       await api.register(billRoutes);
+      await api.register(givingRoutes);
+      await api.register(subscriptionRoutes);
+      await api.register(insightRoutes);
       await api.register(debtRoutes);
       await api.register(reportRoutes, { config: opts.config });
     },

@@ -9,33 +9,10 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { bills } from "../../db/schema.js";
 import { notFound } from "../../errors.js";
-
-function daysInMonth(year: number, monthIndex: number): number {
-  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
-}
-
-/** Next occurrence of a day-of-month from today (UTC), clamped to month length. */
-function nextDueDate(dueDay: number, today = new Date()): string {
-  const y = today.getUTCFullYear();
-  const m = today.getUTCMonth();
-  const d = today.getUTCDate();
-  const thisMonthDay = Math.min(dueDay, daysInMonth(y, m));
-  if (thisMonthDay >= d) {
-    return new Date(Date.UTC(y, m, thisMonthDay)).toISOString().slice(0, 10);
-  }
-  // Roll into next month (Date normalizes December → January of next year).
-  const nextMonth = new Date(Date.UTC(y, m + 1, 1));
-  const ny = nextMonth.getUTCFullYear();
-  const nmi = nextMonth.getUTCMonth();
-  const dayNext = Math.min(dueDay, daysInMonth(ny, nmi));
-  return new Date(Date.UTC(ny, nmi, dayNext)).toISOString().slice(0, 10);
-}
+import { daysUntilDue, nextDueDate } from "./due.js";
 
 function toApi(row: typeof bills.$inferSelect): ApiBill {
   const next = nextDueDate(row.dueDay);
-  const today = new Date();
-  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-  const nextUtc = Date.parse(`${next}T00:00:00Z`);
   return {
     id: row.id,
     name: row.name,
@@ -48,7 +25,7 @@ function toApi(row: typeof bills.$inferSelect): ApiBill {
     categoryId: row.categoryId,
     color: row.color,
     nextDueDate: next,
-    daysUntilDue: Math.round((nextUtc - todayUtc) / 86_400_000),
+    daysUntilDue: daysUntilDue(row.dueDay),
   };
 }
 

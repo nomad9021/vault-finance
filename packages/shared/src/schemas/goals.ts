@@ -6,6 +6,8 @@ export const Goal = z.object({
   targetCents: z.number().int(),
   /** Linked-account balance when linked; manual amount otherwise. */
   savedCents: z.number().int(),
+  /** Planned contribution per month — what the cash-flow Sankey routes here. */
+  monthlyCents: z.number().int(),
   linkedAccountId: z.string().uuid().nullable(),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   color: z.string(),
@@ -23,6 +25,7 @@ export const CreateGoalRequest = z.object({
   name: z.string().min(1).max(100),
   targetCents: z.number().int().positive(),
   savedCents: z.number().int().nonnegative().default(0),
+  monthlyCents: z.number().int().nonnegative().default(0),
   linkedAccountId: z.string().uuid().nullish(),
   targetDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/),

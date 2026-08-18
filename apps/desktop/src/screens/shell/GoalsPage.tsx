@@ -4,7 +4,7 @@ import {
   type Account,
   type Goal,
 } from "@vault/shared";
-import { Button, Dialog, EmptyState, Field, ProgressBar, Select, Spinner, Tag } from "@vault/ui";
+import { Button, DateField, Dialog, EmptyState, Field, ProgressBar, Select, Spinner, Tag } from "@vault/ui";
 import { useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
@@ -136,6 +136,11 @@ function GoalCard({
       <div className="t-sm t-tertiary">
         of {formatCentsWhole(goal.targetCents)} · {Math.round(pct * 100)}% funded
       </div>
+      <div className="t-xs t-tertiary" style={{ marginTop: 2 }}>
+        {goal.monthlyCents > 0
+          ? `${formatCentsWhole(goal.monthlyCents)} a month`
+          : "no monthly plan — not on the cash-flow diagram"}
+      </div>
       <div style={{ margin: "var(--space-3) 0" }}>
         <ProgressBar value={pct} color={goal.color} label={goal.name} />
       </div>
@@ -177,6 +182,7 @@ function GoalDialog({
   const [saved, setSaved] = useState(
     goal && !goal.linkedAccountId ? (goal.savedCents / 100).toFixed(2) : "0",
   );
+  const [monthly, setMonthly] = useState(goal ? (goal.monthlyCents / 100).toFixed(2) : "");
   const [targetDate, setTargetDate] = useState(goal?.targetDate ?? "");
   const [color, setColor] = useState(goal?.color ?? GOAL_COLORS[0]!);
   const [note, setNote] = useState(goal?.note ?? "");
@@ -184,6 +190,7 @@ function GoalDialog({
   const [error, setError] = useState<string | null>(null);
 
   const targetCents = parseAmountToCents(target);
+  const monthlyCents = monthly.trim() ? (parseAmountToCents(monthly) ?? 0) : 0;
   const savedCents = linkedAccountId ? 0 : (parseAmountToCents(saved) ?? -1);
   const valid = name.trim() && targetCents !== null && targetCents > 0 && savedCents >= 0;
 
@@ -196,6 +203,7 @@ function GoalDialog({
         name: name.trim(),
         targetCents: targetCents!,
         savedCents: linkedAccountId ? 0 : savedCents,
+        monthlyCents,
         linkedAccountId: linkedAccountId || null,
         targetDate: targetDate || null,
         color,
@@ -264,15 +272,23 @@ function GoalDialog({
               placeholder="15000.00"
             />
           </div>
-          <div style={{ width: 160 }}>
-            <Field
+          <div style={{ width: 180 }}>
+            <DateField
               label="Target date (optional)"
-              type="date"
               value={targetDate}
-              onChange={(e) => setTargetDate(e.target.value)}
+              onChange={setTargetDate}
+              placeholder="No deadline"
             />
           </div>
         </div>
+        <Field
+          label="Contribution per month"
+          value={monthly}
+          inputMode="decimal"
+          onChange={(e) => setMonthly(e.target.value)}
+          placeholder="250.00"
+          hint="Shows up as its own flow on the cash-flow diagram. Leave at 0 to track the balance only."
+        />
         <Select
           label="Linked account (optional)"
           value={linkedAccountId}

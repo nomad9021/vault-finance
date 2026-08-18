@@ -260,6 +260,8 @@ export const savingsGoals = pgTable("savings_goals", {
   name: text("name").notNull(),
   targetCents: bigint("target_cents", { mode: "number" }).notNull(),
   savedCents: bigint("saved_cents", { mode: "number" }).notNull().default(0),
+  /** Planned contribution per month — what the cash-flow Sankey routes here. */
+  monthlyCents: bigint("monthly_cents", { mode: "number" }).notNull().default(0),
   linkedAccountId: uuid("linked_account_id").references(() => accounts.id, {
     onDelete: "set null",
   }),
@@ -289,6 +291,37 @@ export const bills = pgTable("bills", {
   accountId: uuid("account_id").references(() => accounts.id, { onDelete: "set null" }),
   categoryId: uuid("category_id").references(() => categories.id, { onDelete: "set null" }),
   color: text("color").notNull().default("#6f8ef2"),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ── giving ──
+// Money leaving the household on purpose: recurring giving (tithe, charities,
+// sponsorships) and gift sinking funds saved up for a specific occasion. Both
+// live in one table because they answer the same question on the Sankey — where
+// is money going that isn't spending on ourselves — and differ only in whether
+// there's a target to save toward.
+
+export const givingFunds = pgTable("giving_funds", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  /** "giving" = recurring outflow; "gift" = sinking fund for an occasion. */
+  kind: text("kind", { enum: ["giving", "gift"] }).notNull().default("giving"),
+  /** Who receives it — the charity, church, or person. */
+  recipient: text("recipient"),
+  /** Planned monthly outflow; drives this fund's branch on the Sankey. */
+  monthlyCents: bigint("monthly_cents", { mode: "number" }).notNull().default(0),
+  /** Set aside so far (manual, like bills). Linked accounts override it. */
+  savedCents: bigint("saved_cents", { mode: "number" }).notNull().default(0),
+  /** Gift funds save toward this; null for open-ended recurring giving. */
+  targetCents: bigint("target_cents", { mode: "number" }),
+  /** Birthday, holiday, wedding — when a gift fund needs to be ready. */
+  occasionDate: date("occasion_date"),
+  accountId: uuid("account_id").references(() => accounts.id, { onDelete: "set null" }),
+  categoryId: uuid("category_id").references(() => categories.id, { onDelete: "set null" }),
+  color: text("color").notNull().default("#b47ef0"),
+  note: text("note"),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
