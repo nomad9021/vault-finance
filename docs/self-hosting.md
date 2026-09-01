@@ -242,7 +242,14 @@ server first is always the safe order.
 - **Login rate-limited (429)** — 10 attempts per 15 minutes per device+email.
   Wait, or restart the server to clear it.
 
-## 10. Manual release steps for maintainers
+## 10. Hosting more than one family
+
+One stack serves **one family** — every member sees all of its data. To host
+several unrelated families on the same machine with their data fully separate,
+run one isolated instance per family with `docker/multi/familyctl.sh`. See
+[multi-family.md](multi-family.md).
+
+## 11. Manual release steps for maintainers
 
 Moved to [releasing.md](releasing.md): cutting a release, the updater
 signing key, and the one-time macOS notarization setup (browser + CI only —
