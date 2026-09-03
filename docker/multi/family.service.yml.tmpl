@@ -1,0 +1,56 @@
+# Rendered by familyctl.sh into families/<slug>/compose.yml — do not run directly.
+# Placeholders: __SLUG__  __PORT__  __BIND__  __DB_PASSWORD__  __IMAGE__
+#               __OLLAMA_MODEL__  __BANK_AUTO_SYNC_MINUTES__  __LOG_LEVEL__
+#               __SMTP_HOST__  __SMTP_PORT__  __SMTP_USER__  __SMTP_PASS__
+#               __SMTP_SECURE__  __MAIL_FROM__  __APP_PUBLIC_URL__  __SURVEY_URL__
+#               __UPDATE_OPERATOR_MANAGED__
+#
+# One compose project per family (docker compose -p vault-fam-__SLUG__ ...), so
+# each family starts/stops/upgrades independently. It joins the shared vault-net
+# created by docker-compose.base.yml.
+
+name: vault-fam-__SLUG__
+
+networks:
+  default:
+    name: vault-net
+    external: true
+
+volumes:
+  # Named, not a bind mount: the volume inherits vault:vault ownership from the
+  # image so the non-root server can write /data/jwt-secret. (A host bind mount
+  # would be created root-owned and the server would crash-loop on EACCES.)
+  data:
+    name: vault-fam-__SLUG__-data
+
+services:
+  server:
+    image: __IMAGE__
+    container_name: vault-__SLUG__
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://vault___SLUG__:__DB_PASSWORD__@postgres:5432/vault___SLUG__
+      VAULT_PORT: "8443"
+      VAULT_TLS: "on"
+      VAULT_DATA_DIR: /data
+      OLLAMA_HOST: ollama
+      OLLAMA_PORT: "11434"
+      OLLAMA_MODEL: __OLLAMA_MODEL__
+      BANK_AUTO_SYNC_MINUTES: "__BANK_AUTO_SYNC_MINUTES__"
+      LOG_LEVEL: __LOG_LEVEL__
+      # Outbound email — shared host relay, threaded in by familyctl.
+      SMTP_HOST: "__SMTP_HOST__"
+      SMTP_PORT: "__SMTP_PORT__"
+      SMTP_USER: "__SMTP_USER__"
+      SMTP_PASS: "__SMTP_PASS__"
+      SMTP_SECURE: "__SMTP_SECURE__"
+      MAIL_FROM: "__MAIL_FROM__"
+      APP_PUBLIC_URL: "__APP_PUBLIC_URL__"
+      SURVEY_URL: "__SURVEY_URL__"
+      UPDATE_OPERATOR_MANAGED: "__UPDATE_OPERATOR_MANAGED__"
+    volumes:
+      - data:/data
+    ports:
+      # __BIND__ is 0.0.0.0 in port mode (families connect to host:__PORT__) or
+      # 127.0.0.1 in proxy mode (only HAProxy on vault-net reaches :8443).
+      - "__BIND__:__PORT__:8443"

@@ -51,6 +51,32 @@ const EnvSchema = z.object({
   BANK_AUTO_SYNC_MINUTES: z.coerce.number().int().min(0).default(0),
 
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
+
+  // ── Outbound email (SMTP) ──
+  // All optional: with SMTP_HOST unset the mailer is a no-op (logs a warning
+  // once and drops the message) so a server with no mail relay still runs.
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z.coerce.number().int().default(587),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  // true = implicit TLS (port 465); false = STARTTLS upgrade (port 587).
+  SMTP_SECURE: z.enum(["true", "false"]).default("false"),
+  MAIL_FROM: z.string().optional(),
+  // Public base URL of this server, used to build links in emails
+  // (e.g. https://smith.vault.example.com or https://192.168.1.10:8443).
+  APP_PUBLIC_URL: z.string().optional(),
+  // Optional post-onboarding feedback survey; the welcome email links it when set.
+  SURVEY_URL: z.string().optional(),
+
+  // ── Update checking ──
+  UPDATE_CHECK_ENABLED: z.enum(["true", "false"]).default("true"),
+  UPDATE_MANIFEST_URL: z
+    .string()
+    .default("https://api.github.com/repos/nomad9021/vault-finance/releases/latest"),
+  UPDATE_CHECK_INTERVAL_HOURS: z.coerce.number().int().min(1).default(24),
+  // Set true on operator-managed fleets so the "update available" email tells
+  // owners to contact their admin rather than run vault-update themselves.
+  UPDATE_OPERATOR_MANAGED: z.enum(["true", "false"]).default("false"),
 });
 
 export interface AppConfig {
@@ -72,6 +98,23 @@ export interface AppConfig {
   /** Shared semver for the version-compatibility check. */
   apiVersion: string;
   minClientVersion: string;
+  /** Outbound email. `host` undefined ⇒ mailer is a no-op. */
+  mail: {
+    host?: string;
+    port: number;
+    user?: string;
+    pass?: string;
+    secure: boolean;
+    from: string;
+    appPublicUrl?: string;
+    surveyUrl?: string;
+  };
+  updates: {
+    enabled: boolean;
+    manifestUrl: string;
+    intervalHours: number;
+    operatorManaged: boolean;
+  };
 }
 
 function loadOrCreateJwtSecret(dataDir: string): string {
@@ -116,5 +159,21 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     logLevel: parsed.LOG_LEVEL,
     apiVersion: "0.1.2",
     minClientVersion: "0.1.0",
+    mail: {
+      ...(parsed.SMTP_HOST ? { host: parsed.SMTP_HOST } : {}),
+      port: parsed.SMTP_PORT,
+      ...(parsed.SMTP_USER ? { user: parsed.SMTP_USER } : {}),
+      ...(parsed.SMTP_PASS ? { pass: parsed.SMTP_PASS } : {}),
+      secure: parsed.SMTP_SECURE === "true",
+      from: parsed.MAIL_FROM ?? "Vault Finance <no-reply@vault.local>",
+      ...(parsed.APP_PUBLIC_URL ? { appPublicUrl: parsed.APP_PUBLIC_URL.replace(/\/+$/, "") } : {}),
+      ...(parsed.SURVEY_URL ? { surveyUrl: parsed.SURVEY_URL } : {}),
+    },
+    updates: {
+      enabled: parsed.UPDATE_CHECK_ENABLED === "true",
+      manifestUrl: parsed.UPDATE_MANIFEST_URL,
+      intervalHours: parsed.UPDATE_CHECK_INTERVAL_HOURS,
+      operatorManaged: parsed.UPDATE_OPERATOR_MANAGED === "true",
+    },
   };
 }

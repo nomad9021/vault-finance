@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "admin",
+  "description": "The separate, hidden admin-console window. Same Rust command surface as main (network + keychain are always invokable); adds only the store for its saved control-plane URL. Isolated from the main window so a fault in one can't reach the other.",
+  "windows": ["admin"],
+  "permissions": ["core:default", "os:default", "store:default"]
+}

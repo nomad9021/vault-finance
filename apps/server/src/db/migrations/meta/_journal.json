@@ -92,6 +92,20 @@
       "when": 1784586000000,
       "tag": "0012_giving_funds",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784589600000,
+      "tag": "0013_app_meta",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1784593200000,
+      "tag": "0014_member_invites",
+      "breakpoints": true
     }
   ]
 }

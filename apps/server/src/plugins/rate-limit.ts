@@ -41,6 +41,10 @@ const SENSITIVE = [
   "/setup/complete",
 ];
 
+// Unauthenticated endpoints whose path carries a token/id segment — matched by
+// prefix rather than exact equality.
+const SENSITIVE_PREFIXES = ["/members/invite"];
+
 export default fp(
   async (app, opts?: { globalMax?: number; sensitiveMax?: number }) => {
     const globalAllow = makeWindow(opts?.globalMax ?? 600, 60_000); // 600/min/IP
@@ -53,6 +57,10 @@ export default fp(
 
       if (SENSITIVE.some((p) => rel === p)) {
         if (!sensitiveAllow(`s:${ip}:${rel}`)) throw rateLimited();
+      }
+      const prefix = SENSITIVE_PREFIXES.find((p) => rel.startsWith(p));
+      if (prefix) {
+        if (!sensitiveAllow(`s:${ip}:${prefix}`)) throw rateLimited();
       }
       if (!globalAllow(`g:${ip}`)) throw rateLimited();
     });

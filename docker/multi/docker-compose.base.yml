@@ -1,0 +1,118 @@
+# Vault Finance — multi-family shared base stack.
+#
+# This runs the pieces that are SAFE to share across families:
+#   - one Postgres server (each family gets its own database + login role)
+#   - one Ollama runtime (the model is stateless; keys/settings are per-family)
+#   - an optional HAProxy that routes <family>.<domain>:443 by TLS SNI, passing
+#     the connection through untouched so each family's own self-signed cert
+#     still reaches the client.
+#
+# Per-family server containers are NOT here — familyctl.sh creates one compose
+# project per family (see family.service.yml.tmpl) that joins the `vault-net`
+# network this file defines.
+#
+#   docker compose -p vault-multi -f docker/multi/docker-compose.base.yml up -d
+#
+# All shared state lives under VAULT_MULTI_DISK (default ./data, i.e.
+# docker/multi/data). Point it at a dedicated drive for real deployments.
+
+name: vault-multi
+
+networks:
+  vault-net:
+    name: vault-net
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks: [vault-net]
+    environment:
+      # This is the ADMIN role. familyctl uses it to create the per-family
+      # `vault_<slug>` databases and roles; family servers never use it.
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-vault}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-vault}
+      POSTGRES_DB: postgres
+    volumes:
+      - ${VAULT_MULTI_DISK:-./data}/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ADMIN_USER:-vault} -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # No host port: familyctl reaches it with `docker compose exec`, and family
+    # servers reach it over vault-net. Uncomment only for external DB tools.
+    # ports:
+    #   - "127.0.0.1:5432:5432"
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    networks: [vault-net]
+    volumes:
+      - ${VAULT_MULTI_DISK:-./data}/ollama:/root/.ollama
+    # For NVIDIA GPU acceleration, uncomment:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # Optional hosting admin API. Enable with:  --profile admin
+  #
+  # PRIVILEGED: this is the only container with the Docker socket. It wraps
+  # familyctl.sh so the desktop "admin console" window can add / update / remove
+  # families. Family servers stay unprivileged. Protect CONTROL_ADMIN_TOKEN like
+  # a root password. See docs/operations.md.
+  control:
+    image: ${VAULT_CONTROL_IMAGE:-ghcr.io/nomad9021/vault-finance-control:latest}
+    restart: unless-stopped
+    profiles: [admin]
+    networks: [vault-net]
+    environment:
+      CONTROL_PORT: "9443"
+      CONTROL_DATA_DIR: /data
+      # Required. familyctl generates one into control.token; the container
+      # refuses to start if it's empty or too short.
+      CONTROL_ADMIN_TOKEN: ${CONTROL_ADMIN_TOKEN:-}
+      FAMILYCTL: /repo/docker/multi/familyctl.sh
+      FAMILIES_DIR: /repo/docker/multi/families
+      SURVEY_URL: ${SURVEY_URL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      MAIL_FROM: ${MAIL_FROM:-}
+      # familyctl also reads these to thread into new family servers.
+      UPDATE_OPERATOR_MANAGED: ${UPDATE_OPERATOR_MANAGED:-true}
+      # Family servers on vault-net present self-signed certs (ADR-0004); the
+      # only hosts this container ever contacts are those internal servers.
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    ports:
+      - "${CONTROL_PORT:-9443}:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${VAULT_MULTI_DISK:-./data}/control:/data
+      # The repo, so `control` can exec familyctl.sh and manage docker compose.
+      - ../..:/repo
+    working_dir: /repo/docker/multi
+
+  # Optional SNI router. Enable with:  --profile proxy
+  # Routes by the TLS server name in the ClientHello; the TCP stream is
+  # forwarded verbatim, so the family server's own cert (and its pinned
+  # fingerprint) is what the client validates. Requires a wildcard DNS record
+  # *.vault.<yourdomain> -> this host.
+  haproxy:
+    image: haproxy:3.0-alpine
+    restart: unless-stopped
+    profiles: [proxy]
+    networks: [vault-net]
+    depends_on: [postgres]
+    ports:
+      - "443:443"
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - ./haproxy/families.map:/usr/local/etc/haproxy/families.map:ro

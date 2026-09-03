@@ -1,0 +1,6 @@
+# Per-family state — secrets, rendered compose, metadata. Never commit.
+families/
+# Shared Postgres / Ollama data.
+data/
+# Backup + destroyed-family archives.
+backups/

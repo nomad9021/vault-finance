@@ -6,6 +6,7 @@ import { configureSecretCrypto } from "./secret-crypto.js";
 import authPlugin from "./plugins/auth.js";
 import dbPlugin from "./plugins/db.js";
 import errorHandlerPlugin from "./plugins/error-handler.js";
+import mailerPlugin from "./plugins/mailer.js";
 import rateLimitPlugin from "./plugins/rate-limit.js";
 import securityHeadersPlugin from "./plugins/security-headers.js";
 import versionGatePlugin from "./plugins/version-gate.js";
@@ -24,12 +25,15 @@ import givingRoutes from "./modules/giving/routes.js";
 import goalRoutes from "./modules/goals/routes.js";
 import insightRoutes from "./modules/insights/routes.js";
 import investmentRoutes from "./modules/investments/routes.js";
+import memberRoutes from "./modules/members/routes.js";
 import reportRoutes from "./modules/reports/routes.js";
 import metaRoutes from "./modules/meta/routes.js";
 import mobileRoutes from "./modules/mobile/routes.js";
 import setupRoutes from "./modules/setup/routes.js";
 import subscriptionRoutes from "./modules/subscriptions/routes.js";
 import transactionRoutes from "./modules/transactions/routes.js";
+import updateRoutes from "./modules/updates/routes.js";
+import { startUpdateChecks } from "./modules/updates/scheduler.js";
 
 /**
  * Same-origin and native callers send no Origin header and are always allowed.
@@ -91,12 +95,15 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
     jwtSecret: opts.config.jwtSecret,
     accessTokenTtlSeconds: opts.config.accessTokenTtlSeconds,
   });
+  await app.register(mailerPlugin, { config: opts.config });
 
   await app.register(
     async (api) => {
       await api.register(metaRoutes, { config: opts.config });
       await api.register(setupRoutes, { config: opts.config });
+      await api.register(updateRoutes, { config: opts.config });
       await api.register(authRoutes);
+      await api.register(memberRoutes, { config: opts.config });
       await api.register(accountRoutes);
       await api.register(categoryRoutes);
       await api.register(transactionRoutes);
@@ -121,6 +128,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   await app.register(mobileRoutes);
 
   startBankAutoSync(app, opts.config);
+  startUpdateChecks(app, opts.config);
 
   return app;
 }

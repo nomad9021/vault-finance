@@ -30,6 +30,8 @@ jobs:
       - run: pnpm typecheck
       - name: Server e2e tests (embedded Postgres)
         run: pnpm --filter @vault/server test
+      - name: Control-plane + shared/ui/desktop tests
+        run: pnpm --filter @vault/control --filter @vault/shared --filter @vault/ui --filter @vault/desktop test
 
   rust:
     runs-on: ubuntu-latest

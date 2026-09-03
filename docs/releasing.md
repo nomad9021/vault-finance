@@ -24,6 +24,19 @@ Bump `minClientVersion` in `apps/server/src/config.ts` only when a release
 genuinely breaks older clients — it makes servers reject them with an
 "update required" screen (HTTP 426).
 
+Also bump `apiVersion` in `apps/server/src/config.ts` to the new version — the
+per-server daily update check compares it against the latest GitHub release.
+
+## The server image
+
+The same tag push triggers [release-server.yml](../.github/workflows/release-server.yml),
+which builds `docker/Dockerfile.server` and `docker/Dockerfile.control` and
+pushes them to GHCR as `ghcr.io/<owner>/vault-finance-server:<version>` +
+`:latest` (multi-arch). The GHCR packages must be **public** so servers can
+`docker pull` without credentials (Packages → package → Settings → Change
+visibility). Self-hosters then update with `installers/server/update-server.sh`
+(`familyctl.sh update --all` on a multi-family host).
+
 ## One-time repository setup
 
 1. Create the GitHub repository and push. Then update the updater endpoint in

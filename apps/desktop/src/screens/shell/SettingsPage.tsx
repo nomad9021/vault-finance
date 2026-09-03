@@ -10,6 +10,8 @@ import {
   type AiStatus,
   type BankStatus,
   type DeviceSession,
+  type MemberListResponse,
+  type UpdateStatusResponse,
 } from "@vault/shared";
 import { THEMES, THEME_LABELS } from "@vault/design-tokens";
 import { Button, Card, Dialog, Field, Segmented, Select, Spinner, Tag } from "@vault/ui";
@@ -30,8 +32,11 @@ export function SettingsPage() {
       <AiSection />
       <TwoFactorSection />
       <UpdatesSection />
+      <ServerUpdateSection />
+      <MembersSection />
       <SessionsSection />
       <ServerSection />
+      <AdminLaunchRow />
     </div>
   );
 }
@@ -120,6 +125,317 @@ function UpdatesSection() {
         </div>
       )}
     </Card>
+  );
+}
+
+function ServerUpdateSection() {
+  const client = useApp((s) => s.client);
+  const [status, setStatus] = useState<UpdateStatusResponse | null>(null);
+
+  useEffect(() => {
+    client
+      .updateStatus()
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  }, [client]);
+
+  if (!status || !status.updateAvailable) return null;
+
+  return (
+    <Card kicker="Server" title="A server update is available">
+      <p className="card-body">
+        Your server is running <strong>v{status.currentVersion}</strong>.{" "}
+        <strong>v{status.latestVersion}</strong> has been released.
+      </p>
+      <p className="card-body">
+        {status.operatorManaged ? (
+          <>This server is managed by an administrator — they'll roll out the update.</>
+        ) : (
+          <>
+            On the machine hosting your server, run{" "}
+            <code
+              style={{
+                fontFamily: "ui-monospace, monospace",
+                background: "var(--color-neutral-900)",
+                padding: "1px 6px",
+                borderRadius: 6,
+              }}
+            >
+              vault-update
+            </code>
+            . Your data isn't touched.
+          </>
+        )}
+      </p>
+      {status.notesUrl && (
+        <p className="card-meta">
+          Release notes: <span style={{ userSelect: "all" }}>{status.notesUrl}</span>
+        </p>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Household members. Only the owner (the household's "sub-admin") sees this;
+ * members are hidden from it entirely.
+ */
+function MembersSection() {
+  const client = useApp((s) => s.client);
+  const user = useApp((s) => s.user);
+  const [data, setData] = useState<MemberListResponse | null>(null);
+  const [mode, setMode] = useState<"none" | "invite" | "create">("none");
+  const [form, setForm] = useState({ displayName: "", email: "", tempPassword: "" });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<{ id: string; label: string } | null>(null);
+
+  const reload = useCallback(() => {
+    client
+      .members()
+      .then(setData)
+      .catch(() => setData(null));
+  }, [client]);
+  useEffect(reload, [reload]);
+
+  if (user?.role !== "owner") return null;
+
+  const reset = () => {
+    setMode("none");
+    setForm({ displayName: "", email: "", tempPassword: "" });
+    setError(null);
+    setBusy(false);
+  };
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (mode === "invite") {
+        const { inviteUrl } = await client.inviteMember({
+          displayName: form.displayName.trim(),
+          email: form.email.trim(),
+        });
+        setInviteLink(inviteUrl);
+      } else {
+        await client.createMember({
+          displayName: form.displayName.trim(),
+          email: form.email.trim(),
+          tempPassword: form.tempPassword,
+        });
+      }
+      reset();
+      reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!removing) return;
+    await client.removeMember(removing.id).catch(() => {});
+    setRemoving(null);
+    reload();
+  };
+
+  return (
+    <Card kicker="Household" title="Family members">
+      <p className="card-body">
+        Everyone here shares the same accounts and transactions. Invite people by
+        email, or create an account with a temporary password you hand to them.
+      </p>
+
+      {data === null ? (
+        <Spinner label="Loading members" />
+      ) : (
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {data.members.map((m) => (
+              <tr key={m.id}>
+                <td>{m.displayName}</td>
+                <td>{m.email}</td>
+                <td style={{ textTransform: "capitalize" }}>{m.role}</td>
+                <td style={{ textAlign: "right" }}>
+                  {m.role !== "owner" && m.id !== user.id && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => setRemoving({ id: m.id, label: m.displayName })}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {data.invites.map((i) => (
+              <tr key={i.id} style={{ opacity: 0.7 }}>
+                <td>{i.displayName}</td>
+                <td>{i.email}</td>
+                <td>
+                  <Tag>invite pending</Tag>
+                </td>
+                <td style={{ textAlign: "right" }}>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setRemoving({ id: i.id, label: `the invite for ${i.email}` })}
+                  >
+                    Revoke
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {mode === "none" ? (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+          <Button variant="secondary" onClick={() => setMode("invite")}>
+            Invite by email
+          </Button>
+          <Button variant="ghost" onClick={() => setMode("create")}>
+            Add with temporary password
+          </Button>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 10, marginTop: 12, maxWidth: 360 }}>
+          <Field
+            label="Name"
+            value={form.displayName}
+            onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+            autoFocus
+          />
+          <Field
+            label="Email"
+            type="email"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+          />
+          {mode === "create" && (
+            <Field
+              label="Temporary password (min 10 characters)"
+              type="text"
+              value={form.tempPassword}
+              onChange={(e) => setForm({ ...form, tempPassword: e.target.value })}
+            />
+          )}
+          {error && (
+            <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
+              {error}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button variant="primary" onClick={() => void submit()} disabled={busy}>
+              {busy ? <Spinner label="Working" /> : mode === "invite" ? "Send invite" : "Create account"}
+            </Button>
+            <Button variant="ghost" onClick={reset} disabled={busy}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <Dialog
+        open={inviteLink !== null}
+        title="Invitation ready"
+        onClose={() => setInviteLink(null)}
+        actions={
+          <Button variant="primary" onClick={() => setInviteLink(null)}>
+            Done
+          </Button>
+        }
+      >
+        {inviteLink?.startsWith("http") ? (
+          <>
+            An email is on its way. You can also share this one-time link directly:
+            <div
+              style={{
+                fontFamily: "ui-monospace, monospace",
+                fontSize: "var(--text-xs)",
+                wordBreak: "break-all",
+                marginTop: 8,
+                userSelect: "all",
+              }}
+            >
+              {inviteLink}
+            </div>
+          </>
+        ) : (
+          <>
+            No public server address is configured, so no email was sent. Share
+            this one-time link (they'll need to reach your server to open it):
+            <div
+              style={{
+                fontFamily: "ui-monospace, monospace",
+                fontSize: "var(--text-xs)",
+                wordBreak: "break-all",
+                marginTop: 8,
+                userSelect: "all",
+              }}
+            >
+              {inviteLink}
+            </div>
+          </>
+        )}
+      </Dialog>
+
+      <Dialog
+        open={removing !== null}
+        title="Remove access?"
+        onClose={() => setRemoving(null)}
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setRemoving(null)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={() => void remove()}>
+              Remove
+            </Button>
+          </>
+        }
+      >
+        {removing?.label} will lose access immediately. Shared data stays.
+      </Dialog>
+    </Card>
+  );
+}
+
+/**
+ * Discreet, owner-only entry point to the hosting admin console. Opens a
+ * separate OS window (see screens/admin) — nothing admin-related renders in the
+ * normal shell. Hidden unless the platform exposes an admin console at all.
+ */
+function AdminLaunchRow() {
+  const user = useApp((s) => s.user);
+  const platform = useApp((s) => s.platform);
+  if (user?.role !== "owner" || !platform.openAdminConsole) return null;
+  return (
+    <div style={{ marginTop: 24, textAlign: "center" }}>
+      <button
+        onClick={() => void platform.openAdminConsole?.()}
+        style={{
+          background: "none",
+          border: 0,
+          color: "var(--content-tertiary)",
+          font: "inherit",
+          fontSize: "var(--text-xs)",
+          cursor: "pointer",
+          textDecoration: "underline",
+        }}
+      >
+        Server administration…
+      </button>
+    </div>
   );
 }
 

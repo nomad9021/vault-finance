@@ -145,12 +145,27 @@ Node/pnpm live at `~/.local/node/bin` (not on the default PATH):
 export PATH="$HOME/.local/node/bin:$PATH"
 ```
 
-**Server (after changing server code):**
+**Server — updating to a new release:**
 
 ```bash
-docker compose -f docker/docker-compose.yml build server
-docker compose -f docker/docker-compose.yml up -d server   # migrations run on boot
+bash installers/server/update-server.sh
+# equivalently, by hand:
+docker compose -f docker/docker-compose.yml pull && \
+docker compose -f docker/docker-compose.yml up -d      # migrations run on boot
 ```
+
+The compose file runs a prebuilt image (`ghcr.io/nomad9021/vault-finance-server`,
+tag from `VAULT_VERSION`, default `latest`). Each server also checks once a day
+and, when SMTP is configured, emails the owner that an update is out. To build
+from source instead, swap `image:` for the `build:` block in
+`docker/docker-compose.yml` and `build server` as before.
+
+**Multi-family host:** `docker/multi/familyctl.sh update --all` (pull + recreate
+every family). The optional **admin control-plane** container is the only one
+with the Docker socket — it wraps `familyctl.sh` for the desktop app's *Server
+administration* window. Start it with `CONTROL=1 ./familyctl.sh up`, which
+generates `docker/multi/control.token`. Treat that token like a root password:
+anything holding it can create or destroy any family on the host.
 
 **Desktop app (after changing client code):**
 

@@ -164,6 +164,22 @@ pub async fn probe_server(address: String) -> Result<ProbeResult, CommandError> 
     })
 }
 
+/// Reveal the pre-declared, normally-hidden admin console window. Its webview
+/// is a separate capability group (`admin.json`) so a fault in the main window
+/// can't reach it and vice-versa.
+#[tauri::command]
+pub fn open_admin_window(app: tauri::AppHandle) -> Result<(), CommandError> {
+    use tauri::Manager;
+    let window = app
+        .get_webview_window("admin")
+        .ok_or_else(|| CommandError::Other("admin window not found".into()))?;
+    window
+        .show()
+        .and_then(|_| window.unminimize())
+        .and_then(|_| window.set_focus())
+        .map_err(|e| CommandError::Other(e.to_string()))
+}
+
 // ── Secrets: OS keychain (macOS Keychain, Windows Credential Manager,
 //    Secret Service on Linux). Refresh tokens never touch plain files. ──
 

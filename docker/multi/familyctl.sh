@@ -1,0 +1,545 @@
+#!/usr/bin/env bash
+#
+# familyctl — provision and manage isolated Vault Finance instances, one per
+# family, on a single host. See docs/multi-family.md.
+#
+#   ./familyctl.sh build                 # build the shared server image
+#   ./familyctl.sh up                    # start the shared base stack
+#   ./familyctl.sh create <slug> [opts]  # add a family
+#   ./familyctl.sh list
+#   ./familyctl.sh update [--all|<slug>]   # pull prebuilt image + recreate (fast)
+#   ./familyctl.sh upgrade [--all|<slug>]  # build from source + recreate
+#   ./familyctl.sh backup <slug>
+#   ./familyctl.sh restore <slug> <sql.gz> <data.tar.gz>
+#   ./familyctl.sh destroy <slug>
+#   ./familyctl.sh import-existing <slug> [--from-project NAME] [--from-file FILE]
+#
+# create options:
+#   --port N            host port to publish (default: next free from 8443)
+#   --domain HOST       SNI hostname for proxy mode (e.g. smith.vault.example.com)
+#   --proxy             route via HAProxy on :443 instead of publishing on the LAN
+#   --owner-email ADDR  recorded for the control-plane's welcome email
+#
+set -euo pipefail
+
+# ---- locations ------------------------------------------------------------
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+REPO_DIR="$(cd -- "$SCRIPT_DIR/../.." &>/dev/null && pwd)"
+MULTI_DIR="$SCRIPT_DIR"
+FAMILIES_DIR="$MULTI_DIR/families"
+BACKUP_DIR="$MULTI_DIR/backups"
+HAPROXY_DIR="$MULTI_DIR/haproxy"
+BASE_COMPOSE="$MULTI_DIR/docker-compose.base.yml"
+SERVICE_TMPL="$MULTI_DIR/family.service.yml.tmpl"
+
+BASE_PROJECT="vault-multi"
+# Prebuilt release image by default; `build`/`upgrade` retag a local source
+# build over this same ref. Override with VAULT_MULTI_IMAGE.
+IMAGE="${VAULT_MULTI_IMAGE:-ghcr.io/nomad9021/vault-finance-server:latest}"
+PG_ADMIN_USER="${POSTGRES_ADMIN_USER:-vault}"
+
+# Defaults threaded into each family's compose.
+OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.1:8b}"
+BANK_AUTO_SYNC_MINUTES="${BANK_AUTO_SYNC_MINUTES:-60}"
+LOG_LEVEL="${LOG_LEVEL:-info}"
+
+# Outbound email + update checks — set once on the host, threaded to every
+# family. Blank SMTP_HOST ⇒ families run without email (still fully functional).
+SMTP_HOST="${SMTP_HOST:-}"
+SMTP_PORT="${SMTP_PORT:-587}"
+SMTP_USER="${SMTP_USER:-}"
+SMTP_PASS="${SMTP_PASS:-}"
+SMTP_SECURE="${SMTP_SECURE:-false}"
+MAIL_FROM="${MAIL_FROM:-}"
+SURVEY_URL="${SURVEY_URL:-}"
+# Operator-managed fleet: the "update available" email tells owners to contact
+# their admin instead of running vault-update.
+UPDATE_OPERATOR_MANAGED="${UPDATE_OPERATOR_MANAGED:-true}"
+
+# Skip the interactive "type X to confirm" prompts. Set by the control-plane
+# service, which has already gated the action behind its own confirmation.
+ASSUME_YES="${FAMILYCTL_ASSUME_YES:-0}"
+confirm() { # confirm <expected> <prompt>
+  [ "$ASSUME_YES" = 1 ] && return 0
+  local r; read -r -p "$2" r; [ "$r" = "$1" ]
+}
+
+# ---- output -------------------------------------------------------------
+if [ -t 1 ]; then B=$'\033[1m'; DIM=$'\033[2m'; GRN=$'\033[32m'; YLW=$'\033[33m'; RED=$'\033[31m'; RST=$'\033[0m'; else B= DIM= GRN= YLW= RED= RST=; fi
+say()  { printf '%s\n' "$*"; }
+hdr()  { printf '\n%s%s%s\n' "$B" "$*" "$RST"; }
+ok()   { printf '%s✓%s %s\n' "$GRN" "$RST" "$*"; }
+warn() { printf '%s!%s %s\n' "$YLW" "$RST" "$*" >&2; }
+die()  { printf '%s✗ %s%s\n' "$RED" "$*" "$RST" >&2; exit 1; }
+
+command -v docker >/dev/null || die "docker not found"
+docker compose version >/dev/null 2>&1 || die "docker compose plugin not found"
+
+base() { docker compose -p "$BASE_PROJECT" -f "$BASE_COMPOSE" "$@"; }
+fam()  { local s="$1"; shift; docker compose -p "vault-fam-$s" -f "$FAMILIES_DIR/$s/compose.yml" "$@"; }
+psql_admin() { base exec -T postgres psql -v ON_ERROR_STOP=1 -U "$PG_ADMIN_USER" -d postgres "$@"; }
+
+valid_slug() { [[ "$1" =~ ^[a-z][a-z0-9]{1,30}$ ]]; }
+family_exists() { [ -f "$FAMILIES_DIR/$1/family.env" ]; }
+load_family() { # sets SLUG PORT DOMAIN MODE DB_PASSWORD OWNER_EMAIL APP_PUBLIC_URL CREATED
+  # shellcheck disable=SC1090
+  source "$FAMILIES_DIR/$1/family.env"
+}
+
+wait_pg() {
+  hdr "Waiting for shared Postgres…"
+  for _ in $(seq 1 30); do
+    if base exec -T postgres pg_isready -U "$PG_ADMIN_USER" -d postgres >/dev/null 2>&1; then
+      ok "Postgres ready"; return 0
+    fi
+    sleep 1
+  done
+  die "Postgres did not come up (try: ./familyctl.sh up)"
+}
+
+next_free_port() {
+  local p=8443 used
+  used=$(grep -hs '^PORT=' "$FAMILIES_DIR"/*/family.env 2>/dev/null | cut -d= -f2)
+  while grep -qx "$p" <<<"$used" || (command -v ss >/dev/null && ss -ltn 2>/dev/null | grep -q ":$p "); do
+    p=$((p + 1))
+  done
+  echo "$p"
+}
+
+ensure_image() {
+  if docker image inspect "$IMAGE" >/dev/null 2>&1; then return 0; fi
+  warn "image $IMAGE not found — building it now"
+  cmd_build
+}
+
+# ---- haproxy ------------------------------------------------------------
+regen_haproxy() {
+  mkdir -p "$HAPROXY_DIR"
+  local map="$HAPROXY_DIR/families.map"
+  local cfg="$HAPROXY_DIR/haproxy.cfg"
+  : >"$map"
+  {
+    cat <<'EOF'
+# GENERATED by familyctl — edits are overwritten on the next family change.
+# Committed so `docker compose` bind-mounts a FILE here (a missing path would be
+# created as a directory). familyctl.sh appends one `backend bk_<slug>` per
+# proxy-mode family plus a matching line in families.map.
+global
+    log stdout format raw local0
+    maxconn 2048
+defaults
+    log     global
+    mode    tcp
+    timeout connect 5s
+    timeout client  1h
+    timeout server  1h
+    timeout tunnel  1h
+
+resolvers docker
+    nameserver dns 127.0.0.11:53
+    resolve_retries 3
+    timeout resolve 2s
+    hold valid 10s
+
+frontend sni_in
+    bind :443
+    tcp-request inspect-delay 5s
+    tcp-request content accept if { req_ssl_hello_type 1 }
+    use_backend %[req.ssl_sni,lower,map(/usr/local/etc/haproxy/families.map,no_match)]
+    default_backend no_match
+
+backend no_match
+    # SNI didn't match any family — drop the connection.
+    tcp-request content reject
+EOF
+    local d
+    for d in "$FAMILIES_DIR"/*/; do
+      [ -f "$d/family.env" ] || continue
+      ( load_family "$(basename "$d")"
+        if [ "$MODE" != proxy ] || [ -z "$DOMAIN" ]; then exit 0; fi
+        echo "$DOMAIN bk_$SLUG" >>"$map"
+        printf '\nbackend bk_%s\n    server s1 vault-%s:8443 resolvers docker resolve-prefer ipv4 init-addr none\n' "$SLUG" "$SLUG"
+      )
+    done
+  } >"$cfg"
+  # families.map must exist even when empty (compose mounts it).
+  [ -s "$map" ] || echo "# no proxy-mode families yet" >"$map"
+}
+
+reload_haproxy() {
+  regen_haproxy
+  if base ps --services --filter status=running 2>/dev/null | grep -qx haproxy; then
+    base restart haproxy >/dev/null; ok "HAProxy reloaded"
+  else
+    base --profile proxy up -d haproxy >/dev/null; ok "HAProxy started on :443"
+  fi
+}
+
+any_proxy_family() {
+  local d
+  for d in "$FAMILIES_DIR"/*/; do
+    [ -f "$d/family.env" ] || continue
+    if ( load_family "$(basename "$d")"; [ "$MODE" = proxy ] ); then return 0; fi
+  done
+  return 1
+}
+
+# ---- commands ----------------------------------------------------------
+cmd_build() {
+  hdr "Building $IMAGE"
+  docker build -f "$REPO_DIR/docker/Dockerfile.server" -t "$IMAGE" "$REPO_DIR"
+  ok "built $IMAGE"
+}
+
+cmd_up() {
+  hdr "Starting shared base stack ($BASE_PROJECT)"
+  base up -d postgres ollama
+  if any_proxy_family; then regen_haproxy; base --profile proxy up -d haproxy; fi
+  wait_pg
+  ok "base stack up"
+  start_control
+}
+
+# The admin control-plane (Docker-socket privileged) — opt-in. Started when a
+# token exists or has been generated into control.token.
+start_control() {
+  local tokenfile="$MULTI_DIR/control.token"
+  if [ -z "${CONTROL_ADMIN_TOKEN:-}" ] && [ ! -f "$tokenfile" ]; then
+    [ "${CONTROL:-0}" = 1 ] || return 0   # only auto-provision when asked
+    CONTROL_ADMIN_TOKEN="$(openssl rand -hex 32)"
+    printf '%s\n' "$CONTROL_ADMIN_TOKEN" >"$tokenfile"; chmod 600 "$tokenfile"
+  fi
+  [ -z "${CONTROL_ADMIN_TOKEN:-}" ] && [ -f "$tokenfile" ] && CONTROL_ADMIN_TOKEN="$(cat "$tokenfile")"
+  [ -n "${CONTROL_ADMIN_TOKEN:-}" ] || return 0
+
+  hdr "Starting admin control-plane (:${CONTROL_PORT:-9443})"
+  CONTROL_ADMIN_TOKEN="$CONTROL_ADMIN_TOKEN" base --profile admin up -d control
+  local host; host="$(hostname -I 2>/dev/null | awk '{print $1}')"; host="${host:-<server-ip>}"
+  say "  Admin console URL:    ${B}https://$host:${CONTROL_PORT:-9443}${RST}"
+  say "  Admin token:          ${B}$CONTROL_ADMIN_TOKEN${RST}"
+  say "  (paste both into the desktop app's Server administration window)"
+}
+
+cmd_down() {
+  warn "This stops Postgres + Ollama + HAProxy. Family servers will lose their DB."
+  confirm stop "Type 'stop' to confirm: " || die "aborted"
+  base --profile proxy down
+}
+
+# Escape a value for safe use on the right-hand side of `sed s|...|VALUE|`.
+sed_rhs() { printf '%s' "$1" | sed -e 's/[&|\\]/\\&/g'; }
+
+cmd_create() {
+  local slug="" port="" domain="" mode="port" start=1 owner_email=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --port)        port="$2"; shift 2 ;;
+      --domain)      domain="$2"; shift 2 ;;
+      --owner-email) owner_email="$2"; shift 2 ;;
+      --proxy)       mode="proxy"; shift ;;
+      --no-start)    start=0; shift ;;
+      -*)            die "unknown option: $1" ;;
+      *)             [ -z "$slug" ] && slug="$1" || die "unexpected arg: $1"; shift ;;
+    esac
+  done
+  [ -n "$slug" ] || die "usage: familyctl.sh create <slug> [--port N] [--domain HOST] [--proxy] [--owner-email ADDR]"
+  valid_slug "$slug" || die "slug must match ^[a-z][a-z0-9]{1,30}$ (used as the DB name)"
+  family_exists "$slug" && die "family '$slug' already exists"
+  [ "$mode" = proxy ] && [ -z "$domain" ] && die "--proxy requires --domain HOST"
+
+  ensure_image
+  base up -d postgres ollama >/dev/null
+  wait_pg
+
+  [ -n "$port" ] || port="$(next_free_port)"
+  local bind="0.0.0.0"; [ "$mode" = proxy ] && bind="127.0.0.1"
+  local db_password; db_password="$(openssl rand -hex 24)"
+  local role="vault_$slug" dbname="vault_$slug"
+
+  hdr "Creating database + role for '$slug'"
+  psql_admin <<SQL
+DO \$\$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$role') THEN
+    CREATE ROLE $role LOGIN PASSWORD '$db_password';
+  ELSE
+    ALTER ROLE $role WITH LOGIN PASSWORD '$db_password';
+  END IF;
+END \$\$;
+SQL
+  # CREATE DATABASE can't run inside the DO block / a transaction.
+  if ! psql_admin -tAc "SELECT 1 FROM pg_database WHERE datname='$dbname'" | grep -qx 1; then
+    psql_admin -c "CREATE DATABASE $dbname OWNER $role"
+  fi
+  psql_admin -c "REVOKE ALL ON DATABASE $dbname FROM PUBLIC"
+  psql_admin -c "GRANT ALL ON DATABASE $dbname TO $role"
+  ok "database $dbname owned by $role (no PUBLIC access)"
+
+  # Public address for this family — links in its emails resolve here.
+  local app_public_url
+  if [ "$mode" = proxy ]; then
+    app_public_url="https://$domain"
+  else
+    local host; host="$(hostname -I 2>/dev/null | awk '{print $1}')"; host="${host:-server}"
+    app_public_url="https://$host:$port"
+  fi
+
+  hdr "Rendering compose for '$slug'"
+  mkdir -p "$FAMILIES_DIR/$slug"
+  chmod 700 "$FAMILIES_DIR/$slug"
+  sed -e "s|__SLUG__|$(sed_rhs "$slug")|g" \
+      -e "s|__PORT__|$(sed_rhs "$port")|g" \
+      -e "s|__BIND__|$(sed_rhs "$bind")|g" \
+      -e "s|__DB_PASSWORD__|$(sed_rhs "$db_password")|g" \
+      -e "s|__IMAGE__|$(sed_rhs "$IMAGE")|g" \
+      -e "s|__OLLAMA_MODEL__|$(sed_rhs "$OLLAMA_MODEL")|g" \
+      -e "s|__BANK_AUTO_SYNC_MINUTES__|$(sed_rhs "$BANK_AUTO_SYNC_MINUTES")|g" \
+      -e "s|__LOG_LEVEL__|$(sed_rhs "$LOG_LEVEL")|g" \
+      -e "s|__SMTP_HOST__|$(sed_rhs "$SMTP_HOST")|g" \
+      -e "s|__SMTP_PORT__|$(sed_rhs "$SMTP_PORT")|g" \
+      -e "s|__SMTP_USER__|$(sed_rhs "$SMTP_USER")|g" \
+      -e "s|__SMTP_PASS__|$(sed_rhs "$SMTP_PASS")|g" \
+      -e "s|__SMTP_SECURE__|$(sed_rhs "$SMTP_SECURE")|g" \
+      -e "s|__MAIL_FROM__|$(sed_rhs "$MAIL_FROM")|g" \
+      -e "s|__APP_PUBLIC_URL__|$(sed_rhs "$app_public_url")|g" \
+      -e "s|__SURVEY_URL__|$(sed_rhs "$SURVEY_URL")|g" \
+      -e "s|__UPDATE_OPERATOR_MANAGED__|$(sed_rhs "$UPDATE_OPERATOR_MANAGED")|g" \
+      "$SERVICE_TMPL" >"$FAMILIES_DIR/$slug/compose.yml"
+
+  cat >"$FAMILIES_DIR/$slug/family.env" <<ENV
+SLUG=$slug
+PORT=$port
+DOMAIN=$domain
+MODE=$mode
+DB_PASSWORD=$db_password
+OWNER_EMAIL=$owner_email
+APP_PUBLIC_URL=$app_public_url
+CREATED=$(date -u +%FT%TZ)
+ENV
+  chmod 600 "$FAMILIES_DIR/$slug/family.env"
+
+  if [ "$start" = 0 ]; then
+    ok "scaffolded family '$slug' (not started — --no-start)"
+    return 0
+  fi
+
+  hdr "Starting server 'vault-$slug'"
+  fam "$slug" up -d
+
+  if [ "$mode" = proxy ]; then reload_haproxy; fi
+
+  hdr "Waiting for first-boot migrations…"
+  local url="https://127.0.0.1:$port/api/v1/setup/status" reply=""
+  for _ in $(seq 1 40); do
+    reply="$(curl -sk --max-time 3 "$url" 2>/dev/null || true)"
+    [[ "$reply" == *needsSetup* ]] && break
+    sleep 1
+  done
+  [[ "$reply" == *needsSetup* ]] || { fam "$slug" logs --tail 40 server; die "server '$slug' did not become ready"; }
+  ok "server ready: $reply"
+
+  hdr "Family '$slug' is live"
+  if [ "$mode" = proxy ]; then
+    say "  Connect address for this family:  ${B}https://$domain${RST}"
+    say "  (ensure DNS  $domain -> this host, and port 443 is open)"
+  else
+    local host; host="$(hostname -I 2>/dev/null | awk '{print $1}')"; host="${host:-<server-ip>}"
+    say "  Connect address for this family:  ${B}https://$host:$port${RST}"
+  fi
+  say "  They complete the owner-account wizard on first connect."
+  say "  Nothing is shared with any other family."
+}
+
+cmd_list() {
+  printf '%-14s %-7s %-8s %-28s %-10s %s\n' SLUG PORT MODE DOMAIN STATE "DB SIZE"
+  local d
+  for d in "$FAMILIES_DIR"/*/; do
+    [ -f "$d/family.env" ] || continue
+    ( load_family "$(basename "$d")"
+      local state size
+      state="$(docker inspect -f '{{.State.Status}}' "vault-$SLUG" 2>/dev/null || echo "-")"
+      size="$(psql_admin -tAc "SELECT pg_size_pretty(pg_database_size('vault_$SLUG'))" 2>/dev/null | tr -d ' ' || echo "?")"
+      printf '%-14s %-7s %-8s %-28s %-10s %s\n' "$SLUG" "$PORT" "$MODE" "${DOMAIN:--}" "$state" "$size"
+    )
+  done
+}
+
+cmd_upgrade() {
+  local target="${1:-}"
+  [ -n "$target" ] || die "usage: familyctl.sh upgrade --all | <slug>"
+  cmd_build
+  local slugs=()
+  if [ "$target" = "--all" ]; then
+    local d; for d in "$FAMILIES_DIR"/*/; do [ -f "$d/family.env" ] && slugs+=("$(basename "$d")"); done
+  else
+    family_exists "$target" || die "no such family: $target"; slugs=("$target")
+  fi
+  for s in "${slugs[@]}"; do
+    hdr "Recreating vault-$s"
+    fam "$s" up -d --force-recreate
+    ok "vault-$s upgraded (migrations ran on boot)"
+  done
+}
+
+# Pull the prebuilt release image and recreate — the fast, no-build path that
+# `vault-update` uses. `upgrade` (above) is the build-from-source equivalent.
+cmd_update() {
+  local target="${1:-}"
+  [ -n "$target" ] || die "usage: familyctl.sh update --all | <slug>"
+
+  hdr "Updating shared base stack"
+  base pull
+  base up -d postgres ollama
+  if any_proxy_family; then base --profile proxy up -d haproxy; fi
+
+  local slugs=()
+  if [ "$target" = "--all" ]; then
+    local d; for d in "$FAMILIES_DIR"/*/; do [ -f "$d/family.env" ] && slugs+=("$(basename "$d")"); done
+  else
+    family_exists "$target" || die "no such family: $target"; slugs=("$target")
+  fi
+  for s in "${slugs[@]}"; do
+    hdr "Updating vault-$s"
+    fam "$s" pull
+    fam "$s" up -d
+    ok "vault-$s updated (migrations ran on boot)"
+  done
+  docker image prune -f >/dev/null 2>&1 || true
+}
+
+cmd_backup() {
+  local slug="${1:-}"; [ -n "$slug" ] || die "usage: familyctl.sh backup <slug>"
+  family_exists "$slug" || die "no such family: $slug"
+  mkdir -p "$BACKUP_DIR"
+  local stamp; stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  local sql="$BACKUP_DIR/$slug-$stamp.sql.gz"
+  local dat="$BACKUP_DIR/$slug-$stamp.data.tar.gz"
+  hdr "Backing up '$slug'"
+  base exec -T postgres pg_dump -U "$PG_ADMIN_USER" -d "vault_$slug" --no-owner --no-privileges | gzip >"$sql"
+  [ "${PIPESTATUS[0]}" -eq 0 ] || { rm -f "$sql"; die "pg_dump failed — backup aborted"; }
+  docker run --rm -v "vault-fam-$slug-data:/v:ro" -v "$BACKUP_DIR:/b" alpine \
+    tar czf "/b/$(basename "$dat")" -C /v .
+  ok "db   -> $sql"
+  ok "data -> $dat"
+}
+
+cmd_restore() {
+  local slug="${1:-}" sql="${2:-}" dat="${3:-}"
+  [ -n "$slug" ] && [ -n "$sql" ] && [ -n "$dat" ] || die "usage: familyctl.sh restore <slug> <sql.gz> <data.tar.gz>"
+  family_exists "$slug" || die "no such family: $slug (create it first)"
+  [ -f "$sql" ] && [ -f "$dat" ] || die "backup file(s) not found"
+  load_family "$slug"
+  warn "This OVERWRITES family '$slug' data with the backup."
+  confirm "$slug" "Type '$slug' to confirm: " || die "aborted"
+  fam "$slug" stop server
+  hdr "Restoring database"
+  psql_admin -c "DROP DATABASE IF EXISTS vault_$slug WITH (FORCE)" \
+             -c "CREATE DATABASE vault_$slug OWNER vault_$slug"
+  gunzip -c "$sql" | base exec -T postgres \
+    psql -q -v ON_ERROR_STOP=1 -U "vault_$slug" -d "vault_$slug"
+  hdr "Restoring data volume"
+  docker run --rm -v "vault-fam-$slug-data:/v" -v "$(cd "$(dirname "$dat")"&&pwd):/b:ro" alpine \
+    sh -c "rm -rf /v/* /v/..?* /v/.[!.]* 2>/dev/null; tar xzf /b/$(basename "$dat") -C /v"
+  fam "$slug" start server
+  ok "restored '$slug'"
+}
+
+cmd_destroy() {
+  local slug="${1:-}"; [ -n "$slug" ] || die "usage: familyctl.sh destroy <slug>"
+  family_exists "$slug" || die "no such family: $slug"
+  load_family "$slug"
+  warn "This deletes family '$slug': container, database, role, and data volume."
+  warn "The data volume is archived to $BACKUP_DIR first."
+  confirm "destroy $slug" "Type 'destroy $slug' to confirm: " || die "aborted"
+
+  mkdir -p "$BACKUP_DIR"
+  local stamp; stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  base exec -T postgres pg_dump -U "$PG_ADMIN_USER" -d "vault_$slug" --no-owner --no-privileges \
+    | gzip >"$BACKUP_DIR/$slug-destroyed-$stamp.sql.gz" || warn "db dump failed (continuing)"
+  docker run --rm -v "vault-fam-$slug-data:/v:ro" -v "$BACKUP_DIR:/b" alpine \
+    tar czf "/b/$slug-destroyed-$stamp.data.tar.gz" -C /v . || warn "data archive failed (continuing)"
+
+  fam "$slug" down -v || true
+  docker volume rm "vault-fam-$slug-data" 2>/dev/null || true
+  psql_admin -c "DROP DATABASE IF EXISTS vault_$slug WITH (FORCE)" || true
+  psql_admin -c "DROP ROLE IF EXISTS vault_$slug" || true
+  rm -rf "${FAMILIES_DIR:?}/$slug"
+  if [ "$MODE" = proxy ]; then reload_haproxy; fi
+  ok "family '$slug' destroyed (archives in $BACKUP_DIR)"
+}
+
+cmd_import_existing() {
+  local slug="" from_project="vault-finance" from_file="" old_data_dir="$REPO_DIR/docker/data/vault"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --from-project)  from_project="$2"; shift 2 ;;
+      --from-file)     from_file="$2"; shift 2 ;;
+      --old-data-dir)  old_data_dir="$2"; shift 2 ;;
+      -*)              die "unknown option: $1" ;;
+      *)               [ -z "$slug" ] && slug="$1" || die "unexpected arg: $1"; shift ;;
+    esac
+  done
+  [ -n "$slug" ] || die "usage: familyctl.sh import-existing <slug> [--from-project NAME] [--from-file dump.sql[.gz]] [--old-data-dir DIR]"
+  valid_slug "$slug" || die "bad slug"
+  family_exists "$slug" && die "family '$slug' already exists — import into a fresh slug"
+
+  # 1. scaffold DB/role/compose exactly like create, but don't boot yet.
+  cmd_create "$slug" --no-start
+  load_family "$slug"
+
+  # 2. load the old database.
+  hdr "Importing database into vault_$slug"
+  psql_admin -c "DROP DATABASE IF EXISTS vault_$slug WITH (FORCE)" \
+             -c "CREATE DATABASE vault_$slug OWNER vault_$slug"
+  if [ -n "$from_file" ]; then
+    say "  source: file $from_file"
+    [ -f "$from_file" ] || die "no such file: $from_file"
+    { case "$from_file" in *.gz) gunzip -c "$from_file";; *) cat "$from_file";; esac; } \
+      | base exec -T postgres psql -q -v ON_ERROR_STOP=1 -U "vault_$slug" -d "vault_$slug"
+  else
+    say "  source: running compose project '$from_project' (service postgres, db 'vault')"
+    docker compose -p "$from_project" exec -T postgres \
+      pg_dump -U vault -d vault --no-owner --no-privileges \
+      | base exec -T postgres psql -q -v ON_ERROR_STOP=1 -U "vault_$slug" -d "vault_$slug"
+    [ "${PIPESTATUS[0]}" -eq 0 ] || die "pg_dump from '$from_project' failed"
+  fi
+  ok "database imported"
+
+  # 3. carry over /data (jwt-secret, data-key, TLS cert, uploads) so pinned
+  #    clients and existing sessions keep working.
+  if [ -d "$old_data_dir" ]; then
+    hdr "Carrying over $old_data_dir -> vault-fam-$slug-data"
+    local uid gid
+    uid="$(docker run --rm "$IMAGE" id -u vault)"
+    gid="$(docker run --rm "$IMAGE" id -g vault)"
+    docker run --rm -v "vault-fam-$slug-data:/dst" -v "$old_data_dir:/src:ro" alpine \
+      sh -c "cp -a /src/. /dst/ && chown -R $uid:$gid /dst && chmod 600 /dst/jwt-secret /dst/data-key 2>/dev/null; true"
+    ok "TLS cert + secrets carried over (clients keep their pinned fingerprint)"
+  else
+    warn "old data dir $old_data_dir not found — a NEW cert/secret will be generated"
+    warn "(pinned clients will show a one-time fingerprint-change warning)"
+  fi
+
+  fam "$slug" up -d --force-recreate
+  ok "imported family '$slug' is live on port $PORT"
+  warn "verify the app, then retire the old '$from_project' stack when satisfied"
+}
+
+# ---- dispatch ---------------------------------------------------------
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  build)           cmd_build "$@" ;;
+  up|base-up)      cmd_up "$@" ;;
+  down)            cmd_down "$@" ;;
+  create)          cmd_create "$@" ;;
+  list|ls)         cmd_list "$@" ;;
+  update)          cmd_update "$@" ;;
+  upgrade)         cmd_upgrade "$@" ;;
+  backup)          cmd_backup "$@" ;;
+  restore)         cmd_restore "$@" ;;
+  destroy|rm)      cmd_destroy "$@" ;;
+  import-existing) cmd_import_existing "$@" ;;
+  ""|-h|--help|help)
+    sed -n '3,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//; s/^#//'
+    ;;
+  *) die "unknown command: $cmd (try --help)" ;;
+esac

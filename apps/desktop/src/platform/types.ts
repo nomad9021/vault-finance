@@ -50,4 +50,11 @@ export interface HostPlatform {
   getSecret(key: string): Promise<string | null>;
   setSecret(key: string, value: string): Promise<void>;
   deleteSecret(key: string): Promise<void>;
+
+  /**
+   * Open the hosting admin console in a separate window (Tauri only). Undefined
+   * where there is no such window (browser dev, iOS) so callers can hide the
+   * entry point entirely.
+   */
+  openAdminConsole?(): Promise<void>;
 }
