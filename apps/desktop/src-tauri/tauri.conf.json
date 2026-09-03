@@ -21,6 +21,19 @@
         "center": true,
         "resizable": true,
         "decorations": true
+      },
+      {
+        "label": "admin",
+        "title": "Vault Finance — Server Administration",
+        "url": "index.html?window=admin",
+        "width": 1100,
+        "height": 760,
+        "minWidth": 900,
+        "minHeight": 560,
+        "center": true,
+        "resizable": true,
+        "decorations": true,
+        "visible": false
       }
     ],
     "security": {

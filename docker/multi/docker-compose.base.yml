@@ -60,6 +60,46 @@ services:
     #           count: all
     #           capabilities: [gpu]
 
+  # Optional hosting admin API. Enable with:  --profile admin
+  #
+  # PRIVILEGED: this is the only container with the Docker socket. It wraps
+  # familyctl.sh so the desktop "admin console" window can add / update / remove
+  # families. Family servers stay unprivileged. Protect CONTROL_ADMIN_TOKEN like
+  # a root password. See docs/operations.md.
+  control:
+    image: ${VAULT_CONTROL_IMAGE:-ghcr.io/nomad9021/vault-finance-control:latest}
+    restart: unless-stopped
+    profiles: [admin]
+    networks: [vault-net]
+    environment:
+      CONTROL_PORT: "9443"
+      CONTROL_DATA_DIR: /data
+      # Required. familyctl generates one into control.token; the container
+      # refuses to start if it's empty or too short.
+      CONTROL_ADMIN_TOKEN: ${CONTROL_ADMIN_TOKEN:-}
+      FAMILYCTL: /repo/docker/multi/familyctl.sh
+      FAMILIES_DIR: /repo/docker/multi/families
+      SURVEY_URL: ${SURVEY_URL:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      MAIL_FROM: ${MAIL_FROM:-}
+      # familyctl also reads these to thread into new family servers.
+      UPDATE_OPERATOR_MANAGED: ${UPDATE_OPERATOR_MANAGED:-true}
+      # Family servers on vault-net present self-signed certs (ADR-0004); the
+      # only hosts this container ever contacts are those internal servers.
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    ports:
+      - "${CONTROL_PORT:-9443}:9443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${VAULT_MULTI_DISK:-./data}/control:/data
+      # The repo, so `control` can exec familyctl.sh and manage docker compose.
+      - ../..:/repo
+    working_dir: /repo/docker/multi
+
   # Optional SNI router. Enable with:  --profile proxy
   # Routes by the TLS server name in the ClientHello; the TCP stream is
   # forwarded verbatim, so the family server's own cert (and its pinned

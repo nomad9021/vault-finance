@@ -64,6 +64,34 @@ export const deviceSessions = pgTable(
   ],
 );
 
+// Pending invitations for new household members. The raw token is emailed;
+// only its argon2 hash is stored. Rows are deleted once accepted or expired.
+export const memberInvites = pgTable(
+  "member_invites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: text("email").notNull(),
+    displayName: text("display_name").notNull(),
+    role: text("role", { enum: ["owner", "member"] }).notNull().default("member"),
+    tokenHash: text("token_hash").notNull(),
+    invitedByUserId: uuid("invited_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  },
+  (t) => [index("member_invites_email_idx").on(t.email)],
+);
+
+// Tiny key/value store for server-scoped state that isn't user data — e.g. the
+// last software version we've already emailed the owner about.
+export const appMeta = pgTable("app_meta", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ── categories ──
 
 export const categories = pgTable("categories", {

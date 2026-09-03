@@ -92,13 +92,41 @@ any `create`/`destroy` to regenerate `haproxy/haproxy.cfg`), then open 443.
 ### Updating
 
 ```bash
-git pull
-./familyctl.sh upgrade --all      # rebuilds the image, recreates every family container
-# or: ./familyctl.sh upgrade smith
+./familyctl.sh update --all       # pull the prebuilt release image, recreate every family
+# or: ./familyctl.sh update smith
 ```
 
-Migrations run automatically on each family's boot, per database. Update the
-server before clients, as always.
+`update` is the fast path — it pulls `ghcr.io/nomad9021/vault-finance-server`
+and recreates containers, no local build. `upgrade` is the same operation but
+builds the image from the current checkout (`git pull` first) — use it for
+development or an un-released change. Migrations run automatically on each
+family's boot, per database. Update the server before clients, as always.
+
+Set `SMTP_HOST` (and friends) before `./familyctl.sh up` / `create` to thread a
+shared mail relay into every family — they'll then send household-confirmed and
+update-available emails. `UPDATE_OPERATOR_MANAGED` defaults to `true` here, so
+those emails tell owners to contact you rather than run `vault-update`.
+
+## The admin console (optional)
+
+The desktop app has a hidden **Server administration** window (Settings →
+"Server administration…", owner only) that can add, update, and remove families
+without touching the host shell. It talks to a small **control-plane** container
+— the *only* container given the Docker socket — which wraps `familyctl.sh`.
+
+```bash
+CONTROL=1 ./familyctl.sh up
+#  → prints the admin console URL (https://<host>:9443) and a token,
+#    also saved to docker/multi/control.token
+```
+
+Paste the URL + token into the admin window. Creating a household there runs
+`familyctl create` and, if you supply an owner email and SMTP is configured,
+sends the welcome + survey email.
+
+**Security:** the control token is root-equivalent for this host (the socket
+lets it run any container). Keep it secret; only run the control profile if you
+want the in-app console. Family servers themselves stay unprivileged.
 
 ## Migrating your current single-family stack in
 

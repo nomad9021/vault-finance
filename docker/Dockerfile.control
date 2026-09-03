@@ -1,0 +1,36 @@
+# Build context is the repo root:
+#   docker build -f docker/Dockerfile.control .
+#
+# The multi-family hosting control plane. Wraps docker/multi/familyctl.sh so the
+# desktop admin window can provision families. Runs with the Docker socket
+# mounted — keep its image and its admin token tightly controlled.
+FROM node:22-alpine AS build
+RUN corepack enable
+WORKDIR /repo
+
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json tsconfig.base.json ./
+COPY packages/shared/package.json packages/shared/package.json
+COPY apps/control/package.json apps/control/package.json
+RUN pnpm install --frozen-lockfile --filter @vault/control...
+
+COPY packages/shared packages/shared
+COPY apps/control apps/control
+RUN pnpm --filter @vault/shared build \
+    && pnpm --filter @vault/control build \
+    && pnpm --filter @vault/control --prod deploy /prod/control
+
+FROM node:22-alpine
+# familyctl.sh needs a shell, the docker CLI + compose plugin (talks to the
+# mounted socket), and the usual text tools. No psql: familyctl runs it inside
+# the postgres container via `docker compose exec`.
+RUN apk add --no-cache bash docker-cli docker-cli-compose openssl curl grep gawk sed
+WORKDIR /app
+COPY --from=build /prod/control /app
+
+ENV NODE_ENV=production \
+    CONTROL_PORT=9443 \
+    CONTROL_DATA_DIR=/data
+
+VOLUME /data
+EXPOSE 9443
+CMD ["node", "dist/server.js"]

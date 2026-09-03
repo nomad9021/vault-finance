@@ -123,6 +123,10 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
       await relaunch();
     },
 
+    async openAdminConsole() {
+      await invoke("open_admin_window");
+    },
+
     async getSecret(key) {
       return await invoke<string | null>("get_secret", { key });
     },

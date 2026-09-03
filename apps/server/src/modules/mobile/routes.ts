@@ -95,7 +95,106 @@ export default async function mobileRoutes(app: FastifyInstance) {
       .type("text/html")
       .send(PAGE);
   });
+
+  // Household-member invitation: a family owner sends a link, the recipient
+  // lands here to set their password. Same origin as the API, same stylesheet
+  // as the phone viewer. The token in the query string is the only credential.
+  app.get("/invite", async (_req, reply) => {
+    reply
+      .header(
+        "content-security-policy",
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+          "img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      )
+      .header("x-content-type-options", "nosniff")
+      .header("referrer-policy", "no-referrer")
+      .header("cache-control", "no-store")
+      .type("text/html")
+      .send(INVITE_PAGE);
+  });
 }
+
+const INVITE_PAGE = /* html */ `<!doctype html>
+<html lang="en" data-theme="dark"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#14151f">
+<title>Join the household · Vault Finance</title>
+<link rel="stylesheet" href="/vault.css?v=${CSS_VER}">
+<style>
+  body{margin:0;min-height:100dvh;display:grid;place-items:center;padding:24px;background:var(--surface-canvas,#14151f)}
+  .invite-card{width:100%;max-width:380px}
+  .invite-card h1{font-size:var(--text-xl,1.25rem);margin:0 0 4px}
+  .invite-card p.sub{color:var(--content-secondary,#9aa0ad);margin:0 0 20px;font-size:var(--text-sm,.875rem)}
+  .invite-card label{display:block;font-size:var(--text-sm,.875rem);margin:14px 0 4px}
+  .invite-card input{width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid var(--border-default,#2a2c3a);background:var(--surface-raised,#1c1e2b);color:inherit;font:inherit}
+  .invite-card button{margin-top:18px;width:100%;padding:11px 16px;border-radius:8px;border:0;background:#7c5cff;color:#fff;font:inherit;font-weight:600;cursor:pointer}
+  .invite-card button:disabled{opacity:.5;cursor:default}
+  .msg{margin-top:14px;font-size:var(--text-sm,.875rem)}
+  .msg.err{color:var(--color-negative,#ec6a5e)}
+  .msg.ok{color:var(--color-positive,#3ecf8e)}
+</style>
+</head><body>
+<div class="panel invite-card" style="padding:24px">
+  <h1>Join the household</h1>
+  <p class="sub" id="intro">Checking your invitation…</p>
+  <div id="form" hidden>
+    <label for="pw">Choose a password</label>
+    <input id="pw" type="password" autocomplete="new-password" minlength="10" placeholder="At least 10 characters">
+    <label for="pw2">Confirm password</label>
+    <input id="pw2" type="password" autocomplete="new-password" minlength="10">
+    <button id="go">Create my account</button>
+    <div class="msg" id="msg" role="status"></div>
+  </div>
+</div>
+<script>
+  var token = new URLSearchParams(location.search).get("token") || "";
+  var intro = document.getElementById("intro");
+  var form = document.getElementById("form");
+  var msg = document.getElementById("msg");
+  var api = "/api/v1/members/invite/" + encodeURIComponent(token);
+
+  function fail(t){ intro.textContent = t; intro.className = "sub"; }
+
+  if (!token) { fail("This link is missing its invitation token."); }
+  else {
+    fetch(api).then(function(r){
+      if (!r.ok) throw 0;
+      return r.json();
+    }).then(function(d){
+      intro.textContent = (d.invitedByName ? d.invitedByName + " invited " : "You were invited as ")
+        + d.displayName + " (" + d.email + "). Set a password to finish.";
+      form.hidden = false;
+    }).catch(function(){
+      fail("This invitation is invalid or has expired. Ask the household owner to send a new one.");
+    });
+  }
+
+  document.getElementById("go").addEventListener("click", function(){
+    var pw = document.getElementById("pw").value, pw2 = document.getElementById("pw2").value;
+    msg.textContent = ""; msg.className = "msg";
+    if (pw.length < 10) { msg.textContent = "Password must be at least 10 characters."; msg.className = "msg err"; return; }
+    if (pw !== pw2) { msg.textContent = "Passwords don't match."; msg.className = "msg err"; return; }
+    var btn = document.getElementById("go"); btn.disabled = true;
+    fetch(api + "/accept", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ password: pw })
+    }).then(function(r){
+      if (r.status === 204) {
+        form.hidden = true;
+        intro.textContent = "Your account is ready. Open the Vault Finance app and sign in.";
+        intro.className = "sub";
+      } else {
+        return r.json().then(function(e){ throw new Error(e && e.error && e.error.message || "Something went wrong."); });
+      }
+    }).catch(function(e){
+      msg.textContent = e.message || "Could not create your account."; msg.className = "msg err"; btn.disabled = false;
+    });
+  });
+</script>
+</body></html>`;
 
 const PAGE = /* html */ `<!doctype html>
 <html lang="en" data-theme="dark"><head>

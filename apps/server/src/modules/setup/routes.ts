@@ -8,6 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { aiSettings, users } from "../../db/schema.js";
 import { seedDefaultCategories } from "../../db/seed-categories.js";
 import { AppError } from "../../errors.js";
+import { householdConfirmed } from "../../lib/email-templates.js";
 import type { AppConfig } from "../../config.js";
 
 /** Setup is complete exactly when an owner user exists — no separate flag to drift. */
@@ -36,10 +37,11 @@ export default async function setupRoutes(
     }
 
     const body = SetupCompleteRequest.parse(request.body);
+    const ownerEmail = body.ownerEmail.trim().toLowerCase();
 
     await app.db.transaction(async (tx) => {
       await tx.insert(users).values({
-        email: body.ownerEmail.trim().toLowerCase(),
+        email: ownerEmail,
         passwordHash: await argon2.hash(body.ownerPassword),
         displayName: body.ownerDisplayName,
         avatarColor: "#9184d9", // Nocturne accent — matches the design's default avatar tint
@@ -57,6 +59,15 @@ export default async function setupRoutes(
       });
 
       await seedDefaultCategories(tx);
+    });
+
+    // Best-effort welcome — never blocks setup completing.
+    void app.mailer.send({
+      to: ownerEmail,
+      ...householdConfirmed({
+        displayName: body.ownerDisplayName,
+        connectUrl: opts.config.mail.appPublicUrl ?? undefined,
+      }),
     });
 
     return reply.status(201).send({ ok: true });

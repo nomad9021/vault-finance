@@ -12,3 +12,9 @@ coverage/
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
 docker/data/
+docker/multi/families/
+docker/multi/backups/
+docker/multi/control.token
+# Local server data dir (VAULT_DATA_DIR defaults to ./data)
+apps/server/data/
+apps/control/data/

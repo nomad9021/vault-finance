@@ -130,7 +130,39 @@ mount the pair into the container and point the server at it:
 `curl` note: `-k` skips verification, fine for spot checks on localhost. For
 scripts, fetch the cert once and pass `--cacert` instead.
 
-## 5. AI setup (optional)
+## 5. Email notifications (optional)
+
+Set the `SMTP_*` values in `docker/.env` to let the server send:
+
+- a **welcome / confirmation** email when the owner finishes setup;
+- an **"update available"** email (once per new version) — the server checks
+  the project's GitHub releases once a day;
+- **household-member invitations** (Settings → Family members).
+
+```bash
+# docker/.env
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=apikey
+SMTP_PASS=…
+MAIL_FROM=Vault Finance <no-reply@example.com>
+APP_PUBLIC_URL=https://192.168.1.10:8443   # used for links in emails
+SURVEY_URL=https://forms.example.com/…      # optional, linked from the welcome email
+```
+
+With `SMTP_HOST` blank the server runs exactly as before — nothing is sent, and
+member invites fall back to a copy-able one-time link shown in the app.
+
+## 6. Family members
+
+Everyone in a household shares the same accounts and transactions (this is a
+family app, not multi-tenant — see [architecture.md](architecture.md)). The
+**owner** adds people from **Settings → Family members**, either by emailing a
+one-time invite link (they set their own password) or by creating the account
+with a temporary password. Members can use every feature but can't manage other
+members or change server-level settings.
+
+## 7. AI setup (optional)
 
 **The AI assistant is off by default.** The app is fully usable without it —
 there's no assistant UI at all until you turn it on. To enable it, open
@@ -165,7 +197,7 @@ Not running the bundled Ollama? You can drop the `ollama` service from the
 compose file entirely — the app doesn't need it unless you choose Ollama as
 your provider.
 
-## 6. Hardware sizing for Ollama
+## 8. Hardware sizing for Ollama
 
 *(numbers to be measured and filled in during M4 — placeholder guidance:)*
 
@@ -183,7 +215,7 @@ download, `ollama pull llama3.2:1b` (~1.3 GB) streams fine on any hardware —
 just don't judge answer quality by it; small models quote your numbers
 correctly but reason clumsily about them.
 
-## 7. Backups
+## 9. Backups
 
 All state lives in named Docker volumes:
 
@@ -210,23 +242,31 @@ For a live backup of just the database:
 
 Backups never leave your machine unless you move them.
 
-## 8. Updating
+## 10. Updating
 
-**Server** — pull the new code/image and restart; migrations run
+**Server** — pull the new prebuilt image and restart; migrations run
 automatically on boot:
 
 ```bash
-git pull            # or download the release
-docker compose up -d --build
+bash installers/server/update-server.sh
+# or by hand:
+docker compose -f docker/docker-compose.yml pull
+docker compose -f docker/docker-compose.yml up -d
 ```
 
-**Desktop apps** *(coming with M6)* — built-in auto-updater. Server and
+The compose file runs `ghcr.io/nomad9021/vault-finance-server` (tag from
+`VAULT_VERSION`, default `latest`). Each server checks the project's GitHub
+releases once a day and — when SMTP is set — emails the owner when a new
+version ships. Prefer building from source? Swap `image:` for the commented
+`build:` block and `docker compose up -d --build`.
+
+**Desktop apps** — built-in auto-updater. Server and
 clients share one semantic version line; if a client is older than the
 server's `minClientVersion`, the API answers `426` and the app shows an
 "update required" screen instead of failing in confusing ways. Updating the
 server first is always the safe order.
 
-## 9. Troubleshooting
+## 11. Troubleshooting
 
 - **Port already in use** — change `VAULT_PORT` in `.env` (host side only;
   the container keeps listening on 8443 internally).
@@ -242,14 +282,14 @@ server first is always the safe order.
 - **Login rate-limited (429)** — 10 attempts per 15 minutes per device+email.
   Wait, or restart the server to clear it.
 
-## 10. Hosting more than one family
+## 12. Hosting more than one family
 
 One stack serves **one family** — every member sees all of its data. To host
 several unrelated families on the same machine with their data fully separate,
 run one isolated instance per family with `docker/multi/familyctl.sh`. See
 [multi-family.md](multi-family.md).
 
-## 11. Manual release steps for maintainers
+## 13. Manual release steps for maintainers
 
 Moved to [releasing.md](releasing.md): cutting a release, the updater
 signing key, and the one-time macOS notarization setup (browser + CI only —

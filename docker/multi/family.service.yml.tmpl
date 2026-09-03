@@ -1,6 +1,9 @@
 # Rendered by familyctl.sh into families/<slug>/compose.yml — do not run directly.
 # Placeholders: __SLUG__  __PORT__  __BIND__  __DB_PASSWORD__  __IMAGE__
 #               __OLLAMA_MODEL__  __BANK_AUTO_SYNC_MINUTES__  __LOG_LEVEL__
+#               __SMTP_HOST__  __SMTP_PORT__  __SMTP_USER__  __SMTP_PASS__
+#               __SMTP_SECURE__  __MAIL_FROM__  __APP_PUBLIC_URL__  __SURVEY_URL__
+#               __UPDATE_OPERATOR_MANAGED__
 #
 # One compose project per family (docker compose -p vault-fam-__SLUG__ ...), so
 # each family starts/stops/upgrades independently. It joins the shared vault-net
@@ -35,6 +38,16 @@ services:
       OLLAMA_MODEL: __OLLAMA_MODEL__
       BANK_AUTO_SYNC_MINUTES: "__BANK_AUTO_SYNC_MINUTES__"
       LOG_LEVEL: __LOG_LEVEL__
+      # Outbound email — shared host relay, threaded in by familyctl.
+      SMTP_HOST: "__SMTP_HOST__"
+      SMTP_PORT: "__SMTP_PORT__"
+      SMTP_USER: "__SMTP_USER__"
+      SMTP_PASS: "__SMTP_PASS__"
+      SMTP_SECURE: "__SMTP_SECURE__"
+      MAIL_FROM: "__MAIL_FROM__"
+      APP_PUBLIC_URL: "__APP_PUBLIC_URL__"
+      SURVEY_URL: "__SURVEY_URL__"
+      UPDATE_OPERATOR_MANAGED: "__UPDATE_OPERATOR_MANAGED__"
     volumes:
       - data:/data
     ports:

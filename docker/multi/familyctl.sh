@@ -7,16 +7,18 @@
 #   ./familyctl.sh up                    # start the shared base stack
 #   ./familyctl.sh create <slug> [opts]  # add a family
 #   ./familyctl.sh list
-#   ./familyctl.sh upgrade [--all|<slug>]
+#   ./familyctl.sh update [--all|<slug>]   # pull prebuilt image + recreate (fast)
+#   ./familyctl.sh upgrade [--all|<slug>]  # build from source + recreate
 #   ./familyctl.sh backup <slug>
 #   ./familyctl.sh restore <slug> <sql.gz> <data.tar.gz>
 #   ./familyctl.sh destroy <slug>
 #   ./familyctl.sh import-existing <slug> [--from-project NAME] [--from-file FILE]
 #
 # create options:
-#   --port N        host port to publish (default: next free from 8443)
-#   --domain HOST   SNI hostname for proxy mode (e.g. smith.vault.example.com)
-#   --proxy         route via HAProxy on :443 instead of publishing on the LAN
+#   --port N            host port to publish (default: next free from 8443)
+#   --domain HOST       SNI hostname for proxy mode (e.g. smith.vault.example.com)
+#   --proxy             route via HAProxy on :443 instead of publishing on the LAN
+#   --owner-email ADDR  recorded for the control-plane's welcome email
 #
 set -euo pipefail
 
@@ -31,13 +33,36 @@ BASE_COMPOSE="$MULTI_DIR/docker-compose.base.yml"
 SERVICE_TMPL="$MULTI_DIR/family.service.yml.tmpl"
 
 BASE_PROJECT="vault-multi"
-IMAGE="${VAULT_MULTI_IMAGE:-vault-finance-server:multi}"
+# Prebuilt release image by default; `build`/`upgrade` retag a local source
+# build over this same ref. Override with VAULT_MULTI_IMAGE.
+IMAGE="${VAULT_MULTI_IMAGE:-ghcr.io/nomad9021/vault-finance-server:latest}"
 PG_ADMIN_USER="${POSTGRES_ADMIN_USER:-vault}"
 
 # Defaults threaded into each family's compose.
 OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.1:8b}"
 BANK_AUTO_SYNC_MINUTES="${BANK_AUTO_SYNC_MINUTES:-60}"
 LOG_LEVEL="${LOG_LEVEL:-info}"
+
+# Outbound email + update checks — set once on the host, threaded to every
+# family. Blank SMTP_HOST ⇒ families run without email (still fully functional).
+SMTP_HOST="${SMTP_HOST:-}"
+SMTP_PORT="${SMTP_PORT:-587}"
+SMTP_USER="${SMTP_USER:-}"
+SMTP_PASS="${SMTP_PASS:-}"
+SMTP_SECURE="${SMTP_SECURE:-false}"
+MAIL_FROM="${MAIL_FROM:-}"
+SURVEY_URL="${SURVEY_URL:-}"
+# Operator-managed fleet: the "update available" email tells owners to contact
+# their admin instead of running vault-update.
+UPDATE_OPERATOR_MANAGED="${UPDATE_OPERATOR_MANAGED:-true}"
+
+# Skip the interactive "type X to confirm" prompts. Set by the control-plane
+# service, which has already gated the action behind its own confirmation.
+ASSUME_YES="${FAMILYCTL_ASSUME_YES:-0}"
+confirm() { # confirm <expected> <prompt>
+  [ "$ASSUME_YES" = 1 ] && return 0
+  local r; read -r -p "$2" r; [ "$r" = "$1" ]
+}
 
 # ---- output -------------------------------------------------------------
 if [ -t 1 ]; then B=$'\033[1m'; DIM=$'\033[2m'; GRN=$'\033[32m'; YLW=$'\033[33m'; RED=$'\033[31m'; RST=$'\033[0m'; else B= DIM= GRN= YLW= RED= RST=; fi
@@ -56,7 +81,7 @@ psql_admin() { base exec -T postgres psql -v ON_ERROR_STOP=1 -U "$PG_ADMIN_USER"
 
 valid_slug() { [[ "$1" =~ ^[a-z][a-z0-9]{1,30}$ ]]; }
 family_exists() { [ -f "$FAMILIES_DIR/$1/family.env" ]; }
-load_family() { # sets SLUG PORT DOMAIN MODE DB_PASSWORD CREATED
+load_family() { # sets SLUG PORT DOMAIN MODE DB_PASSWORD OWNER_EMAIL APP_PUBLIC_URL CREATED
   # shellcheck disable=SC1090
   source "$FAMILIES_DIR/$1/family.env"
 }
@@ -172,27 +197,52 @@ cmd_up() {
   if any_proxy_family; then regen_haproxy; base --profile proxy up -d haproxy; fi
   wait_pg
   ok "base stack up"
+  start_control
+}
+
+# The admin control-plane (Docker-socket privileged) — opt-in. Started when a
+# token exists or has been generated into control.token.
+start_control() {
+  local tokenfile="$MULTI_DIR/control.token"
+  if [ -z "${CONTROL_ADMIN_TOKEN:-}" ] && [ ! -f "$tokenfile" ]; then
+    [ "${CONTROL:-0}" = 1 ] || return 0   # only auto-provision when asked
+    CONTROL_ADMIN_TOKEN="$(openssl rand -hex 32)"
+    printf '%s\n' "$CONTROL_ADMIN_TOKEN" >"$tokenfile"; chmod 600 "$tokenfile"
+  fi
+  [ -z "${CONTROL_ADMIN_TOKEN:-}" ] && [ -f "$tokenfile" ] && CONTROL_ADMIN_TOKEN="$(cat "$tokenfile")"
+  [ -n "${CONTROL_ADMIN_TOKEN:-}" ] || return 0
+
+  hdr "Starting admin control-plane (:${CONTROL_PORT:-9443})"
+  CONTROL_ADMIN_TOKEN="$CONTROL_ADMIN_TOKEN" base --profile admin up -d control
+  local host; host="$(hostname -I 2>/dev/null | awk '{print $1}')"; host="${host:-<server-ip>}"
+  say "  Admin console URL:    ${B}https://$host:${CONTROL_PORT:-9443}${RST}"
+  say "  Admin token:          ${B}$CONTROL_ADMIN_TOKEN${RST}"
+  say "  (paste both into the desktop app's Server administration window)"
 }
 
 cmd_down() {
   warn "This stops Postgres + Ollama + HAProxy. Family servers will lose their DB."
-  read -r -p "Type 'stop' to confirm: " r; [ "$r" = stop ] || die "aborted"
+  confirm stop "Type 'stop' to confirm: " || die "aborted"
   base --profile proxy down
 }
 
+# Escape a value for safe use on the right-hand side of `sed s|...|VALUE|`.
+sed_rhs() { printf '%s' "$1" | sed -e 's/[&|\\]/\\&/g'; }
+
 cmd_create() {
-  local slug="" port="" domain="" mode="port" start=1
+  local slug="" port="" domain="" mode="port" start=1 owner_email=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --port)     port="$2"; shift 2 ;;
-      --domain)   domain="$2"; shift 2 ;;
-      --proxy)    mode="proxy"; shift ;;
-      --no-start) start=0; shift ;;
-      -*)         die "unknown option: $1" ;;
-      *)          [ -z "$slug" ] && slug="$1" || die "unexpected arg: $1"; shift ;;
+      --port)        port="$2"; shift 2 ;;
+      --domain)      domain="$2"; shift 2 ;;
+      --owner-email) owner_email="$2"; shift 2 ;;
+      --proxy)       mode="proxy"; shift ;;
+      --no-start)    start=0; shift ;;
+      -*)            die "unknown option: $1" ;;
+      *)             [ -z "$slug" ] && slug="$1" || die "unexpected arg: $1"; shift ;;
     esac
   done
-  [ -n "$slug" ] || die "usage: familyctl.sh create <slug> [--port N] [--domain HOST] [--proxy]"
+  [ -n "$slug" ] || die "usage: familyctl.sh create <slug> [--port N] [--domain HOST] [--proxy] [--owner-email ADDR]"
   valid_slug "$slug" || die "slug must match ^[a-z][a-z0-9]{1,30}$ (used as the DB name)"
   family_exists "$slug" && die "family '$slug' already exists"
   [ "$mode" = proxy ] && [ -z "$domain" ] && die "--proxy requires --domain HOST"
@@ -224,17 +274,35 @@ SQL
   psql_admin -c "GRANT ALL ON DATABASE $dbname TO $role"
   ok "database $dbname owned by $role (no PUBLIC access)"
 
+  # Public address for this family — links in its emails resolve here.
+  local app_public_url
+  if [ "$mode" = proxy ]; then
+    app_public_url="https://$domain"
+  else
+    local host; host="$(hostname -I 2>/dev/null | awk '{print $1}')"; host="${host:-server}"
+    app_public_url="https://$host:$port"
+  fi
+
   hdr "Rendering compose for '$slug'"
   mkdir -p "$FAMILIES_DIR/$slug"
   chmod 700 "$FAMILIES_DIR/$slug"
-  sed -e "s|__SLUG__|$slug|g" \
-      -e "s|__PORT__|$port|g" \
-      -e "s|__BIND__|$bind|g" \
-      -e "s|__DB_PASSWORD__|$db_password|g" \
-      -e "s|__IMAGE__|$IMAGE|g" \
-      -e "s|__OLLAMA_MODEL__|$OLLAMA_MODEL|g" \
-      -e "s|__BANK_AUTO_SYNC_MINUTES__|$BANK_AUTO_SYNC_MINUTES|g" \
-      -e "s|__LOG_LEVEL__|$LOG_LEVEL|g" \
+  sed -e "s|__SLUG__|$(sed_rhs "$slug")|g" \
+      -e "s|__PORT__|$(sed_rhs "$port")|g" \
+      -e "s|__BIND__|$(sed_rhs "$bind")|g" \
+      -e "s|__DB_PASSWORD__|$(sed_rhs "$db_password")|g" \
+      -e "s|__IMAGE__|$(sed_rhs "$IMAGE")|g" \
+      -e "s|__OLLAMA_MODEL__|$(sed_rhs "$OLLAMA_MODEL")|g" \
+      -e "s|__BANK_AUTO_SYNC_MINUTES__|$(sed_rhs "$BANK_AUTO_SYNC_MINUTES")|g" \
+      -e "s|__LOG_LEVEL__|$(sed_rhs "$LOG_LEVEL")|g" \
+      -e "s|__SMTP_HOST__|$(sed_rhs "$SMTP_HOST")|g" \
+      -e "s|__SMTP_PORT__|$(sed_rhs "$SMTP_PORT")|g" \
+      -e "s|__SMTP_USER__|$(sed_rhs "$SMTP_USER")|g" \
+      -e "s|__SMTP_PASS__|$(sed_rhs "$SMTP_PASS")|g" \
+      -e "s|__SMTP_SECURE__|$(sed_rhs "$SMTP_SECURE")|g" \
+      -e "s|__MAIL_FROM__|$(sed_rhs "$MAIL_FROM")|g" \
+      -e "s|__APP_PUBLIC_URL__|$(sed_rhs "$app_public_url")|g" \
+      -e "s|__SURVEY_URL__|$(sed_rhs "$SURVEY_URL")|g" \
+      -e "s|__UPDATE_OPERATOR_MANAGED__|$(sed_rhs "$UPDATE_OPERATOR_MANAGED")|g" \
       "$SERVICE_TMPL" >"$FAMILIES_DIR/$slug/compose.yml"
 
   cat >"$FAMILIES_DIR/$slug/family.env" <<ENV
@@ -243,6 +311,8 @@ PORT=$port
 DOMAIN=$domain
 MODE=$mode
 DB_PASSWORD=$db_password
+OWNER_EMAIL=$owner_email
+APP_PUBLIC_URL=$app_public_url
 CREATED=$(date -u +%FT%TZ)
 ENV
   chmod 600 "$FAMILIES_DIR/$slug/family.env"
@@ -310,6 +380,32 @@ cmd_upgrade() {
   done
 }
 
+# Pull the prebuilt release image and recreate — the fast, no-build path that
+# `vault-update` uses. `upgrade` (above) is the build-from-source equivalent.
+cmd_update() {
+  local target="${1:-}"
+  [ -n "$target" ] || die "usage: familyctl.sh update --all | <slug>"
+
+  hdr "Updating shared base stack"
+  base pull
+  base up -d postgres ollama
+  if any_proxy_family; then base --profile proxy up -d haproxy; fi
+
+  local slugs=()
+  if [ "$target" = "--all" ]; then
+    local d; for d in "$FAMILIES_DIR"/*/; do [ -f "$d/family.env" ] && slugs+=("$(basename "$d")"); done
+  else
+    family_exists "$target" || die "no such family: $target"; slugs=("$target")
+  fi
+  for s in "${slugs[@]}"; do
+    hdr "Updating vault-$s"
+    fam "$s" pull
+    fam "$s" up -d
+    ok "vault-$s updated (migrations ran on boot)"
+  done
+  docker image prune -f >/dev/null 2>&1 || true
+}
+
 cmd_backup() {
   local slug="${1:-}"; [ -n "$slug" ] || die "usage: familyctl.sh backup <slug>"
   family_exists "$slug" || die "no such family: $slug"
@@ -333,7 +429,7 @@ cmd_restore() {
   [ -f "$sql" ] && [ -f "$dat" ] || die "backup file(s) not found"
   load_family "$slug"
   warn "This OVERWRITES family '$slug' data with the backup."
-  read -r -p "Type '$slug' to confirm: " r; [ "$r" = "$slug" ] || die "aborted"
+  confirm "$slug" "Type '$slug' to confirm: " || die "aborted"
   fam "$slug" stop server
   hdr "Restoring database"
   psql_admin -c "DROP DATABASE IF EXISTS vault_$slug WITH (FORCE)" \
@@ -353,7 +449,7 @@ cmd_destroy() {
   load_family "$slug"
   warn "This deletes family '$slug': container, database, role, and data volume."
   warn "The data volume is archived to $BACKUP_DIR first."
-  read -r -p "Type 'destroy $slug' to confirm: " r; [ "$r" = "destroy $slug" ] || die "aborted"
+  confirm "destroy $slug" "Type 'destroy $slug' to confirm: " || die "aborted"
 
   mkdir -p "$BACKUP_DIR"
   local stamp; stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -436,13 +532,14 @@ case "$cmd" in
   down)            cmd_down "$@" ;;
   create)          cmd_create "$@" ;;
   list|ls)         cmd_list "$@" ;;
+  update)          cmd_update "$@" ;;
   upgrade)         cmd_upgrade "$@" ;;
   backup)          cmd_backup "$@" ;;
   restore)         cmd_restore "$@" ;;
   destroy|rm)      cmd_destroy "$@" ;;
   import-existing) cmd_import_existing "$@" ;;
   ""|-h|--help|help)
-    sed -n '3,19p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//; s/^#//'
+    sed -n '3,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//; s/^#//'
     ;;
   *) die "unknown command: $cmd (try --help)" ;;
 esac

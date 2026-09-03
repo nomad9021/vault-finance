@@ -32,6 +32,7 @@ pub fn run() {
             commands::get_secret,
             commands::set_secret,
             commands::delete_secret,
+            commands::open_admin_window,
         ])
         .setup(|app| {
             // Tray: quick show/hide + quit. Closing the window hides to tray

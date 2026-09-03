@@ -13,6 +13,14 @@ import {
 import { SetupStatusResponse, type SetupCompleteRequest } from "../schemas/setup.js";
 import { User } from "../schemas/user.js";
 import { VersionResponse } from "../schemas/version.js";
+import { UpdateStatusResponse } from "../schemas/updates.js";
+import {
+  MemberListResponse,
+  Member,
+  InvitePreviewResponse,
+  type CreateMemberRequest,
+  type InviteMemberRequest,
+} from "../schemas/members.js";
 import {
   Account,
   AccountListResponse,
@@ -289,6 +297,46 @@ export class ApiClient {
   // ── Meta ──
   version() {
     return this.request(VersionResponse, "GET", "/version", undefined, { auth: false });
+  }
+  updateStatus() {
+    return this.request(UpdateStatusResponse, "GET", "/updates/status");
+  }
+
+  // ── Household members ──
+  members() {
+    return this.request(MemberListResponse, "GET", "/members");
+  }
+  inviteMember(body: InviteMemberRequest) {
+    return this.request(
+      z.object({ inviteUrl: z.string() }),
+      "POST",
+      "/members/invite",
+      body,
+    );
+  }
+  createMember(body: CreateMemberRequest) {
+    return this.request(Member, "POST", "/members", body);
+  }
+  removeMember(id: string) {
+    return this.request(z.undefined(), "DELETE", `/members/${id}`);
+  }
+  invitePreview(token: string) {
+    return this.request(
+      InvitePreviewResponse,
+      "GET",
+      `/members/invite/${encodeURIComponent(token)}`,
+      undefined,
+      { auth: false },
+    );
+  }
+  acceptInvite(token: string, password: string) {
+    return this.request(
+      z.undefined(),
+      "POST",
+      `/members/invite/${encodeURIComponent(token)}/accept`,
+      { password },
+      { auth: false },
+    );
   }
 
   // ── Setup ──
