@@ -15,7 +15,7 @@ import {
   type ProbeResult,
 } from "../platform/index.js";
 
-export const APP_VERSION = "0.1.2";
+export const APP_VERSION = "0.1.3";
 
 export type Screen =
   | { name: "boot" }

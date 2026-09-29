@@ -91,8 +91,10 @@ Without it, installers work but SmartScreen warns until reputation builds.
 1. `release-desktop.yml` builds each installer **plus** a `.sig` file
    (minisign signature using `TAURI_SIGNING_PRIVATE_KEY`) and a `latest.json`
    listing version, per-platform URLs, and signatures.
-2. The app polls `releases/latest/download/latest.json` when the user clicks
-   “Check for updates” (Settings → Application). No background phoning home.
+2. The app polls `releases/latest/download/latest.json` shortly after launch
+   and every 6 hours after that (a dot appears on the download button next to
+   the avatar), or when the user checks from that button or Settings →
+   Application. That request is the only one the app makes outside your server.
 3. If `latest.json`'s version is newer, the app downloads the platform
    package, verifies its signature against the **public key baked into the
    binary** (`tauri.conf.json` → `plugins.updater.pubkey`), installs, and

@@ -23,7 +23,7 @@ describe("update checking", () => {
   let auth: { authorization: string };
   let manifest: Server;
   let manifestUrl: string;
-  let latestTag = "v0.1.2"; // same as apiVersion → no update
+  let latestTag = "v0.1.3"; // same as apiVersion → no update
   const sent: MailMessage[] = [];
 
   beforeAll(async () => {
@@ -96,8 +96,8 @@ describe("update checking", () => {
     const res = await app.inject({ method: "GET", url: "/api/v1/updates/status", headers: auth });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.currentVersion).toBe("0.1.2");
-    expect(body.latestVersion).toBe("0.1.2");
+    expect(body.currentVersion).toBe("0.1.3");
+    expect(body.latestVersion).toBe("0.1.3");
     expect(body.updateAvailable).toBe(false);
   });
 
