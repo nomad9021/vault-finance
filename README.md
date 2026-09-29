@@ -43,11 +43,25 @@ Install Docker (official script — installs Engine, Compose, and buildx):
 curl -fsSL https://get.docker.com | sudo sh
 ```
 
-Let your user run Docker without sudo, then log out and back in (or run
-`newgrp docker`):
+Make sure the Docker daemon is running now and starts on every boot:
+
+```bash
+sudo systemctl enable --now docker
+```
+
+Let your user run Docker without sudo, then **log out and back in** (or run
+`newgrp docker` in the current terminal) — the new group doesn't apply to
+shells that were already open:
 
 ```bash
 sudo usermod -aG docker $USER
+newgrp docker
+```
+
+Check it works without sudo — this should print a table, not an error:
+
+```bash
+docker ps
 ```
 
 Install git if needed:
@@ -69,8 +83,13 @@ git clone https://github.com/nomad9021/vault-finance.git
 Run the guided installer and answer its questions:
 
 ```bash
-cd vault-finance && bash installers/server/install-server.sh
+cd ~/vault-finance
+bash installers/server/install-server.sh
 ```
+
+(If you're already inside the `vault-finance` folder, skip the `cd` — just run
+the `bash …` line. `cd vault-finance` from inside it fails with
+"No such file or directory".)
 
 It asks:
 
@@ -87,6 +106,16 @@ Then it writes `docker/.env`, creates the data directories, runs
 `docker compose up -d --build` (first build takes a few minutes), waits for the
 API, and prints the address to connect to. Run with `--dry-run` first if you
 want to preview everything without touching Docker.
+
+If the installer stops at the Docker check, it tells you which problem it hit:
+
+| Message | Fix |
+|---|---|
+| *The Docker daemon isn't running* | `sudo systemctl enable --now docker` (the installer offers to run this for you) |
+| *User '…' can't talk to Docker* | `sudo usermod -aG docker $USER`, then `newgrp docker` or log out and back in |
+| *You're in the 'docker' group, but this shell doesn't know yet* | Log out and back in, or run `newgrp docker` |
+
+Then re-run the installer.
 
 #### Windows server (Docker Desktop)
 

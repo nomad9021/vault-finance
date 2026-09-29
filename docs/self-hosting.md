@@ -268,6 +268,14 @@ server first is always the safe order.
 
 ## 11. Troubleshooting
 
+- **Installer: "Docker daemon isn't running"** — `sudo systemctl enable --now docker`
+  (the installer offers to run it). `enable` also starts Docker on boot.
+- **Installer: "can't talk to Docker" / `permission denied … docker.sock`** —
+  your user isn't in the `docker` group: `sudo usermod -aG docker $USER`, then
+  `newgrp docker` or log out and back in. Group changes don't reach terminals
+  that were already open, so "I added myself and it still fails" means re-login.
+- **`cd: vault-finance: No such file or directory`** — you're already inside
+  the repo; run `bash installers/server/install-server.sh` without the `cd`.
 - **Port already in use** — change `VAULT_PORT` in `.env` (host side only;
   the container keeps listening on 8443 internally).
 - **`needsSetup` is still true after setup** — you're probably talking to a

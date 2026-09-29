@@ -92,6 +92,41 @@ envget() {
   sed -n "s/^${key}=//p" "$ENV_FILE" | head -n1
 }
 
+# Make sure `docker info` works, telling apart "daemon stopped" from "no
+# permission" — they need different fixes. Offers to start the daemon.
+docker_preflight() {
+  local err me
+  err="$(docker info 2>&1 >/dev/null)" && return 0
+  me="$(id -un)"
+
+  if printf '%s' "$err" | grep -qi 'permission denied'; then
+    # `id -nG <user>` reads the group database; plain `id -nG` reflects this
+    # shell's session, which only picks up new groups after a re-login.
+    if id -nG "$me" | grep -qw docker; then
+      die "You're in the 'docker' group, but this shell doesn't know yet. Log out and back in (or run 'newgrp docker'), then re-run."
+    fi
+    die "User '$me' can't talk to Docker. Run:
+    sudo usermod -aG docker $me
+    newgrp docker        # or log out and back in
+  then re-run this installer."
+  fi
+
+  # Anything else means the daemon isn't reachable — usually just not started.
+  if command -v systemctl >/dev/null 2>&1 && [ "$ASSUME_YES" != "1" ]; then
+    warn "The Docker daemon isn't running."
+    if yesno "Start it now (and on every boot) with 'sudo systemctl enable --now docker'?" "y"; then
+      sudo systemctl enable --now docker || die "Couldn't start Docker. Check: sudo systemctl status docker"
+      docker_preflight   # re-check: permission problems show up only once it's running
+      return
+    fi
+  fi
+  if command -v systemctl >/dev/null 2>&1; then
+    die "The Docker daemon isn't running. Start it with 'sudo systemctl enable --now docker', then re-run."
+  fi
+  die "The Docker daemon isn't running. Start Docker (Docker Desktop on macOS), then re-run.
+  Docker said: $err"
+}
+
 # ---- preflight --------------------------------------------------------------
 hdr "Vault Finance server installer"
 [ -f "$COMPOSE_FILE" ] || die "Can't find $COMPOSE_FILE — run this from a Vault Finance checkout."
@@ -103,7 +138,7 @@ fi
 if [ "$DRY_RUN" != "1" ]; then
   command -v docker >/dev/null 2>&1 || die "Docker isn't installed. See https://docs.docker.com/engine/install/ then re-run."
   [ -n "$DC" ] || die "Docker Compose plugin not found. Install it (https://docs.docker.com/compose/install/) then re-run."
-  docker info >/dev/null 2>&1 || die "Docker daemon isn't running (or you lack permission). Start Docker / add yourself to the 'docker' group, then re-run."
+  docker_preflight
   ok "Docker and Compose detected ($DC)"
 else
   warn "Dry run — Docker will not be touched."
