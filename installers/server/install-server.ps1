@@ -209,6 +209,12 @@ try {
     Warn "Couldn't pull the prebuilt server image - building it from source instead (a few minutes)."
     Add-Content -Path $EnvFile -Encoding utf8 -Value "`n# The prebuilt image could not be pulled, so the server is built from this`n# checkout. Remove this line to switch back to prebuilt images.`nCOMPOSE_FILE=docker-compose.yml;docker-compose.build.yml"
   }
+  # The server runs as the image's non-root 'vault' user; make the bind-mounted
+  # data directory its own (Docker Desktop usually allows writes anyway, so a
+  # failure here is only a warning). Also builds/pulls the image if needed.
+  Write-Host "Preparing the server image and its data directory - the first build takes a few minutes." -ForegroundColor DarkGray
+  Compose run '--rm' '--no-deps' '--user' 0 '--entrypoint' chown server '-R' vault:vault /data
+  if ($LASTEXITCODE -ne 0) { Warn "Couldn't set ownership of the server data directory - if the server keeps restarting, see docs/self-hosting.md Troubleshooting." }
   Write-Host "Pulling Postgres/Redis/Ollama - give it a few minutes on the first run." -ForegroundColor DarkGray
   Compose up -d --build
 } finally { Pop-Location }

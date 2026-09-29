@@ -284,6 +284,12 @@ server first is always the safe order.
   (`;` instead of `:` on Windows) and run `docker compose up -d --build`.
   Postgres/Redis/Ollama showing *Interrupted* in the same output is just
   Compose stopping after that first error.
+- **Server keeps restarting with `EACCES: permission denied, open '/data/jwt-secret'`**
+  — the server runs as the non-root `vault` user inside its container, and the
+  host data directory (`$VAULT_DISK/vault`) belongs to a different user. The
+  installer now fixes this; for an existing install, from `docker/`:
+  `docker compose run --rm --no-deps --user 0 --entrypoint chown server -R vault:vault /data`
+  then `docker compose up -d`.
 - **`WARN The "xyz" variable is not set`** — a value in `docker/.env` contains
   `$` (Compose treats `$xyz` as a variable). The database password must use
   only letters, digits and `. _ ~ -`; re-run the installer to pick a new one.

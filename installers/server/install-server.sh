@@ -270,6 +270,15 @@ else
   warn "Couldn't pull the prebuilt server image — building it from source instead (a few minutes)."
   printf '\n# The prebuilt image could not be pulled, so the server is built from this\n# checkout. Remove this line to switch back to prebuilt images.\nCOMPOSE_FILE=docker-compose.yml:docker-compose.build.yml\n' >> "$ENV_FILE"
 fi
+# The server runs as the non-root 'vault' user from its image, but
+# $VAULT_DISK/vault was just created by whoever ran this script — a different
+# uid — so the server couldn't write /data/jwt-secret and crash-looped. Hand
+# the directory to the image's user (a throwaway root container, so no sudo).
+# This also builds/pulls the server image if it isn't there yet.
+say "${DIM}Preparing the server image and its data directory — the first build takes a few minutes.${RST}"
+( cd "$COMPOSE_DIR" && $DC run --rm --no-deps --user 0 --entrypoint chown server -R vault:vault /data ) \
+  || die "Couldn't set ownership of $VAULT_DISK/vault for the server container."
+ok "Server data directory is writable by the server."
 say "${DIM}Pulling Postgres/Redis/Ollama — give it a few minutes on the first run.${RST}"
 ( cd "$COMPOSE_DIR" && $DC up -d --build )
 ok "Containers are up."

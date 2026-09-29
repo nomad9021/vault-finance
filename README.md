@@ -122,6 +122,11 @@ If the installer stops at the Docker check, it tells you which problem it hit:
 | *User '…' can't talk to Docker* | `sudo usermod -aG docker $USER`, then `newgrp docker` or log out and back in |
 | *You're in the 'docker' group, but this shell doesn't know yet* | Log out and back in, or run `newgrp docker` |
 
+If the server container keeps restarting and `docker compose logs server`
+shows `EACCES: permission denied, open '/data/jwt-secret'`, its data folder
+has the wrong owner — re-run the installer (it now fixes the ownership), or
+see [docs/self-hosting.md](docs/self-hosting.md#11-troubleshooting).
+
 Warnings like `The "a" variable is not set` mean `docker/.env` has a `$` in
 a value (usually the database password). Re-run the installer — it asks for a
 new password.
