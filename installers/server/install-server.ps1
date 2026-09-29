@@ -101,16 +101,28 @@ if ($VaultPort -notmatch '^\d+$') { Die "Port must be a number (got '$VaultPort'
 
 Hdr "3. Database password"
 Write-Host "Internal to the Docker network. Leave blank to generate a strong random one." -ForegroundColor DarkGray
+Write-Host "Letters, digits and . _ ~ - only: it goes into a URL and docker\.env, where `$ and @ break things." -ForegroundColor DarkGray
+$pwPattern = '^[A-Za-z0-9._~-]+$'
 $defPw = EnvGet "POSTGRES_PASSWORD"
-if ($defPw) {
-  $PostgresPassword = Ask "Postgres password:" $defPw
-} else {
-  $PostgresPassword = AskSecret "Postgres password (blank = random):"
-  if (-not $PostgresPassword) {
-    $bytes = New-Object byte[] 16; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
-    $PostgresPassword = ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
-    Ok "Generated a random database password."
+# An earlier run may have saved a password with characters we now reject.
+if ($defPw -and $defPw -cnotmatch $pwPattern) {
+  Warn "The saved database password contains characters that break the setup - pick a new one."
+  $defPw = ""
+}
+while ($true) {
+  if ($defPw) {
+    $PostgresPassword = Ask "Postgres password:" $defPw
+  } else {
+    $PostgresPassword = AskSecret "Postgres password (blank = random):"
+    if (-not $PostgresPassword) {
+      $bytes = New-Object byte[] 16; [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+      $PostgresPassword = ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
+      Ok "Generated a random database password."
+    }
   }
+  if ($PostgresPassword -cmatch $pwPattern) { break }
+  if ($Yes) { Die "POSTGRES_PASSWORD in $EnvFile has unsupported characters." }
+  Warn "Only letters, digits and . _ ~ - are allowed."
 }
 
 Hdr "4. Local AI (optional)"
@@ -185,10 +197,21 @@ Ok "Wrote $EnvFile"
 Ok "Created data directories under $VaultDisk"
 
 # ---- bring up the stack -----------------------------------------------------
-Hdr "Building and starting the stack"
-Write-Host "First run compiles the server image and pulls the base images — give it a few minutes." -ForegroundColor DarkGray
+Hdr "Starting the stack"
 Push-Location $ComposeDir
-try { Compose up -d --build } finally { Pop-Location }
+try {
+  # Prefer the prebuilt server image; if the registry doesn't have it, build
+  # from this checkout and record that in .env so updates do the same.
+  Compose '-f' docker-compose.yml pull server *> $null
+  if ($LASTEXITCODE -eq 0) {
+    Ok "Pulled the prebuilt server image."
+  } else {
+    Warn "Couldn't pull the prebuilt server image - building it from source instead (a few minutes)."
+    Add-Content -Path $EnvFile -Encoding utf8 -Value "`n# The prebuilt image could not be pulled, so the server is built from this`n# checkout. Remove this line to switch back to prebuilt images.`nCOMPOSE_FILE=docker-compose.yml;docker-compose.build.yml"
+  }
+  Write-Host "Pulling Postgres/Redis/Ollama - give it a few minutes on the first run." -ForegroundColor DarkGray
+  Compose up -d --build
+} finally { Pop-Location }
 Ok "Containers are up."
 
 # ---- wait for health --------------------------------------------------------

@@ -276,6 +276,17 @@ server first is always the safe order.
   that were already open, so "I added myself and it still fails" means re-login.
 - **`cd: vault-finance: No such file or directory`** — you're already inside
   the repo; run `bash installers/server/install-server.sh` without the `cd`.
+- **`vault-finance-server … error from registry: denied`** — the prebuilt
+  server image isn't available on GHCR (not published for that version yet, or
+  the package is private). The installer falls back to building from source
+  automatically. By hand: add
+  `COMPOSE_FILE=docker-compose.yml:docker-compose.build.yml` to `docker/.env`
+  (`;` instead of `:` on Windows) and run `docker compose up -d --build`.
+  Postgres/Redis/Ollama showing *Interrupted* in the same output is just
+  Compose stopping after that first error.
+- **`WARN The "xyz" variable is not set`** — a value in `docker/.env` contains
+  `$` (Compose treats `$xyz` as a variable). The database password must use
+  only letters, digits and `. _ ~ -`; re-run the installer to pick a new one.
 - **Port already in use** — change `VAULT_PORT` in `.env` (host side only;
   the container keeps listening on 8443 internally).
 - **`needsSetup` is still true after setup** — you're probably talking to a

@@ -164,13 +164,26 @@ ask VAULT_PORT "Port:" "$DEF_PORT"
 
 hdr "3. Database password"
 say "${DIM}Internal to the Docker network. Leave blank to generate a strong random one.${RST}"
+say "${DIM}Letters, digits and . _ ~ - only: it goes into a URL and docker/.env, where \$ and @ break things.${RST}"
 DEF_PW="$(envget POSTGRES_PASSWORD)"
-if [ -n "$DEF_PW" ]; then
-  ask POSTGRES_PASSWORD "Postgres password:" "$DEF_PW"
-else
-  ask_secret POSTGRES_PASSWORD "Postgres password (blank = random):"
-  [ -n "$POSTGRES_PASSWORD" ] || { POSTGRES_PASSWORD="$(rand)"; ok "Generated a random database password."; }
+# An earlier run may have saved a password with characters we now reject —
+# don't offer that as the default.
+pw_ok() { [[ "$1" =~ ^[A-Za-z0-9._~-]+$ ]]; }
+if [ -n "$DEF_PW" ] && ! pw_ok "$DEF_PW"; then
+  warn "The saved database password contains characters that break the setup — pick a new one."
+  DEF_PW=""
 fi
+while :; do
+  if [ -n "$DEF_PW" ]; then
+    ask POSTGRES_PASSWORD "Postgres password:" "$DEF_PW"
+  else
+    ask_secret POSTGRES_PASSWORD "Postgres password (blank = random):"
+    [ -n "$POSTGRES_PASSWORD" ] || { POSTGRES_PASSWORD="$(rand)"; ok "Generated a random database password."; }
+  fi
+  pw_ok "$POSTGRES_PASSWORD" && break
+  [ "$ASSUME_YES" = "1" ] && die "POSTGRES_PASSWORD in $ENV_FILE has unsupported characters."
+  warn "Only letters, digits and . _ ~ - are allowed."
+done
 
 hdr "4. Local AI (optional)"
 say "${DIM}Runs an Ollama model on this machine so nothing leaves your hardware.${RST}"
@@ -247,8 +260,17 @@ ok "Wrote $ENV_FILE"
 ok "Created data directories under $VAULT_DISK"
 
 # ---- bring up the stack -----------------------------------------------------
-hdr "Building and starting the stack"
-say "${DIM}First run compiles the server image and pulls Postgres/Redis/Ollama — give it a few minutes.${RST}"
+hdr "Starting the stack"
+# Prefer the prebuilt server image; if the registry doesn't have it (not
+# published yet, or private), build it from this checkout instead and record
+# that in .env so later `docker compose` commands and updates do the same.
+if ( cd "$COMPOSE_DIR" && $DC -f docker-compose.yml pull server ) >/dev/null 2>&1; then
+  ok "Pulled the prebuilt server image."
+else
+  warn "Couldn't pull the prebuilt server image — building it from source instead (a few minutes)."
+  printf '\n# The prebuilt image could not be pulled, so the server is built from this\n# checkout. Remove this line to switch back to prebuilt images.\nCOMPOSE_FILE=docker-compose.yml:docker-compose.build.yml\n' >> "$ENV_FILE"
+fi
+say "${DIM}Pulling Postgres/Redis/Ollama — give it a few minutes on the first run.${RST}"
 ( cd "$COMPOSE_DIR" && $DC up -d --build )
 ok "Containers are up."
 
