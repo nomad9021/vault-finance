@@ -1,3 +1,4 @@
+mod biometric;
 mod commands;
 mod tls;
 
@@ -33,6 +34,9 @@ pub fn run() {
             commands::set_secret,
             commands::delete_secret,
             commands::open_admin_window,
+            biometric::biometric_status,
+            biometric::biometric_authenticate,
+            biometric::biometric_cancel,
         ])
         .setup(|app| {
             // Tray: quick show/hide + quit. Closing the window hides to tray

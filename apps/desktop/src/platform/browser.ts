@@ -58,6 +58,14 @@ export function createBrowserPlatform(): HostPlatform {
     },
     async installUpdateAndRestart() {},
 
+    async biometricStatus() {
+      return { available: false, label: "Biometrics", reason: "Not available in browser dev mode." };
+    },
+    async biometricAuthenticate() {
+      return { ok: false, reason: "unavailable" };
+    },
+    async biometricCancel() {},
+
     async getSecret(key) {
       return localStorage.getItem(prefix + "secret." + key);
     },

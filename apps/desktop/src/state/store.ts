@@ -1,12 +1,19 @@
 import {
   ApiClient,
+  ApiRequestError,
   type ConnectionStatus,
   type TokenPair,
   type User,
 } from "@vault/shared";
 import { applyTheme, isTheme, type Theme } from "@vault/design-tokens";
 import { create } from "zustand";
-import { getPlatform, type HostPlatform, type ProbeResult } from "../platform/index.js";
+import {
+  getPlatform,
+  type BiometricResult,
+  type BiometricStatus,
+  type HostPlatform,
+  type ProbeResult,
+} from "../platform/index.js";
 
 export const APP_VERSION = "0.1.2";
 
@@ -17,6 +24,15 @@ export type Screen =
   | { name: "setup" }
   | { name: "login" }
   | { name: "shell" };
+
+/** Desktop self-update, shared by the header button and the Settings card. */
+export type AppUpdateState =
+  | { phase: "idle" }
+  | { phase: "checking" }
+  | { phase: "none" }
+  | { phase: "available"; version: string }
+  | { phase: "installing"; version: string; progress: number }
+  | { phase: "error"; message: string; version?: string };
 
 interface AppState {
   platform: HostPlatform;
@@ -31,6 +47,18 @@ interface AppState {
   theme: Theme;
   /** Whether AI is on AND configured — gates every AI surface (off by default). */
   aiVisible: boolean;
+  /** The household's own name ("The Carters"); null until the owner sets one. */
+  householdName: string | null;
+  /**
+   * A saved session exists but this device requires a biometric check before
+   * showing it. The login screen renders in "locked" mode while this is set.
+   */
+  lockedUser: User | null;
+  /** This device's biometric hardware, checked once at boot. */
+  biometric: BiometricStatus | null;
+  /** Users enrolled for biometric sign-in on this device, for the current server. */
+  biometricUserIds: string[];
+  appUpdate: AppUpdateState;
 
   /** Probe an address; route to trust confirmation or straight on. */
   connectTo(address: string): Promise<void>;
@@ -49,11 +77,25 @@ interface AppState {
   declineTrust(): void;
   /** Re-check AI status and update aiVisible (called after login and after saving AI settings). */
   refreshAiEnabled(): Promise<void>;
+  setHouseholdName(name: string | null): void;
+  /** Enroll the signed-in user: OS prompt, then a server-issued device key into the keychain. */
+  enableBiometric(): Promise<BiometricResult>;
+  /** Forget this device's key locally and revoke it on the server. */
+  disableBiometric(): Promise<void>;
+  /** OS prompt, then resume the locked session or sign in with the device key. */
+  unlockWithBiometric(userId: string): Promise<BiometricResult>;
+  checkAppUpdate(opts?: { silent?: boolean }): Promise<void>;
+  installAppUpdate(): Promise<void>;
 }
 
 const TOKENS_KEY = "refresh-tokens";
 const ADDRESS_KEY = "server-address";
 const THEME_KEY = "theme";
+/** Non-secret list of enrolled user ids, so the login screen needn't touch the keychain. */
+const biometricUsersKey = (address: string) => `biometric-users:${address}`;
+/** Keychain entry holding `{ id, key }` for one user's device key on one server. */
+export const deviceKeySecret = (address: string, userId: string) =>
+  `device-key:${address}:${userId}`;
 
 // Tokens live outside React state: the ApiClient reads them synchronously and
 // they must never trigger re-renders. Persisted to the platform secret store.
@@ -84,6 +126,11 @@ export const useApp = create<AppState>((set, get) => ({
   user: null,
   theme: "light",
   aiVisible: false,
+  householdName: null,
+  lockedUser: null,
+  biometric: null,
+  biometricUserIds: [],
+  appUpdate: { phase: "idle" },
 
   async connectTo(rawAddress) {
     const address = normalizeAddress(rawAddress);
@@ -133,11 +180,16 @@ export const useApp = create<AppState>((set, get) => ({
         set({ screen: { name: "setup" } });
         return;
       }
+      await loadBiometricUsers(set, get);
       if (tokens) {
         try {
           const user = await client.me();
-          set({ user, screen: { name: "shell" } });
-          void get().refreshAiEnabled();
+          if (get().biometricUserIds.includes(user.id)) {
+            // Keep the session, but make the user prove it's them first.
+            set({ user: null, lockedUser: user, screen: { name: "login" } });
+            return;
+          }
+          get().signedIn(user);
           return;
         } catch {
           persistTokens(null); // stale/revoked session — fall through to login
@@ -155,8 +207,159 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   signedIn(user) {
-    set({ user, screen: { name: "shell" } });
+    set({ user, lockedUser: null, screen: { name: "shell" } });
     void get().refreshAiEnabled();
+    get()
+      .client.household()
+      .then((h) => set({ householdName: h.name }))
+      .catch(() => {});
+  },
+
+  setHouseholdName(name) {
+    set({ householdName: name });
+  },
+
+  async enableBiometric() {
+    const { platform, client, serverAddress, user } = get();
+    if (!serverAddress || !user) return { ok: false, reason: "unavailable" };
+    const status = await platform.biometricStatus();
+    set({ biometric: status });
+    if (!status.available) {
+      return { ok: false, reason: "unavailable", ...(status.reason ? { message: status.reason } : {}) };
+    }
+
+    const check = await platform.biometricAuthenticate(`Turn on ${status.label} for Vault Finance`);
+    if (!check.ok) return check;
+
+    const created = await client.createDeviceKey({
+      deviceName: platform.deviceName,
+      platform: platform.platformName,
+    });
+    try {
+      await platform.setSecret(deviceKeySecret(serverAddress, user.id), JSON.stringify(created));
+    } catch {
+      // No keychain, no biometric sign-in — don't leave a live key behind.
+      await client.revokeDeviceKey(created.id).catch(() => {});
+      return {
+        ok: false,
+        reason: "unavailable",
+        message: "Couldn't save to this computer's keychain, so biometric sign-in can't be turned on.",
+      };
+    }
+    await saveBiometricUsers(set, get, [...new Set([...get().biometricUserIds, user.id])]);
+    return { ok: true };
+  },
+
+  async disableBiometric() {
+    const { platform, client, serverAddress, user } = get();
+    if (!serverAddress || !user) return;
+    const secretName = deviceKeySecret(serverAddress, user.id);
+    const stored = await platform.getSecret(secretName).catch(() => null);
+    const id = parseDeviceKey(stored)?.id;
+    if (id) await client.revokeDeviceKey(id).catch(() => {});
+    await platform.deleteSecret(secretName).catch(() => {});
+    await saveBiometricUsers(set, get, get().biometricUserIds.filter((u) => u !== user.id));
+  },
+
+  async unlockWithBiometric(userId) {
+    const { platform, client, serverAddress, lockedUser } = get();
+    if (!serverAddress) return { ok: false, reason: "unavailable" };
+    const label = get().biometric?.label ?? "biometrics";
+    const check = await platform.biometricAuthenticate("Sign in to Vault Finance");
+    if (!check.ok) return check;
+
+    // Same person as the saved session: just let them back in.
+    if (lockedUser?.id === userId && tokens) {
+      get().signedIn(lockedUser);
+      return { ok: true };
+    }
+
+    const stored = parseDeviceKey(
+      await platform.getSecret(deviceKeySecret(serverAddress, userId)).catch(() => null),
+    );
+    const forget = () =>
+      saveBiometricUsers(set, get, get().biometricUserIds.filter((u) => u !== userId));
+    if (!stored) {
+      await forget();
+      return {
+        ok: false,
+        reason: "unavailable",
+        message: `This device's ${label} key is missing. Sign in with your password, then turn it back on in Settings.`,
+      };
+    }
+    // A different person's session was waiting — end it before switching.
+    if (tokens) await client.logout();
+    try {
+      const result = await client.loginWithDeviceKey({
+        key: stored.key,
+        deviceName: platform.deviceName,
+        platform: platform.platformName,
+      });
+      get().signedIn(result.user);
+      return { ok: true };
+    } catch (err) {
+      if (err instanceof ApiRequestError && err.status === 401) {
+        await platform.deleteSecret(deviceKeySecret(serverAddress, userId)).catch(() => {});
+        await forget();
+        return {
+          ok: false,
+          reason: "unavailable",
+          message: `${label} sign-in was turned off for this device. Sign in with your password.`,
+        };
+      }
+      return {
+        ok: false,
+        reason: "unavailable",
+        message:
+          err instanceof ApiRequestError && err.code === "RATE_LIMITED"
+            ? "Too many attempts — wait a few minutes and try again."
+            : "Lost the connection to the server.",
+      };
+    }
+  },
+
+  async checkAppUpdate({ silent = false } = {}) {
+    const { platform, appUpdate } = get();
+    if (platform.kind !== "tauri") return;
+    if (appUpdate.phase === "checking" || appUpdate.phase === "installing") return;
+    if (!silent) set({ appUpdate: { phase: "checking" } });
+    try {
+      const update = await platform.checkForUpdate();
+      set({ appUpdate: update ? { phase: "available", version: update.version } : { phase: "none" } });
+    } catch (err) {
+      // Background checks stay quiet (offline laptops shouldn't nag); a check
+      // the user asked for reports why it failed.
+      set({
+        appUpdate: silent
+          ? appUpdate
+          : {
+              phase: "error",
+              message: err instanceof Error ? err.message : "Couldn't reach the update server.",
+            },
+      });
+    }
+  },
+
+  async installAppUpdate() {
+    const { platform, appUpdate } = get();
+    if (appUpdate.phase !== "available" && !(appUpdate.phase === "error" && appUpdate.version)) {
+      return;
+    }
+    const version = appUpdate.version!;
+    set({ appUpdate: { phase: "installing", version, progress: 0 } });
+    try {
+      await platform.installUpdateAndRestart((progress) =>
+        set({ appUpdate: { phase: "installing", version, progress } }),
+      );
+    } catch (err) {
+      set({
+        appUpdate: {
+          phase: "error",
+          version,
+          message: err instanceof Error ? err.message : String(err || "The update failed to install."),
+        },
+      });
+    }
   },
 
   async refreshAiEnabled() {
@@ -170,7 +373,7 @@ export const useApp = create<AppState>((set, get) => ({
 
   async signOut() {
     await get().client.logout();
-    set({ user: null, aiVisible: false, screen: { name: "login" } });
+    set({ user: null, lockedUser: null, aiVisible: false, screen: { name: "login" } });
   },
 
   async setTheme(theme) {
@@ -202,6 +405,44 @@ export const useApp = create<AppState>((set, get) => ({
   },
 }));
 
+function parseDeviceKey(raw: string | null): { id: string; key: string } | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw) as { id?: unknown; key?: unknown };
+    return typeof v.id === "string" && typeof v.key === "string" ? { id: v.id, key: v.key } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadBiometricUsers(
+  set: (partial: Partial<AppState>) => void,
+  get: () => AppState,
+) {
+  const { platform, serverAddress } = get();
+  let ids: string[] = [];
+  if (serverAddress) {
+    try {
+      const raw = await platform.loadValue(biometricUsersKey(serverAddress));
+      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(parsed)) ids = parsed.filter((x): x is string => typeof x === "string");
+    } catch (err) {
+      console.error("loading biometric enrollments failed", err);
+    }
+  }
+  set({ biometricUserIds: ids });
+}
+
+async function saveBiometricUsers(
+  set: (partial: Partial<AppState>) => void,
+  get: () => AppState,
+  ids: string[],
+) {
+  set({ biometricUserIds: ids });
+  const { platform, serverAddress } = get();
+  if (serverAddress) await platform.saveValue(biometricUsersKey(serverAddress), JSON.stringify(ids));
+}
+
 function normalizeAddress(raw: string): string | null {
   let s = raw.trim().replace(/\/+$/, "");
   if (!s) return null;
@@ -227,7 +468,7 @@ function rebuildClient(
     getTokens: () => tokens,
     setTokens: persistTokens,
     onAuthLost: () => {
-      set({ user: null, screen: { name: "login" } });
+      set({ user: null, lockedUser: null, screen: { name: "login" } });
     },
     onConnectionChange: (connection) => set({ connection }),
   });
@@ -249,6 +490,15 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   ]);
 }
 
+const UPDATE_CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
+
+/** Quietly look for a new desktop release shortly after launch, then every 6 hours. */
+function startUpdateChecks() {
+  const check = () => void useApp.getState().checkAppUpdate({ silent: true });
+  setTimeout(check, 10_000);
+  setInterval(check, UPDATE_CHECK_EVERY_MS);
+}
+
 /** Load persisted state and decide the first screen. Called once before render. */
 export async function bootstrap(): Promise<void> {
   let platform: HostPlatform;
@@ -261,6 +511,8 @@ export async function bootstrap(): Promise<void> {
   }
   platformRef = platform;
   useApp.setState({ platform });
+  void platform.biometricStatus().then((biometric) => useApp.setState({ biometric }));
+  startUpdateChecks();
 
   try {
     const storedTheme = await platform.loadValue(THEME_KEY);

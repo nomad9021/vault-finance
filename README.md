@@ -151,7 +151,42 @@ shows its fingerprint, you confirm once, and the app pins it. **Don't
 port-forward 8443 to the open internet** — use Tailscale or a hardened reverse
 proxy for remote access.
 
-### 4. (Optional) Phone viewer
+### 4. Name your household and add family members
+
+The setup wizard asks for a **household name** (e.g. "The Carters") — it's
+optional and the owner can change it any time in **Settings → Household**.
+Everyone who signs in to your server is in that one household and shares its
+accounts; add the other adults from **Settings → Family members** (invite by
+email, or create them a login with a temporary password). The household name
+shows on the sign-in screen and in the sidebar for all of you.
+
+### 5. (Optional) Sign in with Windows Hello, Touch ID, or your fingerprint
+
+After signing in once with your password, open **Settings → Sign in with …**
+and choose **Turn on**. From then on the app opens locked and asks for your
+face / fingerprint / Windows Hello PIN; your password still works as a
+fallback. Each person turns it on for themselves, on each computer.
+
+| OS | What's used | Requirements |
+|---|---|---|
+| Windows 10/11 | Windows Hello (face, fingerprint, or PIN) | Set up in *Settings → Accounts → Sign-in options* |
+| macOS | Touch ID | A Mac or keyboard with Touch ID, with a finger enrolled |
+| Linux | Fingerprint reader via `fprintd` | `fprintd` installed, a [libfprint-supported reader](https://fprint.freedesktop.org/supported-devices.html), and a finger enrolled (`fprintd-enroll`) |
+
+Nothing biometric leaves your computer — the server only stores a revocable
+per-device key ([ADR-0008](docs/adr/0008-biometric-sign-in.md)). Revoke a lost
+device's key from the same Settings card.
+
+### 6. Updating the desktop app
+
+The **download button next to your avatar** (top right) checks for a new
+release and shows a dot when one is waiting; click it and choose **Install &
+restart**. The same controls are in **Settings → Updates**. Updates are
+signature-checked before installing. On Linux this works for the `.AppImage`;
+if you installed the `.deb` (or an extracted AppImage), download the new
+version from the Releases page instead.
+
+### 7. (Optional) Phone viewer
 
 Open `https://<server-ip>:8443/` in your phone's browser for the read-only
 mobile view, and add it to your home screen. It locks the moment you switch

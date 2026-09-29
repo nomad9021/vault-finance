@@ -1,10 +1,14 @@
 import {
+  CreateDeviceKeyRequest,
+  DeviceKeyLoginRequest,
   LoginByIdRequest,
   LoginRequest,
   LogoutRequest,
   RefreshRequest,
   TotpDisableRequest,
   TotpEnableRequest,
+  type CreateDeviceKeyResponse,
+  type DeviceKeyListResponse,
   type LoginResponse,
   type ProfilesResponse,
   type SessionListResponse,
@@ -15,6 +19,7 @@ import {
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { notFound, rateLimited } from "../../errors.js";
+import { META_KEYS, readMeta } from "../../lib/app-meta.js";
 import * as authService from "./service.js";
 import { toApiUser } from "./service.js";
 
@@ -45,7 +50,10 @@ export default async function authRoutes(app: FastifyInstance) {
   const allowLogin = makeRateLimiter();
 
   app.get("/auth/profiles", async (): Promise<ProfilesResponse> => {
-    return { profiles: await authService.listProfiles(app.db) };
+    return {
+      profiles: await authService.listProfiles(app.db),
+      householdName: await readMeta(app.db, META_KEYS.householdName),
+    };
   });
 
   app.post("/auth/login", async (request, reply) => {
@@ -72,6 +80,31 @@ export default async function authRoutes(app: FastifyInstance) {
       role: result.user.role,
     });
 
+    const response: LoginResponse = {
+      accessToken,
+      refreshToken: result.refreshToken,
+      user: toApiUser(result.user),
+    };
+    return reply.status(200).send(response);
+  });
+
+  app.post("/auth/login/device-key", async (request, reply) => {
+    const body = DeviceKeyLoginRequest.parse(request.body);
+    // Keyed on the key id (the part before the dot), same window as passwords.
+    if (!allowLogin(`${request.ip}:device-key:${body.key.split(".")[0]}`)) {
+      throw rateLimited();
+    }
+    const result = await authService.loginWithDeviceKey(app.db, {
+      key: body.key,
+      deviceName: body.deviceName,
+      platform: body.platform,
+      ipAddress: request.ip ?? null,
+    });
+    const accessToken = await app.signAccessToken({
+      sub: result.user.id,
+      sid: result.sessionId,
+      role: result.user.role,
+    });
     const response: LoginResponse = {
       accessToken,
       refreshToken: result.refreshToken,
@@ -123,6 +156,34 @@ export default async function authRoutes(app: FastifyInstance) {
     async (request, reply) => {
       const auth = request.auth!;
       await authService.revokeSession(app.db, auth.userId, request.params.id);
+      return reply.status(204).send();
+    },
+  );
+
+  // ── Device keys (biometric sign-in) ──
+  app.get(
+    "/auth/device-keys",
+    { preHandler: [app.requireAuth] },
+    async (request): Promise<DeviceKeyListResponse> => ({
+      keys: await authService.listDeviceKeys(app.db, request.auth!.userId),
+    }),
+  );
+
+  app.post("/auth/device-keys", { preHandler: [app.requireAuth] }, async (request, reply) => {
+    const body = CreateDeviceKeyRequest.parse(request.body);
+    const created: CreateDeviceKeyResponse = await authService.createDeviceKey(
+      app.db,
+      request.auth!.userId,
+      body,
+    );
+    return reply.status(201).send(created);
+  });
+
+  app.delete<{ Params: { id: string } }>(
+    "/auth/device-keys/:id",
+    { preHandler: [app.requireAuth] },
+    async (request, reply) => {
+      await authService.revokeDeviceKey(app.db, request.auth!.userId, request.params.id);
       return reply.status(204).send();
     },
   );

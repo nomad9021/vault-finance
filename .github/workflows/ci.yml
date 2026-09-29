@@ -34,10 +34,17 @@ jobs:
         run: pnpm --filter @vault/control --filter @vault/shared --filter @vault/ui --filter @vault/desktop test
 
   rust:
-    runs-on: ubuntu-latest
+    # All three desktop OSes: biometric sign-in (src/biometric.rs) is a
+    # different native API on each, so a Linux-only check would miss two.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: Tauri Linux prerequisites
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \

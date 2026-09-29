@@ -1205,6 +1205,18 @@ button.list-row:active, .list-row[role="button"]:active {
 .menu-item:hover, .menu-item[data-active] { background: color-mix(in srgb, var(--color-text) 8%, transparent); }
 .menu-item-danger { color: var(--color-negative); }
 .menu-sep { height: 1px; background: var(--hairline); margin: var(--space-1) 0; }
+/* Header update button: a dot on the icon when a new version is waiting. */
+.update-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-bg);
+  pointer-events: none;
+}
 .menu-head {
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--hairline);
