@@ -39,6 +39,22 @@ create table device_sessions (
 );
 create index device_sessions_user_id_idx on device_sessions(user_id) where revoked_at is null;
 
+-- Biometric sign-in (ADR-0008): one row per enrolled device. The desktop app
+-- keeps `<id>.<secret>` in the OS keychain and sends it only after a local
+-- Windows Hello / Touch ID / fingerprint check.
+create table device_keys (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references users(id) on delete cascade,
+  device_name   text not null,
+  platform      text not null,                  -- windows | macos | linux | ios
+  secret_hash   text not null,                  -- argon2id hash of the secret half
+  created_at    timestamptz not null default now(),
+  last_used_at  timestamptz
+);
+create index device_keys_user_id_idx on device_keys(user_id);
+
+-- The household's display name lives in app_meta under key 'household_name'.
+
 -- ── AI configuration ────────────────────────────────────────────
 
 create table ai_settings (

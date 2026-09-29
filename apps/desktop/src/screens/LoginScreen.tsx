@@ -1,12 +1,14 @@
 import { ApiRequestError, type PublicProfile } from "@vault/shared";
 import { Avatar, Button, Spinner } from "@vault/ui";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useApp } from "../state/store.js";
 import { AuthHeading, AuthLayout } from "./AuthLayout.js";
 
 /**
  * Profile-picker login, following the design's login card: household member
- * bubbles, then a password field for the selected profile.
+ * bubbles, then a password field for the selected profile. Profiles enrolled
+ * for biometric sign-in on this device get a Windows Hello / Touch ID /
+ * fingerprint button, prompted automatically when the app opens locked.
  */
 export function LoginScreen() {
   const client = useApp((s) => s.client);
@@ -14,8 +16,14 @@ export function LoginScreen() {
   const signedIn = useApp((s) => s.signedIn);
   const changeServer = useApp((s) => s.changeServer);
   const serverAddress = useApp((s) => s.serverAddress);
+  const lockedUser = useApp((s) => s.lockedUser);
+  const biometric = useApp((s) => s.biometric);
+  const biometricUserIds = useApp((s) => s.biometricUserIds);
+  const unlockWithBiometric = useApp((s) => s.unlockWithBiometric);
 
   const [profiles, setProfiles] = useState<PublicProfile[] | null>(null);
+  const [householdName, setHouseholdName] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
   const [selected, setSelected] = useState<PublicProfile | null>(null);
   const [password, setPassword] = useState("");
   const [needsTotp, setNeedsTotp] = useState(false);
@@ -30,7 +38,12 @@ export function LoginScreen() {
     client
       .profiles()
       .then((r) => {
-        if (!cancelled) setProfiles(r.profiles);
+        if (cancelled) return;
+        setProfiles(r.profiles);
+        setHouseholdName(r.householdName ?? null);
+        // Opened locked: start on the saved session's profile.
+        const locked = lockedUser && r.profiles.find((p) => p.id === lockedUser.id);
+        if (locked) setSelected(locked);
       })
       .catch(() => {
         if (!cancelled) setProfiles([]);
@@ -40,9 +53,43 @@ export function LoginScreen() {
     };
   }, [client]);
 
+  const bioLabel = biometric?.label ?? "biometrics";
+  const selectedHasBiometric = !!selected && biometricUserIds.includes(selected.id);
+
+  const doBiometric = useCallback(
+    async (profile: PublicProfile) => {
+      if (busy || scanning) return;
+      setScanning(true);
+      setError(null);
+      try {
+        const r = await unlockWithBiometric(profile.id);
+        if (!r.ok && r.reason !== "cancelled") {
+          setError(
+            r.message ??
+              (r.reason === "failed"
+                ? `${bioLabel} didn't recognize you — try again or use your password.`
+                : `${bioLabel} isn't available right now — use your password.`),
+          );
+        }
+      } finally {
+        setScanning(false);
+      }
+    },
+    [busy, scanning, unlockWithBiometric, bioLabel],
+  );
+
+  // Opened locked: ask for biometrics straight away, once.
+  const autoPrompted = useRef(false);
   useEffect(() => {
-    if (selected) passwordRef.current?.focus();
-  }, [selected]);
+    if (autoPrompted.current || !selected || !lockedUser || selected.id !== lockedUser.id) return;
+    if (!biometricUserIds.includes(selected.id)) return;
+    autoPrompted.current = true;
+    void doBiometric(selected);
+  }, [selected, lockedUser, biometricUserIds, doBiometric]);
+
+  useEffect(() => {
+    if (selected && !biometricUserIds.includes(selected.id)) passwordRef.current?.focus();
+  }, [selected, biometricUserIds]);
   useEffect(() => {
     if (needsTotp) totpRef.current?.focus();
   }, [needsTotp]);
@@ -53,6 +100,9 @@ export function LoginScreen() {
     setBusy(true);
     setError(null);
     try {
+      // Opened locked and choosing the password route: end the saved session
+      // first so it doesn't linger as an orphan device.
+      if (lockedUser) await client.logout();
       const result = await client.login({
         userId: selected.id,
         password,
@@ -87,7 +137,7 @@ export function LoginScreen() {
   return (
     <AuthLayout>
       <AuthHeading
-        title="Sign in to Vault Finance"
+        title={householdName ? `Sign in to ${householdName}` : "Sign in to Vault Finance"}
         subtitle={serverAddress?.replace(/^https?:\/\//, "") ?? "self-hosted"}
       />
 
@@ -114,6 +164,7 @@ export function LoginScreen() {
                 setNeedsTotp(false);
                 setTotpCode("");
                 setError(null);
+                if (biometricUserIds.includes(p.id)) void doBiometric(p);
               }}
               style={{
                 display: "flex",
@@ -138,6 +189,33 @@ export function LoginScreen() {
               </span>
             </button>
           ))}
+        </div>
+      )}
+
+      {selected && selectedHasBiometric && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+          <Button
+            variant="primary"
+            block
+            icon={bioLabel === "Windows Hello" ? "user" : "fingerprint"}
+            onClick={() => void doBiometric(selected)}
+            disabled={scanning || busy}
+          >
+            {scanning ? <Spinner label={`Waiting for ${bioLabel}`} /> : `Sign in with ${bioLabel}`}
+          </Button>
+          {scanning && bioLabel === "Fingerprint" && (
+            <div className="row" style={{ justifyContent: "center", gap: 8, fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>
+              Touch the fingerprint reader…
+              <Button variant="ghost" onClick={() => void platform.biometricCancel()}>
+                Cancel
+              </Button>
+            </div>
+          )}
+          {!scanning && (
+            <div style={{ textAlign: "center", fontSize: "var(--text-2xs)", color: "var(--content-tertiary)", textTransform: "uppercase", letterSpacing: ".05em" }}>
+              or use your password
+            </div>
+          )}
         </div>
       )}
 
@@ -185,7 +263,7 @@ export function LoginScreen() {
             </div>
           )}
           <Button
-            variant="primary"
+            variant={selectedHasBiometric ? "secondary" : "primary"}
             block
             type="submit"
             disabled={busy || !password || (needsTotp && totpCode.length < 6)}

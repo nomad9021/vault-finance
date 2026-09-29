@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { LayoutMode } from "../../lib/useLayout.js";
 import { useApp } from "../../state/store.js";
 import type { PageId } from "./nav.js";
+import { UpdateButton } from "./UpdateButton.js";
 
 export function Header({
   title,
@@ -63,6 +64,8 @@ export function Header({
             Ask AI
           </Button>
         )}
+
+        <UpdateButton />
 
         <div style={{ position: "relative" }} ref={menuRef}>
           <Avatar

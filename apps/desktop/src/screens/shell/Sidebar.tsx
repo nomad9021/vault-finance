@@ -1,5 +1,5 @@
 import { Icon } from "@vault/ui";
-import { useApp } from "../../state/store.js";
+import { APP_VERSION, useApp } from "../../state/store.js";
 import { AppMark } from "../AuthLayout.js";
 import { NAV_GROUPS, visiblePages, type PageId } from "./nav.js";
 
@@ -12,6 +12,7 @@ import { NAV_GROUPS, visiblePages, type PageId } from "./nav.js";
 export function Sidebar({ page, onNavigate }: { page: PageId; onNavigate: (p: PageId) => void }) {
   const user = useApp((s) => s.user);
   const aiVisible = useApp((s) => s.aiVisible);
+  const householdName = useApp((s) => s.householdName);
 
   return (
     <aside
@@ -29,7 +30,9 @@ export function Sidebar({ page, onNavigate }: { page: PageId; onNavigate: (p: Pa
         <div className="brand">
           <div style={{ minWidth: 0 }}>
             <div className="brand-name truncate">Vault Finance</div>
-            <div className="brand-sub">Household finance</div>
+            <div className="brand-sub truncate" title={householdName ?? undefined}>
+              {householdName ?? "Household finance"}
+            </div>
           </div>
         </div>
       </div>
@@ -75,7 +78,7 @@ export function Sidebar({ page, onNavigate }: { page: PageId; onNavigate: (p: Pa
         className="t-2xs t-tertiary"
       >
         <div className="truncate">{user?.displayName}</div>
-        <div>Self-hosted · v0.1</div>
+        <div>Self-hosted · v{APP_VERSION}</div>
       </div>
     </aside>
   );

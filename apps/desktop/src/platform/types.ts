@@ -1,5 +1,18 @@
 import type { FetchLike, Platform as ApiPlatform, StreamFetchLike } from "@vault/shared";
 
+export interface BiometricStatus {
+  available: boolean;
+  /** What the OS calls it: "Windows Hello", "Touch ID", "Fingerprint". */
+  label: string;
+  /** Why it's unavailable, phrased for the user. */
+  reason?: string;
+}
+
+/** Outcome of a biometric prompt. "cancelled" is not an error worth showing. */
+export type BiometricResult =
+  | { ok: true }
+  | { ok: false; reason: "cancelled" | "failed" | "unavailable"; message?: string };
+
 export interface ProbeResult {
   reachable: boolean;
   /** SHA-256 of the server's TLS certificate (DER), hex. Absent when the OS trust store validated the chain or the probe used plain fetch. */
@@ -50,6 +63,16 @@ export interface HostPlatform {
   getSecret(key: string): Promise<string | null>;
   setSecret(key: string, value: string): Promise<void>;
   deleteSecret(key: string): Promise<void>;
+
+  /**
+   * Biometric user-presence check (Windows Hello / Touch ID / fprintd). A
+   * local gate only — it releases the device key kept in getSecret(), and
+   * nothing biometric ever reaches the server.
+   */
+  biometricStatus(): Promise<BiometricStatus>;
+  biometricAuthenticate(reason: string): Promise<BiometricResult>;
+  /** Abort a pending fingerprint scan (Linux; the other OSes own their dialog). */
+  biometricCancel(): Promise<void>;
 
   /**
    * Open the hosting admin console in a separate window (Tauri only). Undefined

@@ -5,9 +5,10 @@ import {
 import argon2 from "argon2";
 import { sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { aiSettings, users } from "../../db/schema.js";
+import { aiSettings, appMeta, users } from "../../db/schema.js";
 import { seedDefaultCategories } from "../../db/seed-categories.js";
 import { AppError } from "../../errors.js";
+import { META_KEYS } from "../../lib/app-meta.js";
 import { householdConfirmed } from "../../lib/email-templates.js";
 import type { AppConfig } from "../../config.js";
 
@@ -57,6 +58,13 @@ export default async function setupRoutes(
         baseUrl: `http://${opts.config.ollama.host}:${opts.config.ollama.port}`,
         enabled: false,
       });
+
+      if (body.householdName) {
+        await tx
+          .insert(appMeta)
+          .values({ key: META_KEYS.householdName, value: body.householdName })
+          .onConflictDoUpdate({ target: appMeta.key, set: { value: body.householdName } });
+      }
 
       await seedDefaultCategories(tx);
     });

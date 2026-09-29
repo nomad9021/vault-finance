@@ -25,6 +25,7 @@ import givingRoutes from "./modules/giving/routes.js";
 import goalRoutes from "./modules/goals/routes.js";
 import insightRoutes from "./modules/insights/routes.js";
 import investmentRoutes from "./modules/investments/routes.js";
+import householdRoutes from "./modules/household/routes.js";
 import memberRoutes from "./modules/members/routes.js";
 import reportRoutes from "./modules/reports/routes.js";
 import metaRoutes from "./modules/meta/routes.js";
@@ -104,6 +105,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       await api.register(updateRoutes, { config: opts.config });
       await api.register(authRoutes);
       await api.register(memberRoutes, { config: opts.config });
+      await api.register(householdRoutes);
       await api.register(accountRoutes);
       await api.register(categoryRoutes);
       await api.register(transactionRoutes);

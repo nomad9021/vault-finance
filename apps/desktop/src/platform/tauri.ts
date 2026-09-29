@@ -4,7 +4,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import type { Platform as ApiPlatform } from "@vault/shared";
-import type { HostPlatform, ProbeResult } from "./types.js";
+import type { BiometricResult, BiometricStatus, HostPlatform, ProbeResult } from "./types.js";
 
 interface RustHttpResponse {
   status: number;
@@ -125,6 +125,28 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
 
     async openAdminConsole() {
       await invoke("open_admin_window");
+    },
+
+    async biometricStatus() {
+      try {
+        return await invoke<BiometricStatus>("biometric_status");
+      } catch {
+        return { available: false, label: "Biometrics", reason: "Couldn't check this device." };
+      }
+    },
+    async biometricAuthenticate(reason): Promise<BiometricResult> {
+      try {
+        await invoke("biometric_authenticate", { reason });
+        return { ok: true };
+      } catch (err) {
+        // Rust serializes BiometricError as "cancelled" | "failed" | "unavailable: <why>".
+        const text = String(err);
+        if (text === "cancelled" || text === "failed") return { ok: false, reason: text };
+        return { ok: false, reason: "unavailable", message: text.replace(/^unavailable:\s*/, "") };
+      }
+    },
+    async biometricCancel() {
+      await invoke("biometric_cancel").catch(() => {});
     },
 
     async getSecret(key) {

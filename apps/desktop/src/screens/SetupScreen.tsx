@@ -12,6 +12,7 @@ export function SetupScreen() {
   const client = useApp((s) => s.client);
   const routeForServer = useApp((s) => s.routeForServer);
 
+  const [householdName, setHouseholdName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -36,6 +37,7 @@ export function SetupScreen() {
         ownerEmail: email,
         ownerPassword: password,
         ownerDisplayName: displayName.trim(),
+        ...(householdName.trim() ? { householdName: householdName.trim() } : {}),
       });
       await routeForServer(); // server now reports needsSetup=false → login
     } catch (err) {
@@ -60,10 +62,19 @@ export function SetupScreen() {
         }}
       >
         <Field
+          label="Household name"
+          value={householdName}
+          onChange={(e) => setHouseholdName(e.target.value)}
+          placeholder="e.g. The Carters"
+          maxLength={60}
+          autoFocus
+          hint="Optional. Shared by everyone you add later — you can rename it in Settings."
+          error={fieldErrors["householdName"]}
+        />
+        <Field
           label="Your name"
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
-          autoFocus
           error={fieldErrors["ownerDisplayName"]}
         />
         <Field

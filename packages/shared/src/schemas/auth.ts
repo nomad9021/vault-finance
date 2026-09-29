@@ -62,6 +62,8 @@ export type PublicProfile = z.infer<typeof PublicProfile>;
 
 export const ProfilesResponse = z.object({
   profiles: z.array(PublicProfile),
+  /** The household's own name ("The Carters"); null until the owner sets one. */
+  householdName: z.string().nullable().optional(),
 });
 export type ProfilesResponse = z.infer<typeof ProfilesResponse>;
 
@@ -107,3 +109,42 @@ export const AccessTokenClaims = z.object({
   role: z.enum(["owner", "member"]),
 });
 export type AccessTokenClaims = z.infer<typeof AccessTokenClaims>;
+
+// ── Device keys (biometric sign-in) ──
+// A per-device sign-in credential the desktop app keeps in the OS keychain and
+// only releases after a local Windows Hello / Touch ID / fingerprint check.
+// The server never sees anything biometric — just this revocable key.
+
+export const CreateDeviceKeyRequest = z.object({
+  deviceName: z.string().min(1).max(100),
+  platform: Platform,
+});
+export type CreateDeviceKeyRequest = z.infer<typeof CreateDeviceKeyRequest>;
+
+/** `key` is `<id>.<secret>` and is shown exactly once. */
+export const CreateDeviceKeyResponse = z.object({
+  id: z.string().uuid(),
+  key: z.string(),
+});
+export type CreateDeviceKeyResponse = z.infer<typeof CreateDeviceKeyResponse>;
+
+export const DeviceKey = z.object({
+  id: z.string().uuid(),
+  deviceName: z.string(),
+  platform: Platform,
+  createdAt: z.string().datetime(),
+  lastUsedAt: z.string().datetime().nullable(),
+});
+export type DeviceKey = z.infer<typeof DeviceKey>;
+
+export const DeviceKeyListResponse = z.object({
+  keys: z.array(DeviceKey),
+});
+export type DeviceKeyListResponse = z.infer<typeof DeviceKeyListResponse>;
+
+export const DeviceKeyLoginRequest = z.object({
+  key: z.string().min(1).max(200),
+  deviceName: z.string().min(1).max(100),
+  platform: Platform,
+});
+export type DeviceKeyLoginRequest = z.infer<typeof DeviceKeyLoginRequest>;

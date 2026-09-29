@@ -1,15 +1,20 @@
 import { z } from "zod";
 import { ApiError as ApiErrorSchema, type ErrorCode } from "../schemas/common.js";
 import {
+  CreateDeviceKeyResponse,
+  DeviceKeyListResponse,
   LoginResponse,
   ProfilesResponse,
   SessionListResponse,
   TokenPair,
   TotpSetupResponse,
   TotpStatusResponse,
+  type CreateDeviceKeyRequest,
+  type DeviceKeyLoginRequest,
   type LoginByIdRequest,
   type LoginRequest,
 } from "../schemas/auth.js";
+import { Household } from "../schemas/household.js";
 import { SetupStatusResponse, type SetupCompleteRequest } from "../schemas/setup.js";
 import { User } from "../schemas/user.js";
 import { VersionResponse } from "../schemas/version.js";
@@ -302,6 +307,14 @@ export class ApiClient {
     return this.request(UpdateStatusResponse, "GET", "/updates/status");
   }
 
+  // ── Household ──
+  household() {
+    return this.request(Household, "GET", "/household");
+  }
+  renameHousehold(name: string) {
+    return this.request(Household, "PATCH", "/household", { name });
+  }
+
   // ── Household members ──
   members() {
     return this.request(MemberListResponse, "GET", "/members");
@@ -367,6 +380,17 @@ export class ApiClient {
     });
     return result;
   }
+  /** Biometric sign-in: the device key is only sent after a local OS check. */
+  async loginWithDeviceKey(body: DeviceKeyLoginRequest) {
+    const result = await this.request(LoginResponse, "POST", "/auth/login/device-key", body, {
+      auth: false,
+    });
+    this.opts.setTokens({
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+    });
+    return result;
+  }
   async logout() {
     const tokens = this.opts.getTokens();
     if (tokens) {
@@ -384,6 +408,17 @@ export class ApiClient {
   }
   revokeSession(id: string) {
     return this.request(z.undefined(), "DELETE", `/auth/sessions/${id}`);
+  }
+
+  // ── Device keys (biometric sign-in) ──
+  deviceKeys() {
+    return this.request(DeviceKeyListResponse, "GET", "/auth/device-keys");
+  }
+  createDeviceKey(body: CreateDeviceKeyRequest) {
+    return this.request(CreateDeviceKeyResponse, "POST", "/auth/device-keys", body);
+  }
+  revokeDeviceKey(id: string) {
+    return this.request(z.undefined(), "DELETE", `/auth/device-keys/${id}`);
   }
 
   // ── Two-factor auth ──

@@ -64,6 +64,28 @@ export const deviceSessions = pgTable(
   ],
 );
 
+// Biometric sign-in keys: one per enrolled device. The desktop app keeps the
+// raw `<id>.<secret>` in the OS keychain and only sends it after a local
+// Windows Hello / Touch ID / fingerprint check; only the argon2 hash lives
+// here. Revocable from Settings, and gone with the user.
+export const deviceKeys = pgTable(
+  "device_keys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    deviceName: text("device_name").notNull(),
+    platform: text("platform", {
+      enum: ["windows", "macos", "linux", "ios"],
+    }).notNull(),
+    secretHash: text("secret_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  },
+  (t) => [index("device_keys_user_id_idx").on(t.userId)],
+);
+
 // Pending invitations for new household members. The raw token is emailed;
 // only its argon2 hash is stored. Rows are deleted once accepted or expired.
 export const memberInvites = pgTable(

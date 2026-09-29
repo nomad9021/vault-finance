@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import argon2 from "argon2";
 import { and, eq, isNull } from "drizzle-orm";
 import type { Platform, User } from "@vault/shared";
-import { deviceSessions, users } from "../../db/schema.js";
+import { deviceKeys, deviceSessions, users } from "../../db/schema.js";
 import type { Db } from "../../plugins/db.js";
 import { AppError } from "../../errors.js";
 import {
@@ -99,14 +99,22 @@ export async function login(
     if (!verifyTotp(decryptSecret(user.totpSecret) ?? "", input.totpCode)) throw totpInvalid();
   }
 
+  return startSession(db, user, input);
+}
+
+async function startSession(
+  db: Db,
+  user: typeof users.$inferSelect,
+  device: { deviceName: string; platform: Platform; ipAddress: string | null },
+): Promise<LoginResult> {
   const [session] = await db
     .insert(deviceSessions)
     .values({
       userId: user.id,
-      deviceName: input.deviceName,
-      platform: input.platform,
+      deviceName: device.deviceName,
+      platform: device.platform,
       refreshTokenHash: "pending", // replaced below once we know the session id
-      ipAddress: input.ipAddress,
+      ipAddress: device.ipAddress,
     })
     .returning({ id: deviceSessions.id });
   if (!session) throw new Error("failed to create device session");
@@ -118,6 +126,77 @@ export async function login(
     .where(eq(deviceSessions.id, session.id));
 
   return { user, sessionId: session.id, refreshToken: token };
+}
+
+// ── Device keys (biometric sign-in) ──
+// Same `<id>.<secret>` shape as refresh tokens (see mintRefreshToken): the id
+// makes lookup O(1), only the argon2 hash of the secret is stored.
+
+export async function createDeviceKey(
+  db: Db,
+  userId: string,
+  device: { deviceName: string; platform: Platform },
+): Promise<{ id: string; key: string }> {
+  const secret = randomBytes(32).toString("base64url");
+  const [row] = await db
+    .insert(deviceKeys)
+    .values({
+      userId,
+      deviceName: device.deviceName,
+      platform: device.platform,
+      secretHash: await argon2.hash(secret),
+    })
+    .returning({ id: deviceKeys.id });
+  if (!row) throw new Error("failed to create device key");
+  return { id: row.id, key: `${row.id}.${secret}` };
+}
+
+export async function listDeviceKeys(db: Db, userId: string) {
+  const rows = await db.query.deviceKeys.findMany({
+    where: eq(deviceKeys.userId, userId),
+    orderBy: (t, { desc }) => [desc(t.createdAt)],
+  });
+  return rows.map((k) => ({
+    id: k.id,
+    deviceName: k.deviceName,
+    platform: k.platform,
+    createdAt: k.createdAt.toISOString(),
+    lastUsedAt: k.lastUsedAt?.toISOString() ?? null,
+  }));
+}
+
+export async function revokeDeviceKey(db: Db, userId: string, id: string): Promise<void> {
+  const [deleted] = await db
+    .delete(deviceKeys)
+    .where(and(eq(deviceKeys.id, id), eq(deviceKeys.userId, userId)))
+    .returning({ id: deviceKeys.id });
+  if (!deleted) throw notFound("Device key");
+}
+
+/**
+ * Sign in with a device key. The client only sends it after the OS confirmed
+ * the device owner (biometric), so it stands in for password + TOTP — the
+ * same trade-off passkeys make: possession of the enrolled device plus a
+ * local biometric. A wrong secret for a real key id deletes the key, since
+ * the legitimate client can never get it wrong.
+ */
+export async function loginWithDeviceKey(
+  db: Db,
+  input: { key: string; deviceName: string; platform: Platform; ipAddress: string | null },
+): Promise<LoginResult> {
+  const parts = splitRefreshToken(input.key);
+  if (!parts) throw invalidCredentials();
+  const row = await db.query.deviceKeys.findFirst({ where: eq(deviceKeys.id, parts.sessionId) });
+  if (!row) throw invalidCredentials();
+  const ok = await argon2.verify(row.secretHash, parts.secret).catch(() => false);
+  if (!ok) {
+    await db.delete(deviceKeys).where(eq(deviceKeys.id, row.id));
+    throw invalidCredentials();
+  }
+  const user = await db.query.users.findFirst({ where: eq(users.id, row.userId) });
+  if (!user) throw invalidCredentials();
+  await db.update(deviceKeys).set({ lastUsedAt: new Date() }).where(eq(deviceKeys.id, row.id));
+  return startSession(db, user, input);
 }
 
 // ── Two-factor authentication (TOTP) ──

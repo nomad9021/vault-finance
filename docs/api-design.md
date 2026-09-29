@@ -28,18 +28,22 @@ see [ADR-0005](adr/0005-ai-streaming.md)). Every request after login carries
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/v1/setup/status` | `{ needsSetup: boolean }`. Unauthenticated — this is how the desktop app knows to show the wizard vs. the login screen on first connect to a fresh server. |
-| POST | `/api/v1/setup/complete` | `{ ownerEmail, ownerPassword, ownerDisplayName, dbConfirmed, aiConfig? }` → creates the owner user, seeds default categories, marks setup complete. Route 404s after first completion. |
+| POST | `/api/v1/setup/complete` | `{ ownerEmail, ownerPassword, ownerDisplayName, householdName? }` → creates the owner user, seeds default categories, marks setup complete. Route 404s after first completion. |
 
 ## Auth
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/v1/auth/profiles` | Unauthenticated: `{ profiles: [{ id, displayName, avatarColor }] }` — powers the design's login profile picker. Emails are deliberately excluded; exposing household display names to the LAN is an accepted trade-off for a self-hosted household app. |
+| GET | `/api/v1/auth/profiles` | Unauthenticated: `{ profiles: [{ id, displayName, avatarColor }], householdName }` — powers the design's login profile picker. Emails are deliberately excluded; exposing household display names to the LAN is an accepted trade-off for a self-hosted household app. |
 | POST | `/api/v1/auth/login` | `{ email \| userId, password, deviceName, platform }` → `{ accessToken, refreshToken, user }`. `userId` comes from the profile picker; `email` remains for scripts/recovery. Rate-limited (Redis-backed if present, in-memory fallback otherwise). |
 | POST | `/api/v1/auth/refresh` | `{ refreshToken }` → `{ accessToken, refreshToken }`. Rotates the refresh token; reuse of an already-rotated token revokes the session. |
 | POST | `/api/v1/auth/logout` | `{ refreshToken }` → revokes that session. |
 | GET | `/api/v1/auth/sessions` | List the current user's device sessions (id, deviceName, platform, ipAddress, lastUsedAt, isCurrent). |
 | DELETE | `/api/v1/auth/sessions/:id` | Revoke a specific session (e.g. a lost laptop). |
+| POST | `/api/v1/auth/device-keys` | `{ deviceName, platform }` → `{ id, key }`. Enrolls this device for biometric sign-in ([ADR-0008](adr/0008-biometric-sign-in.md)); `key` is shown once. |
+| GET | `/api/v1/auth/device-keys` | The current user's enrolled devices (id, deviceName, platform, createdAt, lastUsedAt). |
+| DELETE | `/api/v1/auth/device-keys/:id` | Revoke biometric sign-in for one device. |
+| POST | `/api/v1/auth/login/device-key` | Unauthenticated: `{ key, deviceName, platform }` → same as `/auth/login`. Sent only after the OS biometric check passes. Rate-limited; a wrong secret for a real key id deletes that key. |
 | GET | `/api/v1/me` | Current user profile. |
 | PATCH | `/api/v1/me` | Update display name / avatar color / password. |
 
@@ -47,6 +51,8 @@ see [ADR-0005](adr/0005-ai-streaming.md)). Every request after login carries
 
 | Method | Path | Notes |
 |---|---|---|
+| GET | `/api/v1/household` | Any member: `{ name }` — the household's own name, `null` until set. |
+| PATCH | `/api/v1/household` | Owner-only: `{ name }` (1–60 chars, trimmed). |
 | GET | `/api/v1/household/members` | List users on this server. |
 | POST | `/api/v1/household/members` | Owner-only: create a member account (no email server assumed — owner sets an initial password the member changes on first login). |
 | DELETE | `/api/v1/household/members/:id` | Owner-only. |

@@ -1,8 +1,7 @@
 import { compareSemver } from "@vault/shared";
 import type { UpdateStatusResponse } from "@vault/shared";
-import { sql } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
-import { appMeta } from "../../db/schema.js";
+import { readMeta, writeMeta } from "../../lib/app-meta.js";
 import type { Db } from "../../plugins/db.js";
 import type { AppConfig } from "../../config.js";
 
@@ -47,18 +46,6 @@ export async function fetchLatestRelease(
     log.warn({ err }, "update check: could not reach the release manifest");
     return null;
   }
-}
-
-async function readMeta(db: Db, key: string): Promise<string | null> {
-  const [row] = await db.select().from(appMeta).where(sql`${appMeta.key} = ${key}`);
-  return row?.value ?? null;
-}
-
-async function writeMeta(db: Db, key: string, value: string): Promise<void> {
-  await db
-    .insert(appMeta)
-    .values({ key, value })
-    .onConflictDoUpdate({ target: appMeta.key, set: { value, updatedAt: new Date() } });
 }
 
 function toStatus(config: AppConfig, cached: CachedCheck | null): UpdateStatusResponse {

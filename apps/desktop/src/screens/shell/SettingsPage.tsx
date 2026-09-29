@@ -9,6 +9,7 @@ import {
   CLOUD_PROVIDERS,
   type AiStatus,
   type BankStatus,
+  type DeviceKey,
   type DeviceSession,
   type MemberListResponse,
   type UpdateStatusResponse,
@@ -17,7 +18,7 @@ import { THEMES, THEME_LABELS } from "@vault/design-tokens";
 import { Button, Card, Dialog, Field, Segmented, Select, Spinner, Tag } from "@vault/ui";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useData } from "../../lib/useData.js";
-import { APP_VERSION, useApp } from "../../state/store.js";
+import { APP_VERSION, deviceKeySecret, useApp } from "../../state/store.js";
 
 export function SettingsPage() {
   // Uses the shared `.page` wrapper (centered, max-width, consistent rhythm)
@@ -30,9 +31,11 @@ export function SettingsPage() {
       <CategorizationRulesSection />
       <BankSection />
       <AiSection />
+      <BiometricSection />
       <TwoFactorSection />
       <UpdatesSection />
       <ServerUpdateSection />
+      <HouseholdSection />
       <MembersSection />
       <SessionsSection />
       <ServerSection />
@@ -43,51 +46,21 @@ export function SettingsPage() {
 
 function UpdatesSection() {
   const platform = useApp((s) => s.platform);
-  const [state, setState] = useState<
-    | { phase: "idle" }
-    | { phase: "checking" }
-    | { phase: "none" }
-    | { phase: "available"; version: string }
-    | { phase: "installing"; progress: number }
-    | { phase: "error"; message: string }
-  >({ phase: "idle" });
+  // Same state as the header's update button — checking in one updates both.
+  const state = useApp((s) => s.appUpdate);
+  const check = useApp((s) => s.checkAppUpdate);
+  const install = useApp((s) => s.installAppUpdate);
 
   // Browser dev mode has no updater — hide the card entirely.
   if (platform.kind !== "tauri") return null;
-
-  const check = async () => {
-    setState({ phase: "checking" });
-    try {
-      const update = await platform.checkForUpdate();
-      setState(update ? { phase: "available", version: update.version } : { phase: "none" });
-    } catch (err) {
-      setState({
-        phase: "error",
-        message: err instanceof Error ? err.message : "Couldn't reach the update server.",
-      });
-    }
-  };
-
-  const install = async () => {
-    setState({ phase: "installing", progress: 0 });
-    try {
-      await platform.installUpdateAndRestart((progress) =>
-        setState({ phase: "installing", progress }),
-      );
-    } catch (err) {
-      setState({
-        phase: "error",
-        message: err instanceof Error ? err.message : "The update failed to install.",
-      });
-    }
-  };
 
   return (
     <Card kicker="Application" title={`Updates — v${APP_VERSION}`}>
       <p className="card-body">
         Updates are downloaded from the project's GitHub releases and
         signature-checked before install — the only network request this app
-        ever makes outside your own server.
+        ever makes outside your own server. You can also update from the
+        download button next to your avatar.
       </p>
       {state.phase === "available" ? (
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -171,6 +144,84 @@ function ServerUpdateSection() {
         <p className="card-meta">
           Release notes: <span style={{ userSelect: "all" }}>{status.notesUrl}</span>
         </p>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * The household's own name. Everyone on this server already shares one
+ * household; this names it. Members see it, only the owner can change it.
+ */
+function HouseholdSection() {
+  const client = useApp((s) => s.client);
+  const user = useApp((s) => s.user);
+  const householdName = useApp((s) => s.householdName);
+  const setHouseholdName = useApp((s) => s.setHouseholdName);
+  const [draft, setDraft] = useState(householdName ?? "");
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => setDraft(householdName ?? ""), [householdName]);
+
+  const owner = user?.role === "owner";
+  const dirty = draft.trim() !== (householdName ?? "") && draft.trim().length > 0;
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const h = await client.renameHousehold(draft.trim());
+      setHouseholdName(h.name);
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save the name.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card kicker="Household" title={householdName ?? "Your household"}>
+      <p className="card-body">
+        Everyone who signs in to this server is part of the same household and
+        shares its accounts. Its name appears on the sign-in screen and in the
+        sidebar{owner ? "" : " — the household owner can change it"}.
+      </p>
+      {owner && (
+        <form
+          style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", maxWidth: 460 }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (dirty && !busy) void save();
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <Field
+              label="Household name"
+              value={draft}
+              maxLength={60}
+              placeholder="e.g. The Carters"
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setSaved(false);
+              }}
+            />
+          </div>
+          <Button variant="primary" type="submit" disabled={!dirty || busy}>
+            {busy ? <Spinner label="Saving" /> : "Save"}
+          </Button>
+        </form>
+      )}
+      {saved && !dirty && (
+        <p className="card-meta" style={{ color: "var(--color-positive)" }}>Saved.</p>
+      )}
+      {error && (
+        <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)", marginTop: 8 }}>
+          {error}
+        </div>
       )}
     </Card>
   );
@@ -1609,6 +1660,186 @@ function AppearanceSection() {
  * otpauth URI for an authenticator app; a confirmed code turns it on. Disabling
  * requires the account password (re-auth).
  */
+/**
+ * Windows Hello / Touch ID / fingerprint sign-in for this device. Turning it
+ * on stores a server-issued device key in the OS keychain; the app then locks
+ * on launch and only releases the key after the OS confirms it's you.
+ */
+function BiometricSection() {
+  const client = useApp((s) => s.client);
+  const user = useApp((s) => s.user);
+  const platform = useApp((s) => s.platform);
+  const serverAddress = useApp((s) => s.serverAddress);
+  const biometric = useApp((s) => s.biometric);
+  const enrolledIds = useApp((s) => s.biometricUserIds);
+  const enableBiometric = useApp((s) => s.enableBiometric);
+  const disableBiometric = useApp((s) => s.disableBiometric);
+
+  const [keys, setKeys] = useState<DeviceKey[] | null>(null);
+  const [thisDeviceKeyId, setThisDeviceKeyId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState<DeviceKey | null>(null);
+
+  const enrolled = !!user && enrolledIds.includes(user.id);
+  const label = biometric?.label ?? "Biometric sign-in";
+
+  const reload = useCallback(() => {
+    client
+      .deviceKeys()
+      .then((r) => setKeys(r.keys))
+      .catch(() => setKeys([]));
+    if (serverAddress && user) {
+      platform
+        .getSecret(deviceKeySecret(serverAddress, user.id))
+        .then((raw) => setThisDeviceKeyId(raw ? ((JSON.parse(raw) as { id?: string }).id ?? null) : null))
+        .catch(() => setThisDeviceKeyId(null));
+    }
+  }, [client, platform, serverAddress, user]);
+  useEffect(reload, [reload, enrolled]);
+
+  const turnOn = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await enableBiometric();
+      if (!r.ok && r.reason !== "cancelled") {
+        setError(r.message ?? (r.reason === "failed" ? `${label} didn't recognize you.` : `${label} isn't available.`));
+      }
+    } catch {
+      setError("Couldn't reach the server.");
+    } finally {
+      setBusy(false);
+      reload();
+    }
+  };
+
+  const turnOff = async () => {
+    setBusy(true);
+    setError(null);
+    await disableBiometric();
+    setBusy(false);
+    reload();
+  };
+
+  const revoke = async (key: DeviceKey) => {
+    if (key.id === thisDeviceKeyId) {
+      await disableBiometric();
+    } else {
+      await client.revokeDeviceKey(key.id).catch(() => {});
+    }
+    setRevoking(null);
+    reload();
+  };
+
+  const icon = label === "Windows Hello" ? "user" : "fingerprint";
+  const otherDevices = (keys ?? []).filter((k) => k.id !== thisDeviceKeyId);
+
+  return (
+    <Card kicker="Security" title={`Sign in with ${label}`}>
+      <p className="card-body">
+        Unlock Vault Finance on this computer with{" "}
+        {label === "Windows Hello"
+          ? "Windows Hello — your face, fingerprint or PIN"
+          : label === "Touch ID"
+            ? "Touch ID"
+            : "your fingerprint reader"}{" "}
+        instead of typing your password. The app asks for it every time it
+        opens. Your biometric data never leaves this device — the server only
+        sees a sign-in key it can revoke.
+      </p>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span
+          aria-hidden="true"
+          style={{ width: 8, height: 8, borderRadius: "50%", background: enrolled ? "var(--color-positive)" : "var(--color-neutral-600)" }}
+        />
+        <span style={{ fontSize: "var(--text-sm)" }}>
+          {enrolled
+            ? "On for this device"
+            : biometric && !biometric.available
+              ? "Not available on this device"
+              : "Off"}
+        </span>
+        <div style={{ marginLeft: "auto" }}>
+          {enrolled ? (
+            <Button variant="ghost" onClick={() => void turnOff()} disabled={busy}>
+              Turn off
+            </Button>
+          ) : (
+            <Button
+              variant="primary"
+              icon={icon}
+              onClick={() => void turnOn()}
+              disabled={busy || !biometric?.available}
+            >
+              {busy ? <Spinner label="Waiting" /> : "Turn on"}
+            </Button>
+          )}
+        </div>
+      </div>
+      {biometric && !biometric.available && biometric.reason && (
+        <p className="card-meta">{biometric.reason}</p>
+      )}
+      {busy && label === "Fingerprint" && (
+        <div className="row card-meta" style={{ gap: 8 }}>
+          Touch the fingerprint reader…
+          <Button variant="ghost" onClick={() => void platform.biometricCancel()}>
+            Cancel
+          </Button>
+        </div>
+      )}
+      {error && (
+        <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)", marginTop: 8 }}>
+          {error}
+        </div>
+      )}
+
+      {otherDevices.length > 0 && (
+        <>
+          <div className="eyebrow" style={{ marginTop: 16, marginBottom: 4 }}>
+            Other devices that can sign in as you with biometrics
+          </div>
+          <table className="table">
+            <tbody>
+              {otherDevices.map((k) => (
+                <tr key={k.id}>
+                  <td>{k.deviceName}</td>
+                  <td style={{ textTransform: "capitalize" }}>{k.platform}</td>
+                  <td>{k.lastUsedAt ? `Last used ${new Date(k.lastUsedAt).toLocaleDateString()}` : "Never used"}</td>
+                  <td style={{ textAlign: "right" }}>
+                    <Button variant="ghost" onClick={() => setRevoking(k)}>
+                      Revoke
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      <Dialog
+        open={revoking !== null}
+        title="Revoke biometric sign-in?"
+        onClose={() => setRevoking(null)}
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setRevoking(null)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={() => revoking && void revoke(revoking)}>
+              Revoke
+            </Button>
+          </>
+        }
+      >
+        “{revoking?.deviceName}” will need your password next time. It stays
+        signed in until then — revoke its session below too if it's lost.
+      </Dialog>
+    </Card>
+  );
+}
+
 function TwoFactorSection() {
   const client = useApp((s) => s.client);
   const { data, reload } = useData(() => client.totpStatus(), [client]);

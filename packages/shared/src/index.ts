@@ -5,6 +5,7 @@ export * from "./schemas/setup.js";
 export * from "./schemas/version.js";
 export * from "./schemas/updates.js";
 export * from "./schemas/members.js";
+export * from "./schemas/household.js";
 export * from "./schemas/control.js";
 export * from "./schemas/accounts.js";
 export * from "./schemas/categories.js";
