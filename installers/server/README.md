@@ -10,8 +10,16 @@ Compose stack) on the machine that will host your data.
 
 They ask where to store your data, which HTTPS port to use, the database
 password, whether to enable local AI, and (optionally) create your owner
-account — then write `docker/.env`, create the data directories, and run
-`docker compose up -d --build`.
+account — then write `docker/.env`, create the data directories (handing the
+server's one to the container's non-root `vault` user), pull the prebuilt
+server image, and start the stack with `docker compose up -d`.
+
+If the prebuilt image can't be pulled (not published yet, or private), they
+build the server from this checkout instead and add
+`COMPOSE_FILE=docker-compose.yml:docker-compose.build.yml` to `docker/.env`
+(see [`docker-compose.build.yml`](../../docker/docker-compose.build.yml)), so
+`update-server.sh` / `update-server.ps1` keep rebuilding from source on update.
+Remove that line to go back to prebuilt images.
 
 ## Usage
 

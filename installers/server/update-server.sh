@@ -2,7 +2,8 @@
 #
 # Vault Finance — one-command server update (Linux / macOS).
 #
-# Pulls the newest prebuilt image and restarts the stack. Your data (Postgres
+# Pulls the newest prebuilt image (or rebuilds from source, if the installer
+# set this server up that way) and restarts the stack. Your data (Postgres
 # volume + /data) is untouched; database migrations run automatically on boot.
 #
 #   bash installers/server/update-server.sh            # this machine
@@ -16,7 +17,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 REPO_DIR="$(cd -- "$SCRIPT_DIR/../.." &>/dev/null && pwd)"
-COMPOSE_FILE="$REPO_DIR/docker/docker-compose.yml"
 MULTI_DIR="$REPO_DIR/docker/multi"
 
 if [ -t 1 ]; then B=$'\033[1m'; GRN=$'\033[32m'; RST=$'\033[0m'; else B= GRN= RST=; fi
@@ -40,8 +40,11 @@ if [ -d "$MULTI_DIR/families" ] && compgen -G "$MULTI_DIR/families/*/family.env"
   ok "all families updated"
 else
   say "${B}Updating the Vault Finance stack…${RST}"
-  docker compose -f "$COMPOSE_FILE" pull
-  docker compose -f "$COMPOSE_FILE" up -d
+  # Run from docker/ without -f so a COMPOSE_FILE set in docker/.env (servers
+  # the installer set up to build from source) is honoured.
+  ( cd "$REPO_DIR/docker"
+    docker compose pull --ignore-buildable
+    docker compose up -d --build )
   docker image prune -f >/dev/null 2>&1 || true
   ok "server updated — migrations run automatically on boot"
   say "  Check it came back up:  docker compose -f docker/docker-compose.yml ps"

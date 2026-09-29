@@ -97,14 +97,21 @@ It asks:
   dedicated drive if you have one (e.g. `/mnt/data/vault`). Holds the database,
   uploaded receipts, the TLS certificate, and any AI models.
 - **HTTPS port** (default `8443`).
-- **Database password** — press Enter for a strong random one.
+- **Database password** — press Enter for a strong random one. If you type
+  your own, use only letters, digits and `. _ ~ -` (characters like `$` or `@`
+  break the config, so the installer rejects them).
 - **Local AI?** — default no; you can turn it on later in the app.
 - **Owner account?** — create your login now, or later from the desktop app's
   setup wizard.
 
-Then it writes `docker/.env`, creates the data directories, runs
-`docker compose up -d --build` (first build takes a few minutes), waits for the
-API, and prints the address to connect to. Run with `--dry-run` first if you
+Then it writes `docker/.env`, creates the data directories, pulls the
+prebuilt server image from GHCR, starts the stack, waits for the API, and
+prints the address to connect to. If the prebuilt image can't be pulled (for
+example it hasn't been published for your version yet — Docker reports
+`error from registry: denied`), the installer **builds the server from your
+checkout instead** (a few extra minutes) and records that in `docker/.env`
+(`COMPOSE_FILE=docker-compose.yml:docker-compose.build.yml`) so updates keep
+building from source. Delete that line to switch back to prebuilt images. Run with `--dry-run` first if you
 want to preview everything without touching Docker.
 
 If the installer stops at the Docker check, it tells you which problem it hit:
@@ -114,6 +121,15 @@ If the installer stops at the Docker check, it tells you which problem it hit:
 | *The Docker daemon isn't running* | `sudo systemctl enable --now docker` (the installer offers to run this for you) |
 | *User '…' can't talk to Docker* | `sudo usermod -aG docker $USER`, then `newgrp docker` or log out and back in |
 | *You're in the 'docker' group, but this shell doesn't know yet* | Log out and back in, or run `newgrp docker` |
+
+If the server container keeps restarting and `docker compose logs server`
+shows `EACCES: permission denied, open '/data/jwt-secret'`, its data folder
+has the wrong owner — re-run the installer (it now fixes the ownership), or
+see [docs/self-hosting.md](docs/self-hosting.md#11-troubleshooting).
+
+Warnings like `The "a" variable is not set` mean `docker/.env` has a `$` in
+a value (usually the database password). Re-run the installer — it asks for a
+new password.
 
 Then re-run the installer.
 

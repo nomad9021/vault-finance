@@ -1,0 +1,15 @@
+# Build the server image from this checkout instead of pulling the prebuilt
+# one from GHCR. The installers switch to this automatically when the image
+# can't be pulled, by setting in docker/.env:
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.build.yml
+#
+# (on Windows the separator is ';'). Compose reads COMPOSE_FILE from .env, so
+# plain `docker compose up -d --build` in docker/ keeps building from source.
+
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    pull_policy: build

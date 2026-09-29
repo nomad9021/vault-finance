@@ -8,7 +8,6 @@
 $ErrorActionPreference = "Stop"
 
 $RepoDir     = (Resolve-Path "$PSScriptRoot\..\..").Path
-$ComposeFile = Join-Path $RepoDir "docker\docker-compose.yml"
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "docker not found" }
 
@@ -18,8 +17,13 @@ if (Test-Path (Join-Path $RepoDir ".git")) {
 }
 
 Write-Host "Updating the Vault Finance stack..." -ForegroundColor Cyan
-docker compose -f $ComposeFile pull
-docker compose -f $ComposeFile up -d
+# Run from docker\ without -f so a COMPOSE_FILE set in docker\.env (servers
+# the installer set up to build from source) is honoured.
+Push-Location (Join-Path $RepoDir "docker")
+try {
+  docker compose pull --ignore-buildable
+  docker compose up -d --build
+} finally { Pop-Location }
 docker image prune -f | Out-Null
 
 Write-Host "OK - server updated. Migrations run automatically on boot." -ForegroundColor Green
