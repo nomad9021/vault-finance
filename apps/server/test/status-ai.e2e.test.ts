@@ -53,7 +53,7 @@ describe("status checks and separate AI servers", () => {
 
     manifest = createServer((_req, res) => {
       res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify({ version: "0.1.4", notes: "", platforms: {} }));
+      res.end(JSON.stringify({ version: "0.1.5", notes: "", platforms: {} }));
     });
     await new Promise<void>((r) => manifest.listen(0, "127.0.0.1", r));
 

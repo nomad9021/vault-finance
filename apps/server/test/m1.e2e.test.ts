@@ -91,7 +91,7 @@ describe("meta", () => {
     const res = await app.inject({
       method: "GET",
       url: "/api/v1/version",
-      headers: { "x-client-version": "0.1.0" },
+      headers: { "x-client-version": "0.1.5" },
     });
     expect(res.statusCode).toBe(200);
   });
