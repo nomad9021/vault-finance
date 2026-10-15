@@ -53,9 +53,9 @@ afterAll(async () => {
 });
 
 const OWNER = {
-  ownerEmail: "Maya@Chen.home", // mixed case on purpose — must normalize
+  ownerEmail: "Riley@Rivera.home", // mixed case on purpose — must normalize
   ownerPassword: "correct-horse-battery",
-  ownerDisplayName: "Maya Chen",
+  ownerDisplayName: "Riley Rivera",
 };
 
 function authHeader(token: string) {
@@ -152,7 +152,7 @@ describe("auth", () => {
       method: "POST",
       url: "/api/v1/auth/login",
       payload: {
-        email: "maya@chen.home",
+        email: "riley@rivera.home",
         password: "wrong-password-entirely",
         deviceName: "Test laptop",
         platform: "linux",
@@ -167,7 +167,7 @@ describe("auth", () => {
       method: "POST",
       url: "/api/v1/auth/login",
       payload: {
-        email: "MAYA@chen.home",
+        email: "RILEY@rivera.home",
         password: OWNER.ownerPassword,
         deviceName: "Test laptop",
         platform: "linux",
@@ -176,8 +176,8 @@ describe("auth", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.user).toMatchObject({
-      email: "maya@chen.home",
-      displayName: "Maya Chen",
+      email: "riley@rivera.home",
+      displayName: "Riley Rivera",
       role: "owner",
     });
     accessToken = body.accessToken;
@@ -191,7 +191,7 @@ describe("auth", () => {
       headers: authHeader(accessToken),
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().email).toBe("maya@chen.home");
+    expect(res.json().email).toBe("riley@rivera.home");
   });
 
   it("rejects a garbage access token", async () => {
@@ -251,7 +251,7 @@ describe("auth", () => {
       method: "POST",
       url: "/api/v1/auth/login",
       payload: {
-        email: "maya@chen.home",
+        email: "riley@rivera.home",
         password: OWNER.ownerPassword,
         deviceName: "Desktop A",
         platform: "windows",
@@ -261,7 +261,7 @@ describe("auth", () => {
       method: "POST",
       url: "/api/v1/auth/login",
       payload: {
-        email: "maya@chen.home",
+        email: "riley@rivera.home",
         password: OWNER.ownerPassword,
         deviceName: "Desktop B",
         platform: "macos",
@@ -308,7 +308,7 @@ describe("auth", () => {
     expect(profiles.statusCode).toBe(200);
     const list = profiles.json().profiles;
     expect(list).toHaveLength(1);
-    expect(list[0]).toMatchObject({ displayName: "Maya Chen" });
+    expect(list[0]).toMatchObject({ displayName: "Riley Rivera" });
     expect(list[0]).not.toHaveProperty("email"); // profile list must not leak emails
 
     const res = await app.inject({
@@ -322,7 +322,7 @@ describe("auth", () => {
       },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().user.email).toBe("maya@chen.home");
+    expect(res.json().user.email).toBe("riley@rivera.home");
   });
 
   it("logs out idempotently", async () => {
@@ -330,7 +330,7 @@ describe("auth", () => {
       method: "POST",
       url: "/api/v1/auth/login",
       payload: {
-        email: "maya@chen.home",
+        email: "riley@rivera.home",
         password: OWNER.ownerPassword,
         deviceName: "Ephemeral",
         platform: "linux",

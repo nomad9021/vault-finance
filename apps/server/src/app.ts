@@ -31,6 +31,7 @@ import reportRoutes from "./modules/reports/routes.js";
 import metaRoutes from "./modules/meta/routes.js";
 import mobileRoutes from "./modules/mobile/routes.js";
 import setupRoutes from "./modules/setup/routes.js";
+import statusRoutes from "./modules/status/routes.js";
 import subscriptionRoutes from "./modules/subscriptions/routes.js";
 import transactionRoutes from "./modules/transactions/routes.js";
 import updateRoutes from "./modules/updates/routes.js";
@@ -101,6 +102,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   await app.register(
     async (api) => {
       await api.register(metaRoutes, { config: opts.config });
+      await api.register(statusRoutes, { config: opts.config });
       await api.register(setupRoutes, { config: opts.config });
       await api.register(updateRoutes, { config: opts.config });
       await api.register(authRoutes);

@@ -2,7 +2,7 @@
 name = "vault-desktop"
 version = "0.1.3"
 description = "Vault Finance — self-hosted personal finance"
-authors = ["Mason"]
+authors = ["Vault Finance contributors"]
 edition = "2021"
 license = "MIT"
 

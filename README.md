@@ -9,9 +9,11 @@ nothing ever leaves your hardware.
   your server over LAN or Tailscale.
 - **Mobile viewer**: a read-only, password-protected phone view served by the
   server itself — open it in your phone's browser, add to home screen.
-- **AI**: optional and off by default. Bring your own provider — local Ollama
-  (nothing leaves your hardware), or your own OpenAI / Anthropic key. No
-  telemetry, ever ([ADR-0006](docs/adr/0006-optional-multi-provider-ai.md)).
+- **AI**: optional and off by default. Bring your own provider — Ollama or
+  any OpenAI-compatible local server (LM Studio, llama.cpp, vLLM…), bundled or
+  on a separate GPU machine (nothing leaves your hardware), or your own
+  OpenAI / Anthropic key. No telemetry, ever
+  ([ADR-0006](docs/adr/0006-optional-multi-provider-ai.md)).
 
 ---
 
@@ -150,6 +152,12 @@ The server uses a self-signed certificate by default; the first connection
 shows its fingerprint, you confirm once, and the app pins it. **Don't
 port-forward 8443 to the open internet** — use Tailscale or a hardened reverse
 proxy for remote access.
+
+Every time it opens, the app runs a quick **system check** (network,
+Tailscale, server, versions, database, disk, AI, bank sync) and stops with a
+plain-language fix if anything is wrong. If your server is on Tailscale and
+Tailscale is off, the app can **turn it on for you** — from the connect
+screen, the system check, or **Settings → Tailscale**.
 
 ### 4. Name your household and add family members
 

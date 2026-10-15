@@ -5,13 +5,28 @@ import { z } from "zod";
  * for cloud providers; Ollama is local/self-hosted. AI is OFF by default —
  * nothing is sent anywhere until the owner enables and configures a provider.
  */
-export const AiProvider = z.enum(["ollama", "openai", "anthropic"]);
+export const AiProvider = z.enum(["ollama", "local_openai", "openai", "anthropic"]);
 export type AiProvider = z.infer<typeof AiProvider>;
 
 export const AI_PROVIDER_LABELS: Record<AiProvider, string> = {
   ollama: "Ollama (local)",
+  local_openai: "Other local AI (OpenAI-compatible)",
   openai: "OpenAI",
   anthropic: "Anthropic (Claude)",
+};
+
+/**
+ * Providers that run on hardware you control — the bundled Ollama container,
+ * or a separate AI machine (a GPU desktop, another server) the Vault server
+ * reaches over your LAN or Tailscale. They need a base URL; a key is optional
+ * (only for a server behind an authenticating proxy).
+ */
+export const LOCAL_PROVIDERS: ReadonlySet<AiProvider> = new Set(["ollama", "local_openai"]);
+
+/** Example base URLs shown as placeholders for the local providers. */
+export const AI_BASE_URL_EXAMPLES: Partial<Record<AiProvider, string>> = {
+  ollama: "http://ollama:11434",
+  local_openai: "http://192.168.1.50:1234/v1",
 };
 
 /** Cloud providers send your financial context off your server under your key. */
@@ -23,6 +38,8 @@ export const CLOUD_PROVIDERS: ReadonlySet<AiProvider> = new Set([
 /** Suggested default model per provider (the owner can type any value). */
 export const AI_MODEL_SUGGESTIONS: Record<AiProvider, string[]> = {
   ollama: ["llama3.1:8b", "llama3.2:3b", "qwen2.5:7b", "mistral:7b"],
+  // Whatever the server has loaded — the list is discovered with "Test connection".
+  local_openai: [],
   openai: ["gpt-4o-mini", "gpt-4o", "o4-mini"],
   anthropic: ["claude-sonnet-5", "claude-opus-4-8", "claude-haiku-4-5"],
 };
@@ -64,7 +81,7 @@ export const AiStatus = z.object({
   reachable: z.boolean(),
   provider: AiProvider,
   model: z.string(),
-  /** Ollama base URL (e.g. http://ollama:11434); empty for cloud providers. */
+  /** Base URL for a local provider (e.g. http://ollama:11434); empty for cloud providers. */
   baseUrl: z.string(),
   hasApiKey: z.boolean(),
   /** Models the provider reports (Ollama's installed list; cloud model IDs). */
@@ -73,8 +90,33 @@ export const AiStatus = z.object({
   qualityModels: QualityModelMap,
   /** When true, UIs may show the model name next to the quality tier. */
   showModelNames: z.boolean(),
+  /** Why the provider is unreachable, in plain words (absent when reachable). */
+  error: z.string().optional(),
+  /** What to try next for `error`. */
+  hint: z.string().optional(),
 });
 export type AiStatus = z.infer<typeof AiStatus>;
+
+/**
+ * Try a provider configuration without saving it — powers "Test connection"
+ * for a separate AI machine. Omit apiKey to reuse the stored key.
+ */
+export const AiTestRequest = z.object({
+  provider: AiProvider,
+  baseUrl: z.string().max(300).optional(),
+  apiKey: z.string().max(400).optional(),
+});
+export type AiTestRequest = z.infer<typeof AiTestRequest>;
+
+export const AiTestResponse = z.object({
+  ok: z.boolean(),
+  /** Models the server reported (empty on failure). */
+  models: z.array(z.string()),
+  latencyMs: z.number().int(),
+  error: z.string().optional(),
+  hint: z.string().optional(),
+});
+export type AiTestResponse = z.infer<typeof AiTestResponse>;
 
 export const AiModelsResponse = z.object({
   /** Installed/available models, freshly probed from the provider. */
@@ -88,19 +130,20 @@ export const UpdateAiSettingsRequest = z
     provider: AiProvider,
     model: z.string().min(1).max(100),
     /**
-     * Cloud API key. Omit to keep the stored key unchanged; send an empty
+     * API key (cloud), or an optional token for a local AI server behind an
+     * authenticating proxy. Omit to keep the stored key unchanged; send an empty
      * string to clear it. Never returned by any endpoint.
      */
     apiKey: z.string().max(400).optional(),
-    /** Ollama base URL, or an optional OpenAI-compatible endpoint override. */
+    /** Local provider base URL, or an optional OpenAI endpoint override. */
     baseUrl: z.string().max(300).optional(),
-    /** quality-tier → model map (Ollama). Omit to leave unchanged. */
+    /** quality-tier → model map (local providers). Omit to leave unchanged. */
     qualityModels: QualityModelMap.optional(),
     /** Toggle showing model names beside quality tiers. Omit to leave unchanged. */
     showModelNames: z.boolean().optional(),
   })
-  .refine((v) => v.provider !== "ollama" || (v.baseUrl?.trim().length ?? 0) > 0, {
-    message: "Ollama needs a base URL, e.g. http://ollama:11434",
+  .refine((v) => !LOCAL_PROVIDERS.has(v.provider) || /^https?:\/\/\S+$/.test(v.baseUrl?.trim() ?? ""), {
+    message: "A local AI server needs a base URL starting with http:// or https://, e.g. http://ollama:11434",
     path: ["baseUrl"],
   });
 export type UpdateAiSettingsRequest = z.infer<typeof UpdateAiSettingsRequest>;

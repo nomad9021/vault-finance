@@ -107,13 +107,16 @@ Holdings with quantity, cost basis, and market value; totals, unrealized
 gain/loss, and an allocation breakdown.
 
 ### AI Assistant (optional)
-Off by default. Turn it on in Settings and connect a provider — **local Ollama**
-(nothing leaves your hardware) or **your own OpenAI / Anthropic key**. It can
+Off by default. Turn it on in Settings and connect a provider — **Ollama** or any
+**OpenAI-compatible local server** (LM Studio, llama.cpp, vLLM…), either bundled
+with your server or on a separate GPU machine (nothing leaves your hardware), or
+**your own OpenAI / Anthropic key**. It can
 explain spending, forecast cash flow, and summarize your month. The server talks
 to the provider; the desktop app never holds your key.
 
 ### Settings
-One place for: **theme**, the **category tree** (shapes both Sankeys),
+One place for: **system status** (the startup health checks, on demand),
+**Tailscale** on/off, **theme**, the **category tree** (shapes both Sankeys),
 **auto-categorization rules**, optional **bank linking**, **AI** configuration,
 **two-factor authentication**, signed-in **devices**, and the **server**
 connection.

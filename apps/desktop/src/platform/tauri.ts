@@ -4,7 +4,14 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import type { Platform as ApiPlatform } from "@vault/shared";
-import type { BiometricResult, BiometricStatus, HostPlatform, ProbeResult } from "./types.js";
+import type {
+  BiometricResult,
+  BiometricStatus,
+  HostPlatform,
+  ProbeResult,
+  TailscaleActionResult,
+  TailscaleStatus,
+} from "./types.js";
 
 interface RustHttpResponse {
   status: number;
@@ -79,8 +86,8 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
     async probeServer(address): Promise<ProbeResult> {
       try {
         return await invoke<ProbeResult>("probe_server", { address });
-      } catch {
-        return { reachable: false };
+      } catch (err) {
+        return { reachable: false, error: String(err) };
       }
     },
     async trustServer(address, fingerprint) {
@@ -125,6 +132,19 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
 
     async openAdminConsole() {
       await invoke("open_admin_window");
+    },
+
+    async tailscaleStatus() {
+      return await invoke<TailscaleStatus>("tailscale_status");
+    },
+    async tailscaleUp() {
+      return await invoke<TailscaleActionResult>("tailscale_up");
+    },
+    async tailscaleDown() {
+      return await invoke<TailscaleActionResult>("tailscale_down");
+    },
+    async openExternal(url) {
+      await invoke("open_external", { url });
     },
 
     async biometricStatus() {

@@ -4,7 +4,7 @@
 //   node scripts/seed-demo.mjs           (terminal 2)
 // Idempotent-ish: skips seeding if any account already exists.
 const BASE = process.env.VAULT_URL ?? "http://127.0.0.1:8787";
-const EMAIL = process.env.VAULT_EMAIL ?? "mason@example.com";
+const EMAIL = process.env.VAULT_EMAIL ?? "alex@example.com";
 const PASSWORD = process.env.VAULT_PASSWORD ?? "a-long-enough-password";
 
 const api = async (method, path, body, token) => {
@@ -26,7 +26,7 @@ if (needsSetup) {
   await api("POST", "/setup/complete", {
     ownerEmail: EMAIL,
     ownerPassword: PASSWORD,
-    ownerDisplayName: "Mason",
+    ownerDisplayName: "Alex",
   });
   console.log("setup completed");
 }

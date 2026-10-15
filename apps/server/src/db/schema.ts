@@ -425,7 +425,7 @@ export const aiSettings = pgTable("ai_settings", {
     .primaryKey()
     .default(true)
     .$type<true>(),
-  provider: text("provider", { enum: ["ollama", "openai", "anthropic"] })
+  provider: text("provider", { enum: ["ollama", "local_openai", "openai", "anthropic"] })
     .notNull()
     .default("ollama"),
   model: text("model").notNull().default("llama3.1:8b"),

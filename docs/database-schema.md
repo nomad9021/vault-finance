@@ -29,7 +29,7 @@ create table users (
 create table device_sessions (
   id                  uuid primary key default gen_random_uuid(),
   user_id             uuid not null references users(id) on delete cascade,
-  device_name         text not null,             -- user-editable label, e.g. "Maya's MacBook"
+  device_name         text not null,             -- user-editable label, e.g. "Riley's MacBook"
   platform            text not null check (platform in ('windows','macos','linux','ios')),
   refresh_token_hash  text not null,              -- argon2id hash of the opaque refresh token
   ip_address          inet,

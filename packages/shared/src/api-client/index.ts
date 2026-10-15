@@ -18,6 +18,7 @@ import { Household } from "../schemas/household.js";
 import { SetupStatusResponse, type SetupCompleteRequest } from "../schemas/setup.js";
 import { User } from "../schemas/user.js";
 import { VersionResponse } from "../schemas/version.js";
+import { ServerStatusResponse, StatusDetailsResponse } from "../schemas/status.js";
 import { UpdateStatusResponse } from "../schemas/updates.js";
 import {
   MemberListResponse,
@@ -56,6 +57,8 @@ import {
 } from "../schemas/budgets.js";
 import {
   AiModelsResponse,
+  AiTestResponse,
+  type AiTestRequest,
   AiStatus,
   ChatStreamLine,
   ConversationDetail,
@@ -306,6 +309,14 @@ export class ApiClient {
   updateStatus() {
     return this.request(UpdateStatusResponse, "GET", "/updates/status");
   }
+  /** Public component health (database, storage) for the startup screen. */
+  serverStatus() {
+    return this.request(ServerStatusResponse, "GET", "/status", undefined, { auth: false });
+  }
+  /** Signed-in health checks: AI provider, bank sync, server update. */
+  statusDetails() {
+    return this.request(StatusDetailsResponse, "GET", "/status/details");
+  }
 
   // ── Household ──
   household() {
@@ -540,6 +551,10 @@ export class ApiClient {
   }
   updateAiSettings(body: UpdateAiSettingsRequest) {
     return this.request(AiStatus, "POST", "/ai/settings", body);
+  }
+  /** Try an AI provider configuration without saving it. */
+  testAiConnection(body: AiTestRequest) {
+    return this.request(AiTestResponse, "POST", "/ai/test", body);
   }
   conversations() {
     return this.request(ConversationListResponse, "GET", "/ai/conversations");

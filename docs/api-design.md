@@ -22,6 +22,8 @@ see [ADR-0005](adr/0005-ai-streaming.md)). Every request after login carries
 |---|---|---|
 | GET | `/api/v1/version` | `{ apiVersion, minClientVersion }`. Unauthenticated. Client compares its own version and blocks with an "update required" screen if below `minClientVersion`. |
 | GET | `/api/v1/health` | Liveness for Docker healthcheck. Unauthenticated. |
+| GET | `/api/v1/status` | `{ apiVersion, startedAt, checks[] }` — component health (database, server storage) for the desktop app's startup check. Unauthenticated, so deliberately coarse: no household data. Each check is `{ id, label, level: "ok"|"warn"|"error"|"off", detail?, hint? }`. |
+| GET | `/api/v1/status/details` | Signed in: `{ checks[] }` for the AI provider (with the reason when unreachable), bank sync (failed or stale automatic syncs) and server updates. |
 
 ## Setup wizard (first run only)
 
@@ -136,7 +138,8 @@ see [ADR-0005](adr/0005-ai-streaming.md)). Every request after login carries
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/v1/ai/status` | `{ enabled, configured, reachable, provider, model, baseUrl, hasApiKey, availableModels }` — every AI-touching UI element checks this first. AI is off by default; UI stays hidden until `enabled && configured`. The API key is never returned (only `hasApiKey`). |
-| POST | `/api/v1/ai/settings` | Owner-only: `{ enabled, provider: "ollama"|"openai"|"anthropic", model, apiKey?, baseUrl? }`. `apiKey` omitted keeps the stored key, empty string clears it. Cloud providers send financial context off-server under the user's key (ADR-0006). |
+| POST | `/api/v1/ai/test` | Owner-only: `{ provider, baseUrl?, apiKey? }` → `{ ok, models[], latencyMs, error?, hint? }`. Tries a configuration without saving it — the server itself connects, so it proves the Vault server can reach a separate AI machine. Failures come back as plain-language `error` + `hint` (nothing listening, wrong path, firewall, token needed, `localhost` inside Docker). |
+| POST | `/api/v1/ai/settings` | Owner-only: `{ enabled, provider: "ollama"|"local_openai"|"openai"|"anthropic", model, apiKey?, baseUrl? }`. Local providers (`ollama`, `local_openai`) require an http(s) `baseUrl`; their `apiKey` is an optional bearer token. `apiKey` omitted keeps the stored key, empty string clears it. Cloud providers send financial context off-server under the user's key (ADR-0006). |
 | GET | `/api/v1/ai/conversations` | |
 | GET | `/api/v1/ai/conversations/:id` | Includes full message history. |
 | DELETE | `/api/v1/ai/conversations/:id` | |

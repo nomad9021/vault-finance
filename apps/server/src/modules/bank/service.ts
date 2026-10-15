@@ -144,6 +144,13 @@ export async function syncConnection(
  * AI-leftovers categorization once at the end so freshly-imported rows are
  * sorted. Never throws: one bad connection can't stop the rest.
  */
+/**
+ * Last background-sync failure per connection id, for the health checks
+ * (Settings → System status). In memory on purpose: a restart that syncs
+ * cleanly clears it, and nothing about it needs to outlive the process.
+ */
+export const autoSyncFaults = new Map<string, { at: string; message: string }>();
+
 export async function syncAllConnections(
   app: FastifyInstance,
   config: AppConfig,
@@ -162,7 +169,12 @@ export async function syncAllConnections(
     try {
       const r = await syncConnection(app.db, cfg, c, owner.id);
       imported += r.imported;
+      autoSyncFaults.delete(c.id);
     } catch (err) {
+      autoSyncFaults.set(c.id, {
+        at: new Date().toISOString(),
+        message: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
+      });
       app.log.error({ err, connectionId: c.id }, "auto-sync failed for connection");
     }
   }
