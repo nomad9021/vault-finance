@@ -45,7 +45,7 @@ visibility). Self-hosters then update with `installers/server/update-server.sh`
 2. Add the updater signing key as Actions secrets
    (Settings → Secrets and variables → Actions):
    - `TAURI_SIGNING_PRIVATE_KEY` — contents of `~/.tauri/vault-finance.key`
-     (generated 2026-07-16 on nomad01; **back this file up** — losing it
+     (generated once on the maintainer's machine; **back this file up** — losing it
      permanently breaks auto-update for every installed copy)
    - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — empty string (key has no password)
 
