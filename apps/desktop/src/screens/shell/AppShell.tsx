@@ -8,6 +8,7 @@ import { BillsPage } from "./BillsPage.js";
 import { BudgetsPage } from "./BudgetsPage.js";
 import { CashFlowPage } from "./CashFlowPage.js";
 import { DashboardPage } from "./DashboardPage.js";
+import { DeviceApprovalPrompt } from "./DeviceApprovalPrompt.js";
 import { GivingPage } from "./GivingPage.js";
 import { GoalsPage } from "./GoalsPage.js";
 import { Header } from "./Header.js";
@@ -153,6 +154,7 @@ export function AppShell() {
         commands={commands}
         onClose={() => setPaletteOpen(false)}
       />
+      <DeviceApprovalPrompt />
     </div>
   );
 }

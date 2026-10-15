@@ -31,6 +31,10 @@ RUN addgroup -S vault && adduser -S vault -G vault \
     && mkdir -p /data && chown vault:vault /data
 WORKDIR /app
 COPY --from=build /prod/server /app
+# Server console for approving new devices (ADR-0009):
+#   docker compose exec server vault approve <code>
+RUN printf '#!/bin/sh\nexec node /app/dist/cli.js "$@"\n' > /usr/local/bin/vault \
+    && chmod 755 /usr/local/bin/vault
 USER vault
 
 ENV NODE_ENV=production \

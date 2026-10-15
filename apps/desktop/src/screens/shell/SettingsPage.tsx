@@ -12,8 +12,11 @@ import {
   type AiStatus,
   type AiTestResponse,
   type BankStatus,
+  type DeviceApprovalSettings,
   type DeviceKey,
   type DeviceSession,
+  type PendingApproval,
+  type TrustedDevice,
   type MemberListResponse,
   type UpdateStatusResponse,
 } from "@vault/shared";
@@ -25,6 +28,7 @@ import { useCheckActions } from "../../lib/useCheckActions.js";
 import { useData } from "../../lib/useData.js";
 import { APP_VERSION, deviceKeySecret, useApp } from "../../state/store.js";
 import { StatusList } from "../StatusList.js";
+import { ApproveDialog, describeRequest } from "./DeviceApprovalPrompt.js";
 import { TailscaleControl } from "../TailscaleControl.js";
 
 export function SettingsPage() {
@@ -45,6 +49,7 @@ export function SettingsPage() {
       <ServerUpdateSection />
       <HouseholdSection />
       <MembersSection />
+      <TrustedDevicesSection />
       <SessionsSection />
       <NetworkSection />
       <ServerSection />
@@ -2181,6 +2186,186 @@ function TwoFactorSection() {
           </div>
         </Dialog>
       )}
+    </Card>
+  );
+}
+
+const VIA_LABEL: Record<string, string> = {
+  device: "approved from another device",
+  console: "approved on the server",
+  bootstrap: "first device",
+  "existing-session": "already signed in at upgrade",
+  "device-key": "biometric sign-in",
+};
+
+/**
+ * Settings → Approved devices (ADR-0009): which devices may sign in, requests
+ * waiting for approval, and (owner) how new devices can be approved.
+ */
+function TrustedDevicesSection() {
+  const client = useApp((s) => s.client);
+  const user = useApp((s) => s.user);
+  const isOwner = user?.role === "owner";
+  const [devices, setDevices] = useState<TrustedDevice[] | null>(null);
+  const [pending, setPending] = useState<PendingApproval[]>([]);
+  const [methods, setMethods] = useState<DeviceApprovalSettings | null>(null);
+  const [reviewing, setReviewing] = useState<PendingApproval | null>(null);
+  const [revoking, setRevoking] = useState<TrustedDevice | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(() => {
+    client.trustedDevices().then((r) => setDevices(r.devices)).catch(() => setDevices([]));
+    client.pendingApprovals().then((r) => setPending(r.approvals)).catch(() => setPending([]));
+    client.deviceApprovalSettings().then(setMethods).catch(() => setMethods(null));
+  }, [client]);
+  useEffect(reload, [reload]);
+
+  const saveMethods = async (next: DeviceApprovalSettings) => {
+    setError(null);
+    try {
+      setMethods(await client.updateDeviceApprovalSettings(next));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save.");
+    }
+  };
+
+  const revoke = async (d: TrustedDevice) => {
+    await client.revokeTrustedDevice(d.id).catch(() => {});
+    setRevoking(null);
+    if (d.current) await useApp.getState().signOut();
+    else reload();
+  };
+
+  return (
+    <Card kicker="Security" title="Approved devices">
+      <p className="card-body">
+        A password alone isn't enough to sign in: each new device has to be approved first —
+        {methods?.trustedDevice !== false ? " from a device that's already approved (by typing the code it shows)" : ""}
+        {methods?.trustedDevice !== false && methods?.serverConsole !== false ? " or" : ""}
+        {methods?.serverConsole !== false ? " on the server with “vault approve <code>”" : ""}.
+      </p>
+
+      {pending.length > 0 && (
+        <div style={{ display: "grid", gap: 6, marginBottom: 12 }}>
+          <div style={{ fontWeight: 600, fontSize: "var(--text-sm)" }}>Waiting for approval</div>
+          {pending.map((p) => (
+            <div
+              key={p.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "8px 10px",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-warning-soft)",
+              }}
+            >
+              <span style={{ fontSize: "var(--text-sm)", flex: 1 }}>{describeRequest(p)}</span>
+              {methods?.trustedDevice !== false && (
+                <Button variant="primary" onClick={() => setReviewing(p)}>
+                  Review
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {devices === null ? (
+        <Spinner label="Loading devices" />
+      ) : (
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Device</th>
+              {isOwner && <th>Person</th>}
+              <th>Approved</th>
+              <th>Last seen</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {devices.map((d) => (
+              <tr key={d.id}>
+                <td>
+                  {d.deviceName}{" "}
+                  {d.current && (
+                    <Tag variant="accent" style={{ marginLeft: 6 }}>
+                      this device
+                    </Tag>
+                  )}
+                </td>
+                {isOwner && <td>{d.userDisplayName}</td>}
+                <td title={d.approvedVia ? VIA_LABEL[d.approvedVia] : undefined}>
+                  {d.approvedAt ? new Date(d.approvedAt).toLocaleDateString() : "—"}
+                </td>
+                <td>{d.lastSeenAt ? new Date(d.lastSeenAt).toLocaleString() : "—"}</td>
+                <td style={{ textAlign: "right" }}>
+                  <Button variant="ghost" onClick={() => setRevoking(d)}>
+                    Remove
+                  </Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {isOwner && methods && (
+        <div style={{ marginTop: 14, display: "grid", gap: 6 }}>
+          <div style={{ fontWeight: 600, fontSize: "var(--text-sm)" }}>How new devices can be approved</div>
+          <label className="radio" style={{ fontSize: "var(--text-sm)" }}>
+            <input
+              type="checkbox"
+              checked={methods.trustedDevice}
+              onChange={(e) => void saveMethods({ ...methods, trustedDevice: e.target.checked })}
+            />
+            <span className="dot" style={{ borderRadius: "var(--radius-sm)" }} />
+            From a device that's already approved (type the code shown on the new device)
+          </label>
+          <label className="radio" style={{ fontSize: "var(--text-sm)" }}>
+            <input
+              type="checkbox"
+              checked={methods.serverConsole}
+              onChange={(e) => void saveMethods({ ...methods, serverConsole: e.target.checked })}
+            />
+            <span className="dot" style={{ borderRadius: "var(--radius-sm)" }} />
+            On the server console (docker compose exec server vault approve &lt;code&gt;)
+          </label>
+          {error && (
+            <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
+              {error}
+            </div>
+          )}
+        </div>
+      )}
+
+      <ApproveDialog
+        request={reviewing}
+        onDone={() => {
+          setReviewing(null);
+          reload();
+        }}
+      />
+      <Dialog
+        open={revoking !== null}
+        title={revoking?.current ? "Remove this device?" : "Remove this device's approval?"}
+        onClose={() => setRevoking(null)}
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setRevoking(null)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={() => revoking && void revoke(revoking)}>
+              Remove
+            </Button>
+          </>
+        }
+      >
+        {revoking?.current
+          ? "You'll be signed out here, and this device will need to be approved again to sign back in."
+          : `${revoking?.deviceName ?? "It"} will be signed out and must be approved again before it can sign in.`}
+      </Dialog>
     </Card>
   );
 }

@@ -1,5 +1,6 @@
 import { ErrorBoundary } from "@vault/ui";
 import { useApp } from "./state/store.js";
+import { ApprovalScreen } from "./screens/ApprovalScreen.js";
 import { ConnectScreen } from "./screens/ConnectScreen.js";
 import { LoginScreen } from "./screens/LoginScreen.js";
 import { SetupScreen } from "./screens/SetupScreen.js";
@@ -35,6 +36,8 @@ function Screen() {
       return <SetupScreen />;
     case "login":
       return <LoginScreen />;
+    case "approval":
+      return <ApprovalScreen />;
     case "shell":
       return <AppShell />;
   }

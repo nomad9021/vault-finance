@@ -15,6 +15,7 @@ import {
 } from "../../errors.js";
 import { decryptSecret, encryptSecret } from "../../secret-crypto.js";
 import { generateTotpSecret, otpauthUri, verifyTotp } from "./totp.js";
+import { adoptLegacySession, gateDevice } from "../devices/service.js";
 
 /**
  * Refresh tokens are `<sessionId>.<secret>`: the session id makes lookup O(1)
@@ -75,6 +76,8 @@ export async function login(
     platform: Platform;
     ipAddress: string | null;
     totpCode?: string | undefined;
+    deviceId?: string | undefined;
+    deviceSecret?: string | undefined;
   },
 ): Promise<LoginResult> {
   const user = input.userId
@@ -99,13 +102,16 @@ export async function login(
     if (!verifyTotp(decryptSecret(user.totpSecret) ?? "", input.totpCode)) throw totpInvalid();
   }
 
-  return startSession(db, user, input);
+  // Device approval comes last, so a request only reaches approvers once the
+  // password (and code) were right (ADR-0009).
+  const trustedDeviceId = await gateDevice(db, user, input);
+  return startSession(db, user, { ...input, trustedDeviceId });
 }
 
-async function startSession(
+export async function startSession(
   db: Db,
   user: typeof users.$inferSelect,
-  device: { deviceName: string; platform: Platform; ipAddress: string | null },
+  device: { deviceName: string; platform: Platform; ipAddress: string | null; trustedDeviceId: string },
 ): Promise<LoginResult> {
   const [session] = await db
     .insert(deviceSessions)
@@ -115,6 +121,7 @@ async function startSession(
       platform: device.platform,
       refreshTokenHash: "pending", // replaced below once we know the session id
       ipAddress: device.ipAddress,
+      trustedDeviceId: device.trustedDeviceId,
     })
     .returning({ id: deviceSessions.id });
   if (!session) throw new Error("failed to create device session");
@@ -182,7 +189,14 @@ export async function revokeDeviceKey(db: Db, userId: string, id: string): Promi
  */
 export async function loginWithDeviceKey(
   db: Db,
-  input: { key: string; deviceName: string; platform: Platform; ipAddress: string | null },
+  input: {
+    key: string;
+    deviceName: string;
+    platform: Platform;
+    ipAddress: string | null;
+    deviceId?: string | undefined;
+    deviceSecret?: string | undefined;
+  },
 ): Promise<LoginResult> {
   const parts = splitRefreshToken(input.key);
   if (!parts) throw invalidCredentials();
@@ -196,7 +210,8 @@ export async function loginWithDeviceKey(
   const user = await db.query.users.findFirst({ where: eq(users.id, row.userId) });
   if (!user) throw invalidCredentials();
   await db.update(deviceKeys).set({ lastUsedAt: new Date() }).where(eq(deviceKeys.id, row.id));
-  return startSession(db, user, input);
+  const trustedDeviceId = await gateDevice(db, user, input, { viaDeviceKey: true });
+  return startSession(db, user, { ...input, trustedDeviceId });
 }
 
 // ── Two-factor authentication (TOTP) ──
@@ -253,7 +268,11 @@ export interface RefreshResult {
   refreshToken: string;
 }
 
-export async function refresh(db: Db, presentedToken: string): Promise<RefreshResult> {
+export async function refresh(
+  db: Db,
+  presentedToken: string,
+  identity: { deviceId?: string | undefined; deviceSecret?: string | undefined } = {},
+): Promise<RefreshResult> {
   const parts = splitRefreshToken(presentedToken);
   if (!parts) throw invalidCredentials();
 
@@ -285,6 +304,7 @@ export async function refresh(db: Db, presentedToken: string): Promise<RefreshRe
     .update(deviceSessions)
     .set({ refreshTokenHash: await argon2.hash(secret), lastUsedAt: new Date() })
     .where(eq(deviceSessions.id, session.id));
+  await adoptLegacySession(db, session, identity);
 
   return { user, sessionId: session.id, refreshToken: token };
 }

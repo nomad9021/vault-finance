@@ -1,6 +1,8 @@
 import {
   ApiClient,
   ApiRequestError,
+  DeviceApprovalChallenge,
+  DeviceIdentity,
   type ConnectionStatus,
   type TokenPair,
   type User,
@@ -25,7 +27,9 @@ export type Screen =
   | { name: "connect"; error?: string }
   | { name: "trust"; address: string; probe: ProbeResult }
   | { name: "setup" }
-  | { name: "login" }
+  | { name: "login"; notice?: string }
+  /** Password was right; this device waits for the server to approve it (ADR-0009). */
+  | { name: "approval"; challenge: DeviceApprovalChallenge; userName: string }
   | { name: "shell" };
 
 /**
@@ -88,6 +92,10 @@ interface AppState {
   /** Turn Tailscale on; opens the sign-in page in the browser when it needs one. */
   turnOnTailscale(): Promise<TailscaleActionResult | null>;
   turnOffTailscale(): Promise<TailscaleActionResult | null>;
+  /** Make sure this install has its saved device identity for the current server. */
+  ensureDeviceIdentity(): Promise<void>;
+  /** Show the "waiting for approval" screen for a DEVICE_APPROVAL_REQUIRED answer. */
+  awaitApproval(err: ApiRequestError, userName: string): boolean;
 
   /** Probe an address; route to trust confirmation or straight on. */
   connectTo(address: string): Promise<void>;
@@ -126,6 +134,45 @@ const biometricUsersKey = (address: string) => `biometric-users:${address}`;
 export const deviceKeySecret = (address: string, userId: string) =>
   `device-key:${address}:${userId}`;
 
+/** Keychain entry for this install's identity on one server (ADR-0009). */
+const deviceIdentityKey = (address: string) => `device-identity:${address}`;
+let deviceIdentity: DeviceIdentity | null = null;
+/** This install's identity for the current server (null until loaded). */
+export const currentDeviceIdentity = (): DeviceIdentity | null => deviceIdentity;
+
+function randomSecret(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/**
+ * Load (or create on first use) the device id + secret this install uses
+ * with `address`. Kept in the OS keychain; if that's unavailable, in the app's
+ * settings file so the device isn't asked for approval on every launch.
+ */
+async function loadDeviceIdentity(platform: HostPlatform, address: string): Promise<DeviceIdentity> {
+  const key = deviceIdentityKey(address);
+  const parse = (raw: string | null) => {
+    try {
+      return raw ? DeviceIdentity.parse(JSON.parse(raw)) : null;
+    } catch {
+      return null;
+    }
+  };
+  const fromKeychain = parse(await withTimeout(platform.getSecret(key), 3000, "keychain read").catch(() => null));
+  if (fromKeychain) return fromKeychain;
+  const fromStore = parse(await platform.loadValue(key).catch(() => null));
+  if (fromStore) return fromStore;
+
+  const fresh: DeviceIdentity = { deviceId: crypto.randomUUID(), deviceSecret: randomSecret() };
+  try {
+    await platform.setSecret(key, JSON.stringify(fresh));
+  } catch {
+    await platform.saveValue(key, JSON.stringify(fresh)).catch(() => {});
+  }
+  return fresh;
+}
+
 // Tokens live outside React state: the ApiClient reads them synchronously and
 // they must never trigger re-renders. Persisted to the platform secret store.
 let tokens: TokenPair | null = null;
@@ -163,6 +210,24 @@ export const useApp = create<AppState>((set, get) => ({
   startup: { phase: "running", checks: [], canContinue: false },
   keychainOk: true,
   tailscale: null,
+
+  async ensureDeviceIdentity() {
+    const { platform, serverAddress } = get();
+    if (!serverAddress) return;
+    try {
+      deviceIdentity = await loadDeviceIdentity(platform, serverAddress);
+    } catch (err) {
+      console.error("couldn't load this device's identity", err);
+    }
+  },
+
+  awaitApproval(err, userName) {
+    if (err.code !== "DEVICE_APPROVAL_REQUIRED") return false;
+    const parsed = DeviceApprovalChallenge.safeParse(err.fields);
+    if (!parsed.success) return false;
+    set({ screen: { name: "approval", challenge: parsed.data, userName } });
+    return true;
+  },
 
   async runStartup() {
     const { platform, client, serverAddress, keychainOk } = get();
@@ -254,6 +319,7 @@ export const useApp = create<AppState>((set, get) => ({
     set({ serverAddress: address });
     await platform.saveValue(ADDRESS_KEY, address);
     rebuildClient(set, get, address);
+    await get().ensureDeviceIdentity();
 
     if (needsTrust) {
       set({ screen: { name: "trust", address, probe } });
@@ -494,6 +560,7 @@ export const useApp = create<AppState>((set, get) => ({
     set({ priorAddress: null, serverAddress: prior });
     await get().platform.saveValue(ADDRESS_KEY, prior);
     rebuildClient(set, get, prior);
+    await get().ensureDeviceIdentity();
     await get().routeForServer();
   },
 
@@ -564,6 +631,7 @@ function rebuildClient(
     streamFetchImpl: platform.streamFetchImpl,
     getTokens: () => tokens,
     setTokens: persistTokens,
+    getDeviceIdentity: () => deviceIdentity,
     onAuthLost: () => {
       // During the startup checks, let them finish: routing afterwards sees
       // no session and lands on sign-in anyway.
@@ -657,6 +725,7 @@ export async function bootstrap(): Promise<void> {
 
   useApp.setState({ serverAddress: address });
   rebuildClient((p) => useApp.setState(p), useApp.getState, address);
+  await useApp.getState().ensureDeviceIdentity();
   try {
     await useApp.getState().runStartup();
   } catch (err) {

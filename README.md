@@ -168,7 +168,23 @@ accounts; add the other adults from **Settings → Family members** (invite by
 email, or create them a login with a temporary password). The household name
 shows on the sign-in screen and in the sidebar for all of you.
 
-### 5. (Optional) Sign in with Windows Hello, Touch ID, or your fingerprint
+### 5. Approving new devices
+
+The server has to **let each new device in** — a password alone isn't
+enough. The first time a computer or phone signs in, it shows a 6-digit code
+and waits. Approve it from a device that's already signed in (a prompt
+appears — type the code and choose **Allow**), or on the server:
+
+```bash
+docker compose exec server vault approve 482913
+```
+
+The owner picks which of the two are allowed in **Settings → Approved
+devices**, and can remove a lost device there. Devices that were already
+signed in when you upgrade stay approved. Details:
+[operations.md](docs/operations.md#3a-device-approval--the-server-lets-you-in).
+
+### 6. (Optional) Sign in with Windows Hello, Touch ID, or your fingerprint
 
 After signing in once with your password, open **Settings → Sign in with …**
 and choose **Turn on**. From then on the app opens locked and asks for your
@@ -185,7 +201,7 @@ Nothing biometric leaves your computer — the server only stores a revocable
 per-device key ([ADR-0008](docs/adr/0008-biometric-sign-in.md)). Revoke a lost
 device's key from the same Settings card.
 
-### 6. Updating the desktop app
+### 7. Updating the desktop app
 
 The **download button next to your avatar** (top right) checks for a new
 release and shows a dot when one is waiting; click it and choose **Install &
@@ -194,7 +210,7 @@ signature-checked before installing. On Linux this works for the `.AppImage`;
 if you installed the `.deb` (or an extracted AppImage), download the new
 version from the Releases page instead.
 
-### 7. (Optional) Phone viewer
+### 8. (Optional) Phone viewer
 
 Open `https://<server-ip>:8443/` in your phone's browser for the read-only
 mobile view, and add it to your home screen. It locks the moment you switch

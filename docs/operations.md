@@ -72,12 +72,51 @@ i.e. `docker/data`). It is **gitignored** — your data is never committed.
   as hashes, rotated on every refresh and individually revocable
   (Settings → *Devices signed in*).
 - **Login is rate-limited** (10 attempts / 15 min per identifier).
+- **New devices must be approved** before they can sign in, even with the
+  right password — see [§3a](#3a-device-approval--the-server-lets-you-in).
 - **Transport** is TLS; the desktop app **pins the server's certificate
   fingerprint** on first connect.
 - **Network reach:** the server is published on your **LAN** (`0.0.0.0:8443`).
   To restrict it to only this machine, change the port mapping in the compose
   file to `127.0.0.1:8443:8443` and restart — the local desktop app (which uses
   `localhost`) keeps working; other devices lose access.
+
+### 3a. Device approval — the server lets you in
+
+A correct password isn't enough on its own: every computer or phone has to be
+**approved** the first time it signs in ([ADR-0009](adr/0009-device-approval.md)).
+Each install keeps its own device identity for your server (in the OS
+keychain), so this happens once per device — reinstalling the app or signing
+in from a new phone counts as a new device.
+
+When a new device signs in, it shows a **6-digit code** and waits. Approve it
+either way the owner allows (Settings → *Approved devices*):
+
+- **From a device that's already approved** — a *New sign-in waiting for
+  approval* prompt appears; type the code shown on the new device and choose
+  **Allow**. If you didn't just try to sign in somewhere, choose **Deny**.
+- **On the server:**
+
+  ```bash
+  docker compose -f docker/docker-compose.yml exec server vault pending        # waiting requests + codes
+  docker compose -f docker/docker-compose.yml exec server vault approve 482913
+  docker compose -f docker/docker-compose.yml exec server vault deny 482913
+  docker compose -f docker/docker-compose.yml exec server vault devices        # approved devices
+  docker compose -f docker/docker-compose.yml exec server vault revoke <id>    # remove one, sign it out
+  docker compose -f docker/docker-compose.yml exec server vault methods device=on console=on
+  ```
+
+The approved device then finishes signing in by itself. Codes last 15
+minutes. Remove a lost device in Settings → *Approved devices* (or `vault
+revoke`); it's signed out immediately and would need approval again.
+
+**Upgrading doesn't lock anyone out:** devices that were signed in keep
+working and are recorded as approved, and on a brand-new server the owner's
+first device is approved automatically.
+
+**Locked out of every device?** On the server, `vault pending` then `vault
+approve <code> --override` — `--override` works even if console approval is
+turned off.
 
 ---
 

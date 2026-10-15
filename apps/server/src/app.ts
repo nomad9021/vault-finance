@@ -21,6 +21,7 @@ import cashflowRoutes from "./modules/cashflow/routes.js";
 import categorizeRoutes from "./modules/categorize/routes.js";
 import categoryRoutes from "./modules/categories/routes.js";
 import debtRoutes from "./modules/debts/routes.js";
+import deviceRoutes from "./modules/devices/routes.js";
 import givingRoutes from "./modules/giving/routes.js";
 import goalRoutes from "./modules/goals/routes.js";
 import insightRoutes from "./modules/insights/routes.js";
@@ -106,6 +107,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       await api.register(setupRoutes, { config: opts.config });
       await api.register(updateRoutes, { config: opts.config });
       await api.register(authRoutes);
+      await api.register(deviceRoutes);
       await api.register(memberRoutes, { config: opts.config });
       await api.register(householdRoutes);
       await api.register(accountRoutes);

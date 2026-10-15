@@ -301,9 +301,15 @@ const PAGE = /* html */ `<!doctype html>
     <input id="code" class="input" inputmode="numeric" placeholder="6-digit code" hidden>
     <button id="signin" class="btn btn-primary btn-lg btn-block">Sign in</button>
     <div id="err" class="field-error" hidden style="text-align:center"></div>
+    <div id="approval" hidden class="stack" style="text-align:center">
+      <div class="t-sm">This phone needs to be approved before it can sign in. Use this code:</div>
+      <div id="apcode" style="font-family:ui-monospace,monospace;font-size:34px;font-weight:700;letter-spacing:.12em"></div>
+      <div id="aphow" class="t-xs t-tertiary" style="line-height:1.6"></div>
+      <div id="apwait" class="t-xs t-tertiary">Waiting for approval…</div>
+    </div>
   </div>
   <div class="t-xs t-tertiary" style="text-align:center;margin-top:var(--space-6)">
-    Nothing is saved on this device. It locks when you leave the app and signs out after a few minutes away.
+    Only this phone's approval is remembered — none of your data is saved here. It locks when you leave the app and signs out after a few minutes away.
   </div>
 </div>
 
@@ -417,16 +423,52 @@ const PAGE = /* html */ `<!doctype html>
     }catch(e){box.appendChild(el("div","t-sm t-tertiary","Can't reach the server."))}
   }
 
+  // This phone's identity with the server (device approval, ADR-0009). Kept
+  // in localStorage so the phone is approved once, not on every sign-in.
+  function b64url(bytes){var s="";for(var i=0;i<bytes.length;i++)s+=String.fromCharCode(bytes[i]);return btoa(s).replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/,"")}
+  function deviceIdentity(){
+    try{var saved=JSON.parse(localStorage.getItem("vault.device")||"null");if(saved&&saved.deviceId&&saved.deviceSecret)return saved}catch(e){}
+    var id={deviceId:crypto.randomUUID(),deviceSecret:b64url(crypto.getRandomValues(new Uint8Array(32)))};
+    try{localStorage.setItem("vault.device",JSON.stringify(id))}catch(e){}
+    return id;
+  }
+  var approvalTimer=null;
+  function enterApp(t){token=t;$("approval").hidden=true;$("login").hidden=true;$("app").hidden=false;buildTabs();render();idleReset()}
+  function waitForApproval(f,ident){
+    $("err").hidden=true;$("approval").hidden=false;
+    $("apcode").textContent=f.code.slice(0,3)+" "+f.code.slice(3);
+    var how=[];
+    if(f.methods.indexOf("trustedDevice")>=0)how.push("On a computer that's already signed in, type this code in the “New sign-in” prompt and choose Allow.");
+    if(f.methods.indexOf("serverConsole")>=0)how.push("Or on the server run: vault approve "+f.code);
+    $("aphow").textContent=how.join(" ");
+    clearTimeout(approvalTimer);
+    async function tick(){
+      try{
+        var r=await fetch("/api/v1/auth/device-approval/status",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({approvalId:f.approvalId,deviceId:ident.deviceId,deviceSecret:ident.deviceSecret})});
+        if(r.status===404){$("approval").hidden=true;showErr("That request is no longer valid — sign in again.");return}
+        var d=await r.json();
+        if(d.status==="approved"){enterApp(d.login.accessToken);return}
+        if(d.status==="denied"){$("approval").hidden=true;showErr("This phone wasn't approved.");return}
+        if(d.status==="expired"){$("approval").hidden=true;showErr("The code expired — sign in again for a new one.");return}
+      }catch(e){$("apwait").textContent="Can't reach the server — still trying…"}
+      approvalTimer=setTimeout(tick,3000);
+    }
+    approvalTimer=setTimeout(tick,3000);
+  }
+
   async function signin(){
     if(!sel)return;
     var pw=$("pw").value, code=$("code").value.replace(/\\D/g,"");
     if(!pw)return;
     $("err").hidden=true;
-    var body={userId:sel.id,password:pw,deviceName:"Phone viewer (web)",platform:"ios"};
+    var ident=deviceIdentity();
+    var body={userId:sel.id,password:pw,deviceName:"Phone viewer (web)",platform:"ios",deviceId:ident.deviceId,deviceSecret:ident.deviceSecret};
     if(!$("code").hidden&&code)body.totpCode=code;
     var r=await fetch("/api/v1/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
-    if(r.ok){var d=await r.json();token=d.accessToken;$("login").hidden=true;$("app").hidden=false;buildTabs();render();idleReset();return}
-    var c2="";try{c2=(await r.json()).error.code}catch(e){}
+    if(r.ok){var d=await r.json();enterApp(d.accessToken);return}
+    var c2="",f=null,msg="";try{var e=(await r.json()).error;c2=e.code;f=e.fields;msg=e.message}catch(e){}
+    if(c2==="DEVICE_APPROVAL_REQUIRED"&&f){waitForApproval(f,ident);return}
+    if(c2==="DEVICE_NOT_TRUSTED"){showErr(msg);return}
     if(c2==="TOTP_REQUIRED"){$("code").hidden=false;$("code").focus();return}
     if(c2==="TOTP_INVALID"){$("code").hidden=false;showErr("That code isn't right — use the current one.");return}
     showErr(c2==="RATE_LIMITED"?"Too many attempts — wait a bit.":"That didn't work.");
