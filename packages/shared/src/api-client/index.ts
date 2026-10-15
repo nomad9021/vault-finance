@@ -2,14 +2,20 @@ import { z } from "zod";
 import { ApiError as ApiErrorSchema, type ErrorCode } from "../schemas/common.js";
 import {
   CreateDeviceKeyResponse,
+  DeviceApprovalSettings,
+  DeviceApprovalStatusResponse,
   DeviceKeyListResponse,
   LoginResponse,
+  PendingApprovalListResponse,
+  TrustedDeviceListResponse,
   ProfilesResponse,
   SessionListResponse,
   TokenPair,
   TotpSetupResponse,
   TotpStatusResponse,
   type CreateDeviceKeyRequest,
+  type DeviceApprovalStatusRequest,
+  type DeviceIdentity,
   type DeviceKeyLoginRequest,
   type LoginByIdRequest,
   type LoginRequest,
@@ -176,6 +182,11 @@ export interface ApiClientOptions {
   onAuthLost?: (reason: ErrorCode) => void;
   /** Called on every observed transition between reachable and unreachable. */
   onConnectionChange?: (status: ConnectionStatus) => void;
+  /**
+   * This install's device identity for the server, attached to sign-in and
+   * refresh so the server can require the device to be approved (ADR-0009).
+   */
+  getDeviceIdentity?: () => DeviceIdentity | null;
 }
 
 export class ApiClient {
@@ -234,7 +245,7 @@ export class ApiClient {
         const res = await this.rawRequest(
           "POST",
           "/auth/refresh",
-          { refreshToken: tokens.refreshToken },
+          { refreshToken: tokens.refreshToken, ...(this.opts.getDeviceIdentity?.() ?? {}) },
           false,
         );
         if (res.status !== 200) {
@@ -382,9 +393,13 @@ export class ApiClient {
     });
   }
   async login(body: LoginRequest | LoginByIdRequest) {
-    const result = await this.request(LoginResponse, "POST", "/auth/login", body, {
-      auth: false,
-    });
+    const result = await this.request(
+      LoginResponse,
+      "POST",
+      "/auth/login",
+      { ...body, ...(this.opts.getDeviceIdentity?.() ?? {}) },
+      { auth: false },
+    );
     this.opts.setTokens({
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,
@@ -393,9 +408,13 @@ export class ApiClient {
   }
   /** Biometric sign-in: the device key is only sent after a local OS check. */
   async loginWithDeviceKey(body: DeviceKeyLoginRequest) {
-    const result = await this.request(LoginResponse, "POST", "/auth/login/device-key", body, {
-      auth: false,
-    });
+    const result = await this.request(
+      LoginResponse,
+      "POST",
+      "/auth/login/device-key",
+      { ...body, ...(this.opts.getDeviceIdentity?.() ?? {}) },
+      { auth: false },
+    );
     this.opts.setTokens({
       accessToken: result.accessToken,
       refreshToken: result.refreshToken,
@@ -419,6 +438,39 @@ export class ApiClient {
   }
   revokeSession(id: string) {
     return this.request(z.undefined(), "DELETE", `/auth/sessions/${id}`);
+  }
+
+  // ── Device approval (ADR-0009) ──
+  /** Polled by a device waiting for approval; stores the session once approved. */
+  async deviceApprovalStatus(body: DeviceApprovalStatusRequest) {
+    const result = await this.request(DeviceApprovalStatusResponse, "POST", "/auth/device-approval/status", body, {
+      auth: false,
+    });
+    if (result.status === "approved") {
+      this.opts.setTokens({ accessToken: result.login.accessToken, refreshToken: result.login.refreshToken });
+    }
+    return result;
+  }
+  pendingApprovals() {
+    return this.request(PendingApprovalListResponse, "GET", "/devices/approvals");
+  }
+  approveDevice(id: string, code: string) {
+    return this.request(z.undefined(), "POST", `/devices/approvals/${id}/approve`, { code });
+  }
+  denyDevice(id: string) {
+    return this.request(z.undefined(), "POST", `/devices/approvals/${id}/deny`, {});
+  }
+  trustedDevices() {
+    return this.request(TrustedDeviceListResponse, "GET", "/devices");
+  }
+  revokeTrustedDevice(id: string) {
+    return this.request(z.undefined(), "DELETE", `/devices/${id}`);
+  }
+  deviceApprovalSettings() {
+    return this.request(DeviceApprovalSettings, "GET", "/devices/approval-settings");
+  }
+  updateDeviceApprovalSettings(body: DeviceApprovalSettings) {
+    return this.request(DeviceApprovalSettings, "PUT", "/devices/approval-settings", body);
   }
 
   // ── Device keys (biometric sign-in) ──

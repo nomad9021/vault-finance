@@ -51,3 +51,19 @@ export const totpRequired = () =>
 
 export const totpInvalid = () =>
   new AppError("TOTP_INVALID", 401, "That authentication code isn't valid. Try again.");
+
+/** Password was right, but this device has to be approved first (ADR-0009). */
+export const deviceApprovalRequired = (challenge: {
+  approvalId: string;
+  code: string;
+  expiresAt: string;
+  methods: string;
+}) =>
+  new AppError(
+    "DEVICE_APPROVAL_REQUIRED",
+    403,
+    "This device needs to be approved before it can sign in.",
+    challenge,
+  );
+
+export const deviceNotTrusted = (message: string) => new AppError("DEVICE_NOT_TRUSTED", 403, message);

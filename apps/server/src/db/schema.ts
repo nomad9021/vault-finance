@@ -56,6 +56,8 @@ export const deviceSessions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    /** The approved device this session belongs to; null for sessions that predate device approval. */
+    trustedDeviceId: uuid("trusted_device_id"),
   },
   (t) => [
     index("device_sessions_user_id_idx")
@@ -84,6 +86,42 @@ export const deviceKeys = pgTable(
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
   },
   (t) => [index("device_keys_user_id_idx").on(t.userId)],
+);
+
+// Device approval (ADR-0009). Each install keeps a random device id + secret
+// for this server (OS keychain); a device must be approved — from a trusted
+// device by number matching, or on the server console — before it can sign
+// in. Only the argon2 hash of the secret is stored.
+export const trustedDevices = pgTable(
+  "trusted_devices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    deviceId: uuid("device_id").notNull(),
+    secretHash: text("secret_hash").notNull(),
+    deviceName: text("device_name").notNull(),
+    platform: text("platform", { enum: ["windows", "macos", "linux", "ios"] }).notNull(),
+    status: text("status", { enum: ["pending", "approved", "denied"] }).notNull(),
+    /** 6-digit number-matching code while pending. */
+    approvalCode: text("approval_code"),
+    codeAttempts: integer("code_attempts").notNull().default(0),
+    requestIp: inet("request_ip"),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Pending requests lapse; also bounds how long an approval waits to be picked up. */
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approvedVia: text("approved_via", {
+      enum: ["device", "console", "bootstrap", "existing-session", "device-key"],
+    }),
+    approvedBy: uuid("approved_by"),
+    /** Approved from a sign-in request: the waiting device may collect one session. */
+    loginReady: boolean("login_ready").notNull().default(false),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("trusted_devices_user_device_idx").on(t.userId, t.deviceId)],
 );
 
 // Pending invitations for new household members. The raw token is emailed;

@@ -37,11 +37,18 @@ see [ADR-0005](adr/0005-ai-streaming.md)). Every request after login carries
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/api/v1/auth/profiles` | Unauthenticated: `{ profiles: [{ id, displayName, avatarColor }], householdName }` — powers the design's login profile picker. Emails are deliberately excluded; exposing household display names to the LAN is an accepted trade-off for a self-hosted household app. |
-| POST | `/api/v1/auth/login` | `{ email \| userId, password, deviceName, platform }` → `{ accessToken, refreshToken, user }`. `userId` comes from the profile picker; `email` remains for scripts/recovery. Rate-limited (Redis-backed if present, in-memory fallback otherwise). |
+| POST | `/api/v1/auth/login` | `{ email \| userId, password, deviceName, platform, deviceId, deviceSecret }` → `{ accessToken, refreshToken, user }`. `userId` comes from the profile picker; `email` remains for scripts/recovery. Rate-limited (Redis-backed if present, in-memory fallback otherwise). After password/TOTP succeed, a device that isn't approved yet gets `403 DEVICE_APPROVAL_REQUIRED` with `fields: { approvalId, code, expiresAt, methods }`; no device identity → `403 DEVICE_NOT_TRUSTED` ([ADR-0009](adr/0009-device-approval.md)). |
 | POST | `/api/v1/auth/refresh` | `{ refreshToken }` → `{ accessToken, refreshToken }`. Rotates the refresh token; reuse of an already-rotated token revokes the session. |
 | POST | `/api/v1/auth/logout` | `{ refreshToken }` → revokes that session. |
 | GET | `/api/v1/auth/sessions` | List the current user's device sessions (id, deviceName, platform, ipAddress, lastUsedAt, isCurrent). |
 | DELETE | `/api/v1/auth/sessions/:id` | Revoke a specific session (e.g. a lost laptop). |
+| POST | `/api/v1/auth/device-approval/status` | Unauthenticated, called by a device waiting for approval: `{ approvalId, deviceId, deviceSecret }` → `{ status: "pending", expiresAt }` / `{ status: "approved", login }` (once) / `"denied"` / `"expired"`. See [ADR-0009](adr/0009-device-approval.md). |
+| GET | `/api/v1/devices/approvals` | Sign-ins waiting for approval that the caller may act on (own; owner: everyone's). Never includes the code. |
+| POST | `/api/v1/devices/approvals/:id/approve` | `{ code }` — number matching: the code shown on the new device. 400 on mismatch; 5 wrong codes deny the request. 403 if trusted-device approval is turned off. |
+| POST | `/api/v1/devices/approvals/:id/deny` | Refuse a waiting sign-in. |
+| GET | `/api/v1/devices` | Approved devices (own; owner: everyone's), with `current` for the caller's device. |
+| DELETE | `/api/v1/devices/:id` | Remove a device's approval and revoke its sessions. |
+| GET / PUT | `/api/v1/devices/approval-settings` | `{ trustedDevice, serverConsole }`; PUT is owner-only and at least one must stay on. |
 | POST | `/api/v1/auth/device-keys` | `{ deviceName, platform }` → `{ id, key }`. Enrolls this device for biometric sign-in ([ADR-0008](adr/0008-biometric-sign-in.md)); `key` is shown once. |
 | GET | `/api/v1/auth/device-keys` | The current user's enrolled devices (id, deviceName, platform, createdAt, lastUsedAt). |
 | DELETE | `/api/v1/auth/device-keys/:id` | Revoke biometric sign-in for one device. |

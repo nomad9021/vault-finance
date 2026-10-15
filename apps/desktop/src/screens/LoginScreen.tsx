@@ -29,7 +29,9 @@ export function LoginScreen() {
   const [needsTotp, setNeedsTotp] = useState(false);
   const [totpCode, setTotpCode] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // A message carried over from the approval screen (denied / expired).
+  const notice = useApp((s) => (s.screen.name === "login" ? (s.screen.notice ?? null) : null));
+  const [error, setError] = useState<string | null>(notice);
   const passwordRef = useRef<HTMLInputElement>(null);
   const totpRef = useRef<HTMLInputElement>(null);
 
@@ -119,6 +121,11 @@ export function LoginScreen() {
       } else if (err instanceof ApiRequestError && err.code === "TOTP_INVALID") {
         setNeedsTotp(true);
         setError("That authentication code isn't right — try the current one.");
+      } else if (err instanceof ApiRequestError && useApp.getState().awaitApproval(err, selected.displayName)) {
+        // Password was right; the approval screen takes over from here.
+      } else if (err instanceof ApiRequestError && err.code === "DEVICE_NOT_TRUSTED") {
+        setNeedsTotp(false);
+        setError(err.message);
       } else {
         setNeedsTotp(false);
         setError(

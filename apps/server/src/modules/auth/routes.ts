@@ -72,6 +72,8 @@ export default async function authRoutes(app: FastifyInstance) {
       platform: body.platform,
       ipAddress: request.ip ?? null,
       ...(body.totpCode ? { totpCode: body.totpCode } : {}),
+      deviceId: body.deviceId,
+      deviceSecret: body.deviceSecret,
     });
 
     const accessToken = await app.signAccessToken({
@@ -99,6 +101,8 @@ export default async function authRoutes(app: FastifyInstance) {
       deviceName: body.deviceName,
       platform: body.platform,
       ipAddress: request.ip ?? null,
+      deviceId: body.deviceId,
+      deviceSecret: body.deviceSecret,
     });
     const accessToken = await app.signAccessToken({
       sub: result.user.id,
@@ -115,7 +119,7 @@ export default async function authRoutes(app: FastifyInstance) {
 
   app.post("/auth/refresh", async (request, reply) => {
     const body = RefreshRequest.parse(request.body);
-    const result = await authService.refresh(app.db, body.refreshToken);
+    const result = await authService.refresh(app.db, body.refreshToken, body);
 
     const accessToken = await app.signAccessToken({
       sub: result.user.id,

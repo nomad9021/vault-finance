@@ -4,7 +4,7 @@ import path from "node:path";
 import EmbeddedPostgres from "embedded-postgres";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildApp } from "../src/app.js";
+import { buildTestApp as buildApp } from "./helpers/test-app.js";
 import { loadConfig } from "../src/config.js";
 
 /** M5: cashflow summary + sankey, investments, goals, reports, CSV export. */

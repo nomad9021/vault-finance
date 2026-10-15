@@ -4,7 +4,7 @@ import path from "node:path";
 import EmbeddedPostgres from "embedded-postgres";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildApp } from "../src/app.js";
+import { buildTestApp as buildApp } from "./helpers/test-app.js";
 import { loadConfig } from "../src/config.js";
 
 /** Phase 2: optional bank linking, exercised through the local mock provider. */

@@ -2,6 +2,17 @@ import { z } from "zod";
 import { Platform } from "./common.js";
 import { User } from "./user.js";
 
+/**
+ * This install's identity on one server: a random id plus a secret, created on
+ * first sign-in and kept in the OS keychain. The server only stores a hash of
+ * the secret. A device must be approved before it can sign in (ADR-0009).
+ */
+export const DeviceIdentity = z.object({
+  deviceId: z.string().uuid(),
+  deviceSecret: z.string().min(32).max(200),
+});
+export type DeviceIdentity = z.infer<typeof DeviceIdentity>;
+
 export const LoginRequest = z.object({
   email: z.string().email(),
   password: z.string().min(1),
@@ -9,7 +20,7 @@ export const LoginRequest = z.object({
   platform: Platform,
   /** 6-digit TOTP code, required only when the account has 2FA enabled. */
   totpCode: z.string().optional(),
-});
+}).merge(DeviceIdentity.partial());
 export type LoginRequest = z.infer<typeof LoginRequest>;
 
 export const TokenPair = z.object({
@@ -25,7 +36,7 @@ export type LoginResponse = z.infer<typeof LoginResponse>;
 
 export const RefreshRequest = z.object({
   refreshToken: z.string().min(1),
-});
+}).merge(DeviceIdentity.partial());
 export type RefreshRequest = z.infer<typeof RefreshRequest>;
 
 export const LogoutRequest = z.object({
@@ -74,7 +85,7 @@ export const LoginByIdRequest = z.object({
   platform: Platform,
   /** 6-digit TOTP code, required only when the account has 2FA enabled. */
   totpCode: z.string().optional(),
-});
+}).merge(DeviceIdentity.partial());
 export type LoginByIdRequest = z.infer<typeof LoginByIdRequest>;
 
 // ── Two-factor authentication (TOTP) ──
@@ -146,5 +157,80 @@ export const DeviceKeyLoginRequest = z.object({
   key: z.string().min(1).max(200),
   deviceName: z.string().min(1).max(100),
   platform: Platform,
-});
+}).merge(DeviceIdentity.partial());
 export type DeviceKeyLoginRequest = z.infer<typeof DeviceKeyLoginRequest>;
+
+// ── Device approval (ADR-0009) ──
+
+/**
+ * Sign-in from a device the server hasn't approved yet is answered with
+ * 403 DEVICE_APPROVAL_REQUIRED; the error's `fields` carry these values.
+ */
+export const DeviceApprovalChallenge = z.object({
+  approvalId: z.string().uuid(),
+  /** Shown on the new device; typed in by whoever approves it (number matching). */
+  code: z.string().regex(/^\d{6}$/),
+  expiresAt: z.string(),
+  /** Comma-separated enabled methods: "trustedDevice", "serverConsole". */
+  methods: z.string(),
+});
+export type DeviceApprovalChallenge = z.infer<typeof DeviceApprovalChallenge>;
+
+export const DeviceApprovalStatusRequest = z.object({ approvalId: z.string().uuid() }).merge(DeviceIdentity);
+export type DeviceApprovalStatusRequest = z.infer<typeof DeviceApprovalStatusRequest>;
+
+/** Polled by the waiting device. `approved` carries the session, once. */
+export const DeviceApprovalStatusResponse = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("pending"), expiresAt: z.string() }),
+  z.object({ status: z.literal("approved"), login: LoginResponse }),
+  z.object({ status: z.literal("denied") }),
+  z.object({ status: z.literal("expired") }),
+]);
+export type DeviceApprovalStatusResponse = z.infer<typeof DeviceApprovalStatusResponse>;
+
+/** A sign-in waiting for approval, as an approver sees it (never the code). */
+export const PendingApproval = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  userDisplayName: z.string(),
+  deviceName: z.string(),
+  platform: Platform,
+  ipAddress: z.string().nullable(),
+  requestedAt: z.string(),
+  expiresAt: z.string(),
+});
+export type PendingApproval = z.infer<typeof PendingApproval>;
+
+export const PendingApprovalListResponse = z.object({ approvals: z.array(PendingApproval) });
+export type PendingApprovalListResponse = z.infer<typeof PendingApprovalListResponse>;
+
+export const ApproveDeviceRequest = z.object({ code: z.string().regex(/^\d{6}$/, "Enter the 6-digit code") });
+export type ApproveDeviceRequest = z.infer<typeof ApproveDeviceRequest>;
+
+export const ApprovedVia = z.enum(["device", "console", "bootstrap", "existing-session", "device-key"]);
+export type ApprovedVia = z.infer<typeof ApprovedVia>;
+
+export const TrustedDevice = z.object({
+  id: z.string().uuid(),
+  userId: z.string().uuid(),
+  userDisplayName: z.string(),
+  deviceName: z.string(),
+  platform: Platform,
+  approvedAt: z.string().nullable(),
+  approvedVia: ApprovedVia.nullable(),
+  lastSeenAt: z.string().nullable(),
+  /** The device making this request. */
+  current: z.boolean(),
+});
+export type TrustedDevice = z.infer<typeof TrustedDevice>;
+
+export const TrustedDeviceListResponse = z.object({ devices: z.array(TrustedDevice) });
+export type TrustedDeviceListResponse = z.infer<typeof TrustedDeviceListResponse>;
+
+/** Which ways a new device can be approved. At least one stays on. */
+export const DeviceApprovalSettings = z
+  .object({ trustedDevice: z.boolean(), serverConsole: z.boolean() })
+  .refine((v) => v.trustedDevice || v.serverConsole, {
+    message: "Keep at least one way to approve new devices turned on.",
+  });
+export type DeviceApprovalSettings = z.infer<typeof DeviceApprovalSettings>;
