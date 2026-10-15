@@ -1,8 +1,9 @@
-import { ErrorBoundary, Spinner } from "@vault/ui";
+import { ErrorBoundary } from "@vault/ui";
 import { useApp } from "./state/store.js";
 import { ConnectScreen } from "./screens/ConnectScreen.js";
 import { LoginScreen } from "./screens/LoginScreen.js";
 import { SetupScreen } from "./screens/SetupScreen.js";
+import { StartupScreen } from "./screens/StartupScreen.js";
 import { TrustScreen } from "./screens/TrustScreen.js";
 import { AppShell } from "./screens/shell/AppShell.js";
 
@@ -25,11 +26,7 @@ function Screen() {
 
   switch (screen.name) {
     case "boot":
-      return (
-        <div style={{ display: "grid", placeItems: "center", height: "100vh" }}>
-          <Spinner label="Starting" />
-        </div>
-      );
+      return <StartupScreen />;
     case "connect":
       return <ConnectScreen {...(screen.error ? { error: screen.error } : {})} />;
     case "trust":

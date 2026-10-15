@@ -418,7 +418,7 @@ class Component extends DCLogic {
   };
 
   INCOMES = [
-    { id: 'inc-maya', label: 'Maya — salary', value: 6400, color: '#4da3f0', note: "Maya's paycheck from Aurora Studio, deposited twice a month." },
+    { id: 'inc-riley', label: 'Riley — salary', value: 6400, color: '#4da3f0', note: "Riley's paycheck from Lakeside Studio, deposited twice a month." },
     { id: 'inc-jordan', label: 'Jordan — salary', value: 5150, color: '#3ecf8e', note: "Jordan's paycheck, deposited twice a month." },
     { id: 'inc-int', label: 'Interest & dividends', value: 210, color: '#9184d9', note: 'Interest from the high-yield savings account plus brokerage dividends.' }
   ];
@@ -510,7 +510,7 @@ class Component extends DCLogic {
       'Find unusual purchases': "Three stand out: Hansen's auto service $180, date night $86.40, and a $129.50 REI order.",
       'Suggest ways to save': 'Cancel two idle subscriptions ($43/mo) and sweep your $2,132 checking buffer into high-yield savings.'
     };
-    const chat = (this.state.chat || [{ isAssistant: true, text: "Hi Maya — ask me anything about your household finances." }]).concat([
+    const chat = (this.state.chat || [{ isAssistant: true, text: "Hi Riley — ask me anything about your household finances." }]).concat([
       { isUser: true, text: label },
       { isAssistant: true, text: answers[label] }
     ]);
@@ -571,7 +571,7 @@ class Component extends DCLogic {
       ]},
       { title: 'Investments', rows: [
         { icon: '📈', name: 'Joint Brokerage', sub: 'Harbor Investments', balance: '$86,584', color: 'var(--color-text)', tint: 'rgba(111,142,242,.15)' },
-        { icon: '🌱', name: 'Roth IRA — Maya', sub: 'Harbor Investments', balance: '$56,450', color: 'var(--color-text)', tint: 'rgba(145,132,217,.15)' },
+        { icon: '🌱', name: 'Roth IRA — Riley', sub: 'Harbor Investments', balance: '$56,450', color: 'var(--color-text)', tint: 'rgba(145,132,217,.15)' },
         { icon: '🏛️', name: '401(k) — both', sub: 'Employer plans, combined', balance: '$182,000', color: 'var(--color-text)', tint: 'rgba(67,207,192,.15)' }
       ]},
       { title: 'Debt & credit', rows: [
@@ -582,13 +582,13 @@ class Component extends DCLogic {
     ];
 
     const txns = [
-      { date: 'Jun 30', merchant: 'Aurora Studio — payroll', catLabel: 'Income', amt: '+$3,200', amtColor: '#3ecf8e' },
+      { date: 'Jun 30', merchant: 'Lakeside Studio — payroll', catLabel: 'Income', amt: '+$3,200', amtColor: '#3ecf8e' },
       { date: 'Jun 28', merchant: 'Costco Wholesale', catLabel: 'Groceries', amt: '−$248', amtColor: 'var(--color-text)' },
       { date: 'Jun 26', merchant: "Hansen's Auto Service", catLabel: 'Transport', amt: '−$180', amtColor: 'var(--color-text)' },
       { date: 'Jun 22', merchant: 'Safeway', catLabel: 'Groceries', amt: '−$96', amtColor: 'var(--color-text)' },
       { date: 'Jun 20', merchant: 'REI', catLabel: 'Shopping', amt: '−$129.50', amtColor: 'var(--color-text)' },
       { date: 'Jun 18', merchant: 'Date night — Camas', catLabel: 'Dining out', amt: '−$86.40', amtColor: 'var(--color-text)' },
-      { date: 'Jun 15', merchant: 'Aurora Studio — payroll', catLabel: 'Income', amt: '+$3,200', amtColor: '#3ecf8e' },
+      { date: 'Jun 15', merchant: 'Lakeside Studio — payroll', catLabel: 'Income', amt: '+$3,200', amtColor: '#3ecf8e' },
       { date: 'Jun 12', merchant: 'HBO Max', catLabel: 'Subscriptions', amt: '−$16.99', amtColor: 'var(--color-text)' },
       { date: 'Jun 5', merchant: 'City Power & Light', catLabel: 'Utilities', amt: '−$142', amtColor: 'var(--color-text)' },
       { date: 'Jun 1', merchant: 'First National — Mortgage', catLabel: 'Mortgage', amt: '−$2,850', amtColor: 'var(--color-text)' }
@@ -619,7 +619,7 @@ class Component extends DCLogic {
     ];
     const invAccts = [
       { name: 'Joint Brokerage', ytd: '+8.2% YTD', value: '$86,584' },
-      { name: 'Roth IRA — Maya', ytd: '+7.4% YTD', value: '$56,450' },
+      { name: 'Roth IRA — Riley', ytd: '+7.4% YTD', value: '$56,450' },
       { name: '401(k) — both', ytd: '+6.5% YTD', value: '$182,000' }
     ];
 
@@ -637,10 +637,10 @@ class Component extends DCLogic {
       month: m + ' 2026', saved: '$2,7' + (m === 'Mar' ? '95' : '00'), rate: '23%'
     }));
 
-    const userName = 'Maya Chen', userEmail = 'maya@chen.home';
+    const userName = 'Riley Rivera', userEmail = 'riley@rivera.home';
     const members = [
-      { initial: 'M', name: 'Maya Chen', you: '(you)', role: 'Owner · both accounts linked', tint: 'var(--color-accent-700)' },
-      { initial: 'J', name: 'Jordan Chen', you: '', role: 'Member · payroll + joint card', tint: 'var(--color-accent-800)' }
+      { initial: 'R', name: 'Riley Rivera', you: '(you)', role: 'Owner · both accounts linked', tint: 'var(--color-accent-700)' },
+      { initial: 'J', name: 'Jordan Rivera', you: '', role: 'Member · payroll + joint card', tint: 'var(--color-accent-800)' }
     ];
     const catChips = ['Mortgage', 'Groceries', 'Dining out', 'Transport', 'Insurance', 'Shopping', 'Utilities', 'Health'].map((label, i) => ({
       label, dot: ['#ef8354', '#e25c5c', '#4da3f0', '#3ecf8e', '#9184d9', '#43cfc0', '#b47ef0', '#ec6a9c'][i % 8],
@@ -650,7 +650,7 @@ class Component extends DCLogic {
     const prompts = [
       { label: 'Why did groceries increase?' }, { label: 'Find unusual purchases' }, { label: 'Suggest ways to save' }
     ].map(p => ({ ...p, onClick: () => this.ask(p.label) }));
-    const chat = s.chat || [{ isAssistant: true, text: "Hi Maya — ask me anything about your household finances." }];
+    const chat = s.chat || [{ isAssistant: true, text: "Hi Riley — ask me anything about your household finances." }];
 
     return {
       isSplash: s.page === 'splash', showApp: s.page !== 'splash', enter: this.enter,

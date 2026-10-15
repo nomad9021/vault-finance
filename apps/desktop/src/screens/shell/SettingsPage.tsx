@@ -1,4 +1,5 @@
 import {
+  AI_BASE_URL_EXAMPLES,
   AI_MODEL_SUGGESTIONS,
   AI_PROVIDER_LABELS,
   AI_QUALITY_LABELS,
@@ -7,7 +8,9 @@ import {
   BANK_PROVIDER_LABELS,
   BankProvider,
   CLOUD_PROVIDERS,
+  LOCAL_PROVIDERS,
   type AiStatus,
+  type AiTestResponse,
   type BankStatus,
   type DeviceKey,
   type DeviceSession,
@@ -17,8 +20,12 @@ import {
 import { THEMES, THEME_LABELS } from "@vault/design-tokens";
 import { Button, Card, Dialog, Field, Segmented, Select, Spinner, Tag } from "@vault/ui";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { runChecks, type UiCheck } from "../../lib/startupChecks.js";
+import { useCheckActions } from "../../lib/useCheckActions.js";
 import { useData } from "../../lib/useData.js";
 import { APP_VERSION, deviceKeySecret, useApp } from "../../state/store.js";
+import { StatusList } from "../StatusList.js";
+import { TailscaleControl } from "../TailscaleControl.js";
 
 export function SettingsPage() {
   // Uses the shared `.page` wrapper (centered, max-width, consistent rhythm)
@@ -26,6 +33,7 @@ export function SettingsPage() {
   // staying centered instead of hugging the left edge.
   return (
     <div className="page" style={{ maxWidth: 780 }}>
+      <SystemStatusSection />
       <AppearanceSection />
       <CategoryTreeSection />
       <CategorizationRulesSection />
@@ -38,6 +46,7 @@ export function SettingsPage() {
       <HouseholdSection />
       <MembersSection />
       <SessionsSection />
+      <NetworkSection />
       <ServerSection />
       <AdminLaunchRow />
     </div>
@@ -1019,6 +1028,7 @@ function AiSection() {
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [test, setTest] = useState<AiTestResponse | null>(null);
 
   // Seed the form from server state until the user starts editing.
   useEffect(() => {
@@ -1037,16 +1047,35 @@ function AiSection() {
   const isOwner = user?.role === "owner";
   const touch = () => setDirty(true);
   const isCloud = CLOUD_PROVIDERS.has(provider);
+  const isLocal = LOCAL_PROVIDERS.has(provider);
 
-  const refreshModels = async () => {
+  /**
+   * Test what's in the form (not what's saved) — the server reaches out to the
+   * address, so this also proves the Vault server can see a separate AI machine.
+   */
+  const testConnection = async () => {
     setRefreshing(true);
     setError(null);
+    setTest(null);
     try {
-      const r = await client.aiModels();
-      setInstalledModels(r.models);
-      if (r.models.length === 0) setError("No installed models found — is Ollama running with a model pulled?");
-    } catch {
-      setError("Couldn't reach the provider to list models.");
+      const r = await client.testAiConnection({
+        provider,
+        baseUrl: baseUrl.trim(),
+        ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+      });
+      setTest(r);
+      if (r.ok) {
+        setInstalledModels(r.models);
+        if (r.models.length === 0) {
+          setError(
+            provider === "ollama"
+              ? "Connected, but no models are installed. On the AI machine run e.g. “ollama pull llama3.2:3b”."
+              : "Connected, but the server has no model loaded yet.",
+          );
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't run the connection test.");
     } finally {
       setRefreshing(false);
     }
@@ -1059,10 +1088,9 @@ function AiSection() {
     try {
       // For Ollama the concrete "model" is derived from the quality map (Normal
       // tier is the sensible default the provider config falls back to).
-      const resolvedModel =
-        provider === "ollama"
-          ? qualityModels.normal || installedModels[0] || model || "llama3.2:3b"
-          : model;
+      const resolvedModel = isLocal
+        ? qualityModels.normal || installedModels[0] || model || "llama3.2:3b"
+        : model;
       await client.updateAiSettings({
         enabled,
         provider,
@@ -1071,7 +1099,7 @@ function AiSection() {
         // key untouched (they can clear it with the button below).
         ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
         baseUrl: baseUrl.trim(),
-        ...(provider === "ollama" ? { qualityModels } : {}),
+        ...(isLocal ? { qualityModels } : {}),
         showModelNames,
       });
       setApiKey("");
@@ -1137,10 +1165,15 @@ function AiSection() {
             <span style={{ fontSize: "var(--text-sm)" }}>{statusLine(status)}</span>
             {status.enabled && status.configured && (
               <Button variant="ghost" onClick={reload} style={{ marginLeft: "auto" }}>
-                Test connection
+                Check again
               </Button>
             )}
           </div>
+          {status.enabled && status.configured && !status.reachable && status.error && (
+            <div className="card-meta" style={{ lineHeight: 1.5 }}>
+              <strong>{status.error}</strong> {status.hint}
+            </div>
+          )}
 
           {!isOwner ? (
             <p className="card-meta">Only the owner can change AI settings.</p>
@@ -1156,8 +1189,11 @@ function AiSection() {
                       setProvider(next);
                       // Reset per-provider fields to that provider's default.
                       setModel(AI_MODEL_SUGGESTIONS[next][0] ?? "");
-                      if (next === "ollama" && !baseUrl.trim()) setBaseUrl("http://ollama:11434");
+                      const example = AI_BASE_URL_EXAMPLES[next];
+                      const isExample = Object.values(AI_BASE_URL_EXAMPLES).includes(baseUrl.trim());
+                      if (example && (!baseUrl.trim() || isExample)) setBaseUrl(example);
                       setApiKey("");
+                      setTest(null);
                       touch();
                     }}
                   >
@@ -1189,17 +1225,65 @@ function AiSection() {
                 )}
               </div>
 
-              {provider === "ollama" ? (
-                <Field
-                  label="Ollama base URL"
-                  value={baseUrl}
-                  onChange={(e) => {
-                    setBaseUrl(e.target.value);
-                    touch();
-                  }}
-                  placeholder="http://ollama:11434"
-                  hint={'"ollama" is the bundled Docker service; or an address elsewhere on your network.'}
-                />
+              {isLocal ? (
+                <>
+                  <Field
+                    label={provider === "ollama" ? "Ollama address" : "AI server address"}
+                    value={baseUrl}
+                    onChange={(e) => {
+                      setBaseUrl(e.target.value);
+                      setTest(null);
+                      touch();
+                    }}
+                    placeholder={AI_BASE_URL_EXAMPLES[provider]}
+                    spellCheck={false}
+                    hint={
+                      provider === "ollama"
+                        ? "“http://ollama:11434” is the Ollama bundled with your server. For Ollama on another computer (e.g. a PC with a GPU), use its LAN or Tailscale address, like http://192.168.1.50:11434 — and on that computer set OLLAMA_HOST=0.0.0.0 so it accepts connections from the network."
+                        : "LM Studio, llama.cpp (llama-server), vLLM, LocalAI, Jan and similar. The address usually ends in /v1, like http://192.168.1.50:1234/v1. Make sure the server listens on the network, not only on localhost."
+                    }
+                  />
+                  <Field
+                    label="Access token (optional)"
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => {
+                      setApiKey(e.target.value);
+                      touch();
+                    }}
+                    placeholder={
+                      status.hasApiKey && status.provider === provider
+                        ? "•••••••• (saved — leave blank to keep)"
+                        : "Only if your AI server asks for one"
+                    }
+                    hint="For an AI server behind a login or reverse proxy. Stored on your Vault server only."
+                  />
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <Button variant="secondary" onClick={() => void testConnection()} disabled={refreshing || !baseUrl.trim()}>
+                      {refreshing ? <Spinner label="Testing" /> : "Test connection"}
+                    </Button>
+                    {test?.ok && (
+                      <span style={{ fontSize: "var(--text-sm)", color: "var(--color-positive)" }}>
+                        Connected · {test.models.length} model{test.models.length === 1 ? "" : "s"} · {test.latencyMs} ms
+                      </span>
+                    )}
+                  </div>
+                  {test && !test.ok && (
+                    <div
+                      role="alert"
+                      style={{
+                        fontSize: "var(--text-sm)",
+                        lineHeight: 1.55,
+                        padding: "10px 12px",
+                        borderRadius: "var(--radius-md)",
+                        background: "var(--color-negative-soft)",
+                      }}
+                    >
+                      <strong>{test.error}</strong>
+                      {test.hint && <div style={{ marginTop: 4 }}>{test.hint}</div>}
+                    </div>
+                  )}
+                </>
               ) : (
                 <Field
                   label={`${AI_PROVIDER_LABELS[provider]} API key`}
@@ -1241,7 +1325,7 @@ function AiSection() {
                 />
               )}
 
-              {provider === "ollama" && (
+              {isLocal && (
                 <div style={{ marginTop: 4 }}>
                   <div
                     style={{
@@ -1254,8 +1338,8 @@ function AiSection() {
                     <span style={{ fontSize: "var(--text-sm)", fontWeight: 600 }}>Model quality levels</span>
                     <Button
                       variant="ghost"
-                      onClick={() => void refreshModels()}
-                      disabled={refreshing}
+                      onClick={() => void testConnection()}
+                      disabled={refreshing || !baseUrl.trim()}
                     >
                       {refreshing ? "Refreshing…" : "Refresh installed models"}
                     </Button>
@@ -1633,6 +1717,82 @@ function BankSection() {
           )}
         </>
       )}
+    </Card>
+  );
+}
+
+/** Settings → System status: the startup checks, on demand. */
+function SystemStatusSection() {
+  const platform = useApp((s) => s.platform);
+  const client = useApp((s) => s.client);
+  const address = useApp((s) => s.serverAddress);
+  const keychainOk = useApp((s) => s.keychainOk);
+  const [checks, setChecks] = useState<UiCheck[]>([]);
+  const [running, setRunning] = useState(false);
+  const [checkedAt, setCheckedAt] = useState<Date | null>(null);
+
+  const run = useCallback(async () => {
+    if (!address) return;
+    setRunning(true);
+    try {
+      const outcome = await runChecks(
+        { platform, client, address, appVersion: APP_VERSION, keychainOk, hasSession: true },
+        setChecks,
+      );
+      setChecks(outcome.checks);
+      setCheckedAt(new Date());
+    } finally {
+      setRunning(false);
+    }
+  }, [platform, client, address, keychainOk]);
+  const actions = useCheckActions(() => void run());
+
+  useEffect(() => {
+    void run();
+  }, [run]);
+
+  const problems = checks.filter((c) => c.level === "error" || c.level === "warn").length;
+  return (
+    <Card kicker="Health" title="System status">
+      <p className="card-body">
+        {running
+          ? "Checking…"
+          : problems === 0
+            ? "Everything is working."
+            : `${problems} thing${problems === 1 ? "" : "s"} need${problems === 1 ? "s" : ""} attention.`}
+      </p>
+      <StatusList
+        checks={checks}
+        onAction={(a) => void actions.run(a)}
+        busyAction={actions.busy}
+        hideActions={["change-server"]}
+      />
+      {actions.message && (
+        <div role="status" style={{ fontSize: "var(--text-sm)", color: "var(--content-secondary)", marginTop: 8 }}>
+          {actions.message}
+        </div>
+      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+        <Button variant="secondary" onClick={() => void run()} disabled={running}>
+          {running ? <Spinner label="Checking" /> : "Run checks again"}
+        </Button>
+        {checkedAt && <span className="card-meta">Last checked {checkedAt.toLocaleTimeString()}</span>}
+      </div>
+    </Card>
+  );
+}
+
+/** Settings → Network: Tailscale on/off for reaching the server from anywhere. */
+function NetworkSection() {
+  const platform = useApp((s) => s.platform);
+  if (!platform.tailscaleStatus) return null;
+  return (
+    <Card kicker="Network" title="Tailscale">
+      <p className="card-body">
+        Tailscale lets this computer reach your Vault server securely from anywhere, without opening
+        ports to the internet. Turn it on here; sign-in happens in your browser.
+      </p>
+      <TailscaleControl />
     </Card>
   );
 }

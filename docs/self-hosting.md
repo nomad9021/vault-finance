@@ -102,6 +102,15 @@ Tailscale on both the server and your devices, and use the server's Tailscale
 IP (or MagicDNS name) as the server address. No ports are exposed to the
 internet, and the app's own TLS still applies inside the tunnel.
 
+The desktop app can **turn Tailscale on for you**: the connect screen shows a
+*Turn on* button when Tailscale is installed but off, the startup check offers
+it when the server can't be reached, and **Settings → Tailscale** has on/off
+controls. If this device still needs to sign in, the app opens Tailscale's
+sign-in page in your browser and carries on once you're connected. On Linux,
+the first time it may ask for your password once to make your account the
+Tailscale "operator" (`tailscale set --operator=$USER`) — after that no
+password is needed.
+
 Do **not** port-forward 8443 to the open internet. If you need
 internet-without-VPN access, put a reverse proxy with a real certificate and
 its own hardening in front, and understand what you're exposing.
@@ -166,7 +175,7 @@ members or change server-level settings.
 
 **The AI assistant is off by default.** The app is fully usable without it —
 there's no assistant UI at all until you turn it on. To enable it, open
-**Settings → AI** in the desktop app, pick a provider, and save. Three
+**Settings → AI** in the desktop app, pick a provider, and save. Four
 providers are supported:
 
 - **Ollama (local)** — runs a model on your own hardware; nothing leaves your
@@ -176,6 +185,10 @@ providers are supported:
   ```bash
   docker compose exec ollama ollama pull llama3.1:8b
   ```
+- **Other local AI (OpenAI-compatible)** — LM Studio, llama.cpp's
+  `llama-server`, vLLM, LocalAI, Jan, text-generation-webui, or anything else
+  that speaks the OpenAI API. Enter its address (usually ending in `/v1`).
+  Nothing leaves your hardware.
 - **OpenAI** — paste your OpenAI API key and a model (e.g. `gpt-4o-mini`).
 - **Anthropic (Claude)** — paste your Anthropic API key and a model
   (e.g. `claude-sonnet-5`).
@@ -193,9 +206,41 @@ anyone but the provider you chose.
 transactions, budgets, reports — everything non-AI keeps working; the AI
 surfaces simply stay hidden or show a clear "reconnect" state.
 
-Not running the bundled Ollama? You can drop the `ollama` service from the
-compose file entirely — the app doesn't need it unless you choose Ollama as
-your provider.
+### Using a separate AI machine
+
+The Vault server can hand AI work to **another computer** — typically a
+desktop with a GPU — while your data stays on the Vault server. The Vault
+server talks to the AI machine directly; the desktop app never does.
+
+1. **On the AI machine**, make the AI server listen on the network, not just
+   on localhost:
+   - **Ollama:** set `OLLAMA_HOST=0.0.0.0` and restart Ollama
+     (Linux: `sudo systemctl edit ollama` → `Environment="OLLAMA_HOST=0.0.0.0"`;
+     Windows/macOS: set it as a user environment variable and restart the
+     Ollama app). Then pull a model: `ollama pull llama3.1:8b`.
+   - **LM Studio:** Developer → turn on *Serve on Local Network*.
+   - **llama-server / vLLM:** start with `--host 0.0.0.0`.
+2. Allow the port through that machine's firewall (Ollama `11434`,
+   LM Studio `1234`) — ideally only from your LAN or Tailscale.
+3. In **Settings → AI**, choose *Ollama* or *Other local AI*, enter the AI
+   machine's address, and press **Test connection**:
+
+   | Where the AI runs | Address to enter |
+   |---|---|
+   | Bundled Ollama container | `http://ollama:11434` |
+   | Another computer on your LAN | `http://192.168.1.50:11434` (Ollama) or `http://192.168.1.50:1234/v1` |
+   | Another computer on Tailscale | `http://100.x.y.z:11434` — the Vault server's host must be on Tailscale too |
+   | The same computer as the Vault server, outside Docker | `http://host.docker.internal:11434` |
+
+   Don't use `localhost` — inside Docker it means the Vault container itself.
+   If the test fails, it says why in plain words (nothing listening, wrong
+   path, firewall, needs a token…) and what to change.
+4. Behind a reverse proxy that requires a login? Put the token in **Access
+   token (optional)**; it's sent as a bearer token and stored only on your
+   Vault server.
+
+Using a separate AI machine? You can drop the `ollama` service from the
+compose file entirely — the app doesn't need it unless you point Ollama at it.
 
 ## 8. Hardware sizing for Ollama
 
@@ -268,6 +313,13 @@ server first is always the safe order.
 
 ## 11. Troubleshooting
 
+**Start with the app's own check.** Every time it opens, the desktop app runs a
+system check — this computer, Tailscale, reaching the server, the server's
+identity, app/server versions, the database, free disk space, and (once
+signed in) the AI provider, bank sync and server updates. If something's
+wrong it stops on that screen and says what to do; **Settings → System
+status** runs the same checks any time.
+
 - **Installer: "Docker daemon isn't running"** — `sudo systemctl enable --now docker`
   (the installer offers to run it). `enable` also starts Docker on boot.
 - **Installer: "can't talk to Docker" / `permission denied … docker.sock`** —
@@ -284,9 +336,10 @@ server first is always the safe order.
 - **Certificate warning after redeploy** — if you deleted the `vaultdata`
   volume, a new cert was generated and clients that pinned the old
   fingerprint will (correctly) warn. Re-confirm the new fingerprint.
-- **AI shows offline** — `docker compose logs ollama`; confirm the model is
-  pulled (`docker compose exec ollama ollama list`) and that
-  `OLLAMA_HOST`/`OLLAMA_PORT` in `.env` match where Ollama actually runs.
+- **AI shows offline** — Settings → AI shows the reason under the status
+  line. For the bundled Ollama: `docker compose logs ollama` and confirm a
+  model is pulled (`docker compose exec ollama ollama list`). For a separate
+  AI machine, see [Using a separate AI machine](#using-a-separate-ai-machine).
 - **Login rate-limited (429)** — 10 attempts per 15 minutes per device+email.
   Wait, or restart the server to clear it.
 

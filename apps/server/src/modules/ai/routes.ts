@@ -1,9 +1,11 @@
 import { PassThrough } from "node:stream";
 import {
   AI_FEATURE_QUALITY,
+  AiTestRequest,
   ChatRequest,
   CLOUD_PROVIDERS,
   UpdateAiSettingsRequest,
+  type AiTestResponse,
   type ChatStreamLine,
   type ConversationDetail,
 } from "@vault/shared";
@@ -14,9 +16,9 @@ import { AppError, notFound } from "../../errors.js";
 import type { AppConfig } from "../../config.js";
 import { buildFinancialContext } from "./context.js";
 import { configForQuality } from "./model-manager.js";
-import { getProvider, isConfigured, type ChatMessage } from "./providers/index.js";
+import { describeAiError, getProvider, isConfigured, type ChatMessage } from "./providers/index.js";
 import { resolveSettings, statusFor } from "./settings.js";
-import { encryptSecret } from "../../secret-crypto.js";
+import { decryptSecret, encryptSecret } from "../../secret-crypto.js";
 
 const HISTORY_LIMIT = 20;
 
@@ -70,6 +72,49 @@ export default async function aiRoutes(
         .onConflictDoUpdate({ target: aiSettings.id, set: values });
 
       return statusFor(await resolveSettings(app, opts.config));
+    },
+  );
+
+  // Try a provider configuration before saving it — "Test connection" for a
+  // separate AI machine. Owner-only: it makes the server fetch an address the
+  // caller chose, which is exactly the owner's job and nobody else's.
+  app.post(
+    "/ai/test",
+    { preHandler: [app.requireOwner] },
+    async (request): Promise<AiTestResponse> => {
+      const body = AiTestRequest.parse(request.body);
+      const stored = await app.db.query.aiSettings.findFirst();
+      const apiKey =
+        body.apiKey !== undefined
+          ? body.apiKey.trim() || null
+          : stored?.provider === body.provider
+            ? decryptSecret(stored.apiKey ?? null)
+            : null;
+      const candidate = {
+        provider: body.provider,
+        model: "",
+        apiKey,
+        baseUrl: body.baseUrl?.trim() ?? "",
+      };
+      if (!isConfigured(candidate)) {
+        return {
+          ok: false,
+          models: [],
+          latencyMs: 0,
+          error: CLOUD_PROVIDERS.has(body.provider) ? "Enter an API key first." : "Enter the AI server's address first.",
+          hint: CLOUD_PROVIDERS.has(body.provider)
+            ? "The key is stored on your Vault server, never on this device."
+            : "For example http://192.168.1.50:11434 for Ollama on another computer.",
+        };
+      }
+      const started = Date.now();
+      try {
+        const models = await getProvider(body.provider).listModels(candidate);
+        return { ok: true, models, latencyMs: Date.now() - started };
+      } catch (err) {
+        request.log.info({ err, provider: body.provider }, "AI connection test failed");
+        return { ok: false, models: [], latencyMs: Date.now() - started, ...describeAiError(err, candidate) };
+      }
     },
   );
 

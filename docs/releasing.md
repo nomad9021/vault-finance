@@ -41,7 +41,7 @@ visibility). Self-hosters then update with `installers/server/update-server.sh`
 
 1. Create the GitHub repository and push. Then update the updater endpoint in
    `apps/desktop/src-tauri/tauri.conf.json` — it currently points at the
-   placeholder `masonchen/vault-finance`; set your real `owner/repo`.
+   placeholder `your-name/vault-finance`; set your real `owner/repo`.
 2. Add the updater signing key as Actions secrets
    (Settings → Secrets and variables → Actions):
    - `TAURI_SIGNING_PRIVATE_KEY` — contents of `~/.tauri/vault-finance.key`
@@ -72,7 +72,7 @@ clean. All steps happen in a browser or in CI:
 4. Add the Actions secrets:
    - `APPLE_CERTIFICATE` — `base64 -w0 mac-sign.p12`
    - `APPLE_CERTIFICATE_PASSWORD` — the p12 export password
-   - `APPLE_SIGNING_IDENTITY` — e.g. `Developer ID Application: Mason Chen (TEAMID)`
+   - `APPLE_SIGNING_IDENTITY` — e.g. `Developer ID Application: Your Name (TEAMID)`
    - `APPLE_ID` — your Apple ID email
    - `APPLE_PASSWORD` — the app-specific password from step 3
    - `APPLE_TEAM_ID` — from developer.apple.com → Membership

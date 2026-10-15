@@ -45,6 +45,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Lets the server reach an AI server running directly on this machine
+    # (outside Docker) at http://host.docker.internal:<port>. Machines elsewhere
+    # on your LAN or Tailscale are reachable by their own address as usual.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-vault}:${POSTGRES_PASSWORD:-vault}@postgres:5432/${POSTGRES_DB:-vault}
       VAULT_PORT: "8443"

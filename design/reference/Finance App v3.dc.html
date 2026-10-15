@@ -30,7 +30,7 @@
         <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-bottom:22px">
           <span style="width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,var(--color-accent) 0%,var(--color-section-glow) 100%);box-shadow:0 0 20px color-mix(in srgb, var(--color-accent) 45%, transparent)"></span>
           <div style="font-family:var(--font-heading);font-weight:600;font-size:19px">Sign in to Vault Finance</div>
-          <div style="font-size:12.5px;color:var(--color-neutral-500)">Chen household · self-hosted</div>
+          <div style="font-size:12.5px;color:var(--color-neutral-500)">Rivera household · self-hosted</div>
         </div>
         <div style="display:flex;gap:10px;justify-content:center;margin-bottom:18px">
           <sc-for list="{{ loginProfiles }}" as="lp" hint-placeholder-count="2">
@@ -82,7 +82,7 @@
           </sc-for>
         </nav>
         <div style="padding:14px 18px;border-top:1px solid var(--color-divider);font-size:11px;color:var(--color-neutral-500);line-height:1.6;white-space:nowrap">
-          Maya + Jordan<br>Self-hosted · v0.3
+          Riley + Jordan<br>Self-hosted · v0.3
         </div>
       </div>
     </aside>
@@ -701,8 +701,8 @@ class Component extends DCLogic {
     try { widgets = JSON.parse(localStorage.getItem('tally.widgets.v1')); } catch (e) {}
     try { user = localStorage.getItem('tally.user.v1') || null; } catch (e) {}
     this.USERS = {
-      maya: { name: 'Maya Chen', email: 'maya@chen.home', initial: 'M', tint: 'var(--color-accent-700)' },
-      jordan: { name: 'Jordan Chen', email: 'jordan@chen.home', initial: 'J', tint: 'var(--color-accent-800)' }
+      riley: { name: 'Riley Rivera', email: 'riley@rivera.home', initial: 'R', tint: 'var(--color-accent-700)' },
+      jordan: { name: 'Jordan Rivera', email: 'jordan@rivera.home', initial: 'J', tint: 'var(--color-accent-800)' }
     };
     if (user && !this.USERS[user]) user = null;
     this.state = {
@@ -720,7 +720,7 @@ class Component extends DCLogic {
 
   buildData() {
     this.COLORS = {
-      'inc-maya': '#3ecf8e', 'inc-jordan': '#2eb8b0', 'inc-int': '#8fd460',
+      'inc-riley': '#3ecf8e', 'inc-jordan': '#2eb8b0', 'inc-int': '#8fd460',
       hub: '#9184d9',
       mortgage: '#ef8354', groceries: '#63c96f', dining: '#ec6a9c',
       transport: '#4da3f0', insurance: '#8b9fc4', shopping: '#b47ef0',
@@ -737,7 +737,7 @@ class Component extends DCLogic {
       trend: { title: 'Net worth trend', meta: '12 months' }
     };
     this.INCOMES = [
-      { id: 'inc-maya', label: 'Maya — salary', value: 6400 },
+      { id: 'inc-riley', label: 'Riley — salary', value: 6400 },
       { id: 'inc-jordan', label: 'Jordan — salary', value: 5150 },
       { id: 'inc-int', label: 'Interest & dividends', value: 210 }
     ];
@@ -758,8 +758,8 @@ class Component extends DCLogic {
       { id: 'buffer', label: 'Checking buffer', value: 2132, kind: 'buffer' }
     ];
     this.TXNS = [
-      [1, 'Aurora Studio — payroll', 'inc-maya', 'Checking', 3200],
-      [15, 'Aurora Studio — payroll', 'inc-maya', 'Checking', 3200],
+      [1, 'Lakeside Studio — payroll', 'inc-riley', 'Checking', 3200],
+      [15, 'Lakeside Studio — payroll', 'inc-riley', 'Checking', 3200],
       [1, 'Northwind Labs — payroll', 'inc-jordan', 'Checking', 2575],
       [15, 'Northwind Labs — payroll', 'inc-jordan', 'Checking', 2575],
       [30, 'High-yield savings — interest', 'inc-int', 'HY Savings', 108.40],
@@ -1257,7 +1257,7 @@ class Component extends DCLogic {
       ],
       invest: [
         { icon: '📈', name: 'Joint Brokerage', sub: 'Harbor Investments', balance: '$86,584', color: 'var(--color-text)', sync: 'Synced 1 hr ago', tint: this.rgba('#6f8ef2', .15) },
-        { icon: '🌱', name: 'Roth IRA — Maya', sub: 'Harbor Investments', balance: '$56,450', color: 'var(--color-text)', sync: 'Synced 1 hr ago', tint: this.rgba('#9184d9', .15) },
+        { icon: '🌱', name: 'Roth IRA — Riley', sub: 'Harbor Investments', balance: '$56,450', color: 'var(--color-text)', sync: 'Synced 1 hr ago', tint: this.rgba('#9184d9', .15) },
         { icon: '🏛️', name: '401(k) — both', sub: 'Employer plans, combined', balance: '$182,000', color: 'var(--color-text)', sync: 'Synced yesterday', tint: this.rgba('#43cfc0', .15) }
       ],
       debt: [
@@ -1316,7 +1316,7 @@ class Component extends DCLogic {
     ];
     const invAccts = [
       { name: 'Joint Brokerage', sub: 'Taxable · auto-invests $700/mo', ytd: '+8.2% YTD', value: '$86,584' },
-      { name: 'Roth IRA — Maya', sub: '$500/mo · 2026 limit on pace', ytd: '+7.4% YTD', value: '$56,450' },
+      { name: 'Roth IRA — Riley', sub: '$500/mo · 2026 limit on pace', ytd: '+7.4% YTD', value: '$56,450' },
       { name: '401(k) — combined', sub: 'Pre-tax · employer match maxed', ytd: '+6.6% YTD', value: '$182,000' }
     ];
 
@@ -1336,10 +1336,10 @@ class Component extends DCLogic {
     }));
 
     // ---- settings ----
-    const me = this.USERS[s.user] || this.USERS.maya;
+    const me = this.USERS[s.user] || this.USERS.riley;
     const members = [
-      { initial: 'M', name: 'Maya Chen', you: s.user === 'maya' ? '(you)' : '', role: 'Owner · both accounts linked', tint: 'var(--color-accent-700)' },
-      { initial: 'J', name: 'Jordan Chen', you: s.user === 'jordan' ? '(you)' : '', role: 'Member · payroll + joint card', tint: 'var(--color-accent-800)' }
+      { initial: 'R', name: 'Riley Rivera', you: s.user === 'riley' ? '(you)' : '', role: 'Owner · both accounts linked', tint: 'var(--color-accent-700)' },
+      { initial: 'J', name: 'Jordan Rivera', you: s.user === 'jordan' ? '(you)' : '', role: 'Member · payroll + joint card', tint: 'var(--color-accent-800)' }
     ];
     const catChips = this.LEAVES.filter(n => n.kind === 'spend').map(n => ({
       label: n.label, dot: this.COLORS[n.id], bg: this.rgba(this.COLORS[n.id], 0.14)
@@ -1398,7 +1398,7 @@ class Component extends DCLogic {
       doLogin: () => { if (s.loginSel && s.loginPw) this.login(s.loginSel); },
       joinCode: s.joinCode,
       onJoinCode: (e) => this.setState({ joinCode: e.target.value.toUpperCase() }),
-      doJoin: () => this.setState({ joinMsg: /^VAULT-[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(s.joinCode.trim()) ? 'Code accepted — in the full build this creates your account and links you to the Chen household as a Viewer.' : 'That code doesn\u2019t look right. Codes look like TALLY-XXXX-XXXX and expire after 48 hours.' }),
+      doJoin: () => this.setState({ joinMsg: /^VAULT-[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(s.joinCode.trim()) ? 'Code accepted — in the full build this creates your account and links you to the Rivera household as a Viewer.' : 'That code doesn\u2019t look right. Codes look like TALLY-XXXX-XXXX and expire after 48 hours.' }),
       joinMsg: s.joinMsg,
       userInitial: me.initial, userName: me.name, userEmail: me.email,
       userMenuOpen: s.userMenuOpen,

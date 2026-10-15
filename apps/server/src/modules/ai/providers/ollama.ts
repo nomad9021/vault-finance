@@ -1,16 +1,25 @@
-import type { AiConfig, ChatMessage, ProviderClient } from "./types.js";
+import { ProviderHttpError, type AiConfig, type ChatMessage, type ProviderClient } from "./types.js";
 
 /**
  * Ollama client — talks to a local/self-hosted Ollama over its native HTTP
- * API. baseUrl comes from ai_settings (never hardcoded; the user may run
- * Ollama on another machine on their network). No API key.
+ * API. baseUrl comes from ai_settings (never hardcoded): the bundled Docker
+ * service, or Ollama on a separate machine on your LAN or Tailscale. Plain
+ * Ollama has no auth; the optional key is sent as a bearer token for an
+ * Ollama that sits behind an authenticating reverse proxy.
  */
+function headers(config: AiConfig, json = false): Record<string, string> {
+  const h: Record<string, string> = json ? { "content-type": "application/json" } : {};
+  if (config.apiKey?.trim()) h["authorization"] = `Bearer ${config.apiKey.trim()}`;
+  return h;
+}
+
 export const ollamaProvider: ProviderClient = {
   async listModels(config: AiConfig): Promise<string[]> {
     const res = await fetch(`${config.baseUrl.replace(/\/$/, "")}/api/tags`, {
-      signal: AbortSignal.timeout(3_000),
+      headers: headers(config),
+      signal: AbortSignal.timeout(5_000),
     });
-    if (!res.ok) throw new Error(`ollama /api/tags returned ${res.status}`);
+    if (!res.ok) throw new ProviderHttpError(res.status, `ollama /api/tags returned ${res.status}`);
     const body = (await res.json()) as { models?: Array<{ name?: string }> };
     return (body.models ?? []).map((m) => m.name ?? "").filter(Boolean);
   },
@@ -18,13 +27,13 @@ export const ollamaProvider: ProviderClient = {
   async streamChat(config, messages, onToken, signal): Promise<void> {
     const res = await fetch(`${config.baseUrl.replace(/\/$/, "")}/api/chat`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: headers(config, true),
       body: JSON.stringify({ model: config.model, messages, stream: true }),
       ...(signal ? { signal } : {}),
     });
     if (!res.ok || !res.body) {
       const detail = await res.text().catch(() => "");
-      throw new Error(`ollama /api/chat returned ${res.status}: ${detail.slice(0, 200)}`);
+      throw new ProviderHttpError(res.status, `ollama /api/chat returned ${res.status}: ${detail.slice(0, 200)}`);
     }
 
     const reader = res.body.getReader();
@@ -55,11 +64,11 @@ export const ollamaProvider: ProviderClient = {
     const messages: ChatMessage[] = [{ role: "user", content: prompt }];
     const res = await fetch(`${config.baseUrl.replace(/\/$/, "")}/api/chat`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: headers(config, true),
       body: JSON.stringify({ model: config.model, messages, stream: false }),
       signal: AbortSignal.timeout(120_000),
     });
-    if (!res.ok) throw new Error(`ollama /api/chat returned ${res.status}`);
+    if (!res.ok) throw new ProviderHttpError(res.status, `ollama /api/chat returned ${res.status}`);
     const body = (await res.json()) as {
       message?: { content?: string };
       error?: string;

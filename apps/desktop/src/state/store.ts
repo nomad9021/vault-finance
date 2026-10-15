@@ -13,7 +13,10 @@ import {
   type BiometricStatus,
   type HostPlatform,
   type ProbeResult,
+  type TailscaleActionResult,
+  type TailscaleStatus,
 } from "../platform/index.js";
+import { describeProbeFailure, runChecks, type UiCheck } from "../lib/startupChecks.js";
 
 export const APP_VERSION = "0.1.3";
 
@@ -24,6 +27,18 @@ export type Screen =
   | { name: "setup" }
   | { name: "login" }
   | { name: "shell" };
+
+/**
+ * The startup screen (shown while screen is "boot"). running → checks are
+ * filling in; review → finished with warnings, about to open; blocked → an
+ * error stops here until the user acts.
+ */
+export interface StartupState {
+  phase: "running" | "review" | "blocked" | "done";
+  checks: UiCheck[];
+  /** The server answered, so "Continue anyway" can make sense. */
+  canContinue: boolean;
+}
 
 /** Desktop self-update, shared by the header button and the Settings card. */
 export type AppUpdateState =
@@ -59,6 +74,20 @@ interface AppState {
   /** Users enrolled for biometric sign-in on this device, for the current server. */
   biometricUserIds: string[];
   appUpdate: AppUpdateState;
+  startup: StartupState;
+  /** Whether the OS keychain answered at boot (feeds the "This computer" check). */
+  keychainOk: boolean;
+  /** Last known Tailscale state on this computer; null where unsupported. */
+  tailscale: TailscaleStatus | null;
+
+  /** Run the startup checks for the saved server, then open the app (or stop on an error). */
+  runStartup(): Promise<void>;
+  /** Leave the startup screen and continue to setup / sign-in / the app. */
+  continueFromStartup(): Promise<void>;
+  refreshTailscale(): Promise<TailscaleStatus | null>;
+  /** Turn Tailscale on; opens the sign-in page in the browser when it needs one. */
+  turnOnTailscale(): Promise<TailscaleActionResult | null>;
+  turnOffTailscale(): Promise<TailscaleActionResult | null>;
 
   /** Probe an address; route to trust confirmation or straight on. */
   connectTo(address: string): Promise<void>;
@@ -131,6 +160,77 @@ export const useApp = create<AppState>((set, get) => ({
   biometric: null,
   biometricUserIds: [],
   appUpdate: { phase: "idle" },
+  startup: { phase: "running", checks: [], canContinue: false },
+  keychainOk: true,
+  tailscale: null,
+
+  async runStartup() {
+    const { platform, client, serverAddress, keychainOk } = get();
+    if (!serverAddress) {
+      set({ screen: { name: "connect" } });
+      return;
+    }
+    set({ screen: { name: "boot" }, startup: { phase: "running", checks: [], canContinue: false } });
+    const outcome = await runChecks(
+      {
+        platform,
+        client,
+        address: serverAddress,
+        appVersion: APP_VERSION,
+        keychainOk,
+        hasSession: tokens !== null,
+      },
+      (checks) => set({ startup: { phase: "running", checks, canContinue: false } }),
+    );
+    if (outcome.tailscale) set({ tailscale: outcome.tailscale });
+    const canContinue = outcome.probe?.reachable === true;
+    if (outcome.blocked) {
+      set({ startup: { phase: "blocked", checks: outcome.checks, canContinue } });
+      return;
+    }
+    const warned = outcome.checks.some((c) => c.level === "warn");
+    set({ startup: { phase: warned ? "review" : "done", checks: outcome.checks, canContinue } });
+    // With warnings, the startup screen shows them briefly and continues itself.
+    if (!warned) await get().continueFromStartup();
+  },
+
+  async continueFromStartup() {
+    if (get().screen.name !== "boot") return;
+    set((st) => ({ startup: { ...st.startup, phase: "done" } }));
+    try {
+      await get().routeForServer();
+    } catch (err) {
+      console.error("routing to server failed", err);
+      set({ screen: { name: "connect", error: "Couldn't reach the saved server. Check the address below." } });
+    }
+  },
+
+  async refreshTailscale() {
+    const { platform } = get();
+    if (!platform.tailscaleStatus) return null;
+    const status = await platform.tailscaleStatus().catch(() => null);
+    set({ tailscale: status });
+    return status;
+  },
+
+  async turnOnTailscale() {
+    const { platform } = get();
+    if (!platform.tailscaleUp) return null;
+    const result = await platform.tailscaleUp();
+    set({ tailscale: result.status });
+    if (result.status.authUrl && platform.openExternal) {
+      await platform.openExternal(result.status.authUrl).catch(() => {});
+    }
+    return result;
+  },
+
+  async turnOffTailscale() {
+    const { platform } = get();
+    if (!platform.tailscaleDown) return null;
+    const result = await platform.tailscaleDown();
+    set({ tailscale: result.status });
+    return result;
+  },
 
   async connectTo(rawAddress) {
     const address = normalizeAddress(rawAddress);
@@ -141,12 +241,9 @@ export const useApp = create<AppState>((set, get) => ({
     const { platform } = get();
     const probe = await platform.probeServer(address);
     if (!probe.reachable) {
-      set({
-        screen: {
-          name: "connect",
-          error: "No Vault Finance server answered at that address. Check the address and that the server is running.",
-        },
-      });
+      const why = describeProbeFailure(probe, address);
+      set({ screen: { name: "connect", error: `${why.detail} ${why.hint}` } });
+      void get().refreshTailscale();
       return;
     }
 
@@ -468,6 +565,12 @@ function rebuildClient(
     getTokens: () => tokens,
     setTokens: persistTokens,
     onAuthLost: () => {
+      // During the startup checks, let them finish: routing afterwards sees
+      // no session and lands on sign-in anyway.
+      if (get().screen.name === "boot") {
+        set({ user: null, lockedUser: null });
+        return;
+      }
       set({ user: null, lockedUser: null, screen: { name: "login" } });
     },
     onConnectionChange: (connection) => set({ connection }),
@@ -537,6 +640,7 @@ export async function bootstrap(): Promise<void> {
   } catch (err) {
     console.error("keychain unavailable; continuing without a saved session", err);
     tokens = null;
+    useApp.setState({ keychainOk: false });
   }
 
   let address: string | null = null;
@@ -547,15 +651,16 @@ export async function bootstrap(): Promise<void> {
   }
   if (!address) {
     useApp.setState({ screen: { name: "connect" } });
+    void useApp.getState().refreshTailscale();
     return;
   }
 
   useApp.setState({ serverAddress: address });
   rebuildClient((p) => useApp.setState(p), useApp.getState, address);
   try {
-    await useApp.getState().routeForServer();
+    await useApp.getState().runStartup();
   } catch (err) {
-    console.error("routing to server failed", err);
-    useApp.setState({ screen: { name: "connect", error: "Couldn't reach the saved server. Check the address below." } });
+    console.error("startup checks failed", err);
+    await useApp.getState().continueFromStartup();
   }
 }

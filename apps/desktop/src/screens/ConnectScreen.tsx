@@ -2,6 +2,7 @@ import { Button, Field, Spinner } from "@vault/ui";
 import { useState } from "react";
 import { useApp } from "../state/store.js";
 import { AuthHeading, AuthLayout } from "./AuthLayout.js";
+import { TailscaleControl } from "./TailscaleControl.js";
 
 export function ConnectScreen({ error }: { error?: string }) {
   const connectTo = useApp((s) => s.connectTo);
@@ -59,6 +60,7 @@ export function ConnectScreen({ error }: { error?: string }) {
           </Button>
         )}
       </form>
+      <TailscaleControl compact />
       <div className="text-muted" style={{ fontSize: "var(--text-xs)", marginTop: 16, lineHeight: 1.6 }}>
         Don't have a server yet? The self-hosting guide walks through starting
         one with Docker Compose in a few minutes.

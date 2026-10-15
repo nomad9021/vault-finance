@@ -1,4 +1,4 @@
-import type { AiProvider } from "@vault/shared";
+import { LOCAL_PROVIDERS, type AiProvider } from "@vault/shared";
 
 /** Resolved AI configuration (from ai_settings) passed to a provider client. */
 export interface AiConfig {
@@ -44,6 +44,17 @@ export function isConfigured(config: {
   apiKey: string | null;
   baseUrl: string;
 }): boolean {
-  if (config.provider === "ollama") return config.baseUrl.trim().length > 0;
+  if (LOCAL_PROVIDERS.has(config.provider)) return /^https?:\/\//.test(config.baseUrl.trim());
   return (config.apiKey?.trim().length ?? 0) > 0;
+}
+
+/** A provider answered, but with an HTTP error — carries the status for diagnosis. */
+export class ProviderHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ProviderHttpError";
+  }
 }

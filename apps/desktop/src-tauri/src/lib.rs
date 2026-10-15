@@ -1,5 +1,6 @@
 mod biometric;
 mod commands;
+mod tailscale;
 mod tls;
 
 use tauri::menu::{Menu, MenuItem};
@@ -34,6 +35,10 @@ pub fn run() {
             commands::set_secret,
             commands::delete_secret,
             commands::open_admin_window,
+            commands::tailscale_status,
+            commands::tailscale_up,
+            commands::tailscale_down,
+            commands::open_external,
             biometric::biometric_status,
             biometric::biometric_authenticate,
             biometric::biometric_cancel,

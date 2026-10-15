@@ -1,7 +1,14 @@
 import { createBrowserPlatform } from "./browser.js";
 import type { HostPlatform } from "./types.js";
 
-export type { BiometricResult, BiometricStatus, HostPlatform, ProbeResult } from "./types.js";
+export type {
+  BiometricResult,
+  BiometricStatus,
+  HostPlatform,
+  ProbeResult,
+  TailscaleActionResult,
+  TailscaleStatus,
+} from "./types.js";
 
 let instance: HostPlatform | null = null;
 

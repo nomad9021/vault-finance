@@ -202,16 +202,16 @@ beforeAll(async () => {
     method: "POST",
     url: "/api/v1/setup/complete",
     payload: {
-      ownerEmail: "maya@chen.home",
+      ownerEmail: "riley@rivera.home",
       ownerPassword: "correct-horse-battery",
-      ownerDisplayName: "Maya Chen",
+      ownerDisplayName: "Riley Rivera",
     },
   });
   const login = await app.inject({
     method: "POST",
     url: "/api/v1/auth/login",
     payload: {
-      email: "maya@chen.home",
+      email: "riley@rivera.home",
       password: "correct-horse-battery",
       deviceName: "Test",
       platform: "linux",

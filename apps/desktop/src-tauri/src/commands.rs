@@ -47,6 +47,29 @@ pub struct ProbeResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fingerprint: Option<String>,
     pub trusted_by_os: bool,
+    /// Why the server couldn't be reached — the full error chain (DNS, refused,
+    /// timeout, TLS…), which the startup screen turns into advice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// HTTP status when something answered but not like a Vault server.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<u16>,
+}
+
+/// reqwest's Display hides the useful part ("connection refused", "dns
+/// error") in the source chain; flatten it.
+fn error_chain(err: &dyn std::error::Error) -> String {
+    let mut out = err.to_string();
+    let mut source = err.source();
+    while let Some(e) = source {
+        let s = e.to_string();
+        if !out.contains(&s) {
+            out.push_str(": ");
+            out.push_str(&s);
+        }
+        source = e.source();
+    }
+    out
 }
 
 /// All API traffic. With a pin: only that certificate is accepted. Without:
@@ -134,15 +157,23 @@ pub async fn probe_server(address: String) -> Result<ProbeResult, CommandError> 
         seen_cert: Arc::clone(&seen_cert),
     }))?;
 
-    let reachable = match capturing.get(&version_url).send().await {
-        Ok(res) => res.status().is_success(),
-        Err(_) => false,
+    let (reachable, error, http_status) = match capturing
+        .get(&version_url)
+        .timeout(std::time::Duration::from_secs(8))
+        .send()
+        .await
+    {
+        Ok(res) if res.status().is_success() => (true, None, None),
+        Ok(res) => (false, None, Some(res.status().as_u16())),
+        Err(e) => (false, Some(error_chain(&e)), None),
     };
     if !reachable {
         return Ok(ProbeResult {
             reachable: false,
             fingerprint: None,
             trusted_by_os: false,
+            error,
+            http_status,
         });
     }
 
@@ -161,7 +192,60 @@ pub async fn probe_server(address: String) -> Result<ProbeResult, CommandError> 
         reachable: true,
         fingerprint,
         trusted_by_os,
+        error: None,
+        http_status: None,
     })
+}
+
+// ── Tailscale (src/tailscale.rs). The CLI calls block, so they run on the
+//    blocking pool rather than stalling the async runtime. ──
+
+#[tauri::command]
+pub async fn tailscale_status() -> Result<crate::tailscale::TailscaleStatus, CommandError> {
+    tauri::async_runtime::spawn_blocking(crate::tailscale::status)
+        .await
+        .map_err(|e| CommandError::Other(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn tailscale_up() -> Result<crate::tailscale::TailscaleActionResult, CommandError> {
+    tauri::async_runtime::spawn_blocking(crate::tailscale::up)
+        .await
+        .map_err(|e| CommandError::Other(e.to_string()))
+}
+
+#[tauri::command]
+pub async fn tailscale_down() -> Result<crate::tailscale::TailscaleActionResult, CommandError> {
+    tauri::async_runtime::spawn_blocking(crate::tailscale::down)
+        .await
+        .map_err(|e| CommandError::Other(e.to_string()))
+}
+
+/// Open a link in the user's browser (Tailscale sign-in, download pages).
+/// https only, so the webview can't use this to launch local files or apps.
+#[tauri::command]
+pub fn open_external(url: String) -> Result<(), CommandError> {
+    let ok = url.starts_with("https://")
+        && !url.chars().any(|c| c.is_whitespace() || c == '"' || c == '\'' || c == '`');
+    if !ok {
+        return Err(CommandError::Other("only https links can be opened".into()));
+    }
+    #[cfg(target_os = "macos")]
+    let result = std::process::Command::new("open").arg(&url).spawn();
+    #[cfg(windows)]
+    let result = {
+        use std::os::windows::process::CommandExt;
+        // rundll32 hands the URL to the default browser without a shell parse.
+        std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", &url])
+            .creation_flags(0x0800_0000)
+            .spawn()
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let result = std::process::Command::new("xdg-open").arg(&url).spawn();
+    result
+        .map(|_| ())
+        .map_err(|e| CommandError::Other(format!("couldn't open the browser: {e}")))
 }
 
 /// Reveal the pre-declared, normally-hidden admin console window. Its webview

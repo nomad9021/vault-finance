@@ -19,6 +19,30 @@ export interface ProbeResult {
   fingerprint?: string;
   /** True when normal TLS validation succeeded — TOFU pinning is skipped (ADR-0004). */
   trustedByOs?: boolean;
+  /** Transport error chain when unreachable (DNS, refused, timeout, TLS…). */
+  error?: string;
+  /** HTTP status when something answered, but not like a Vault server. */
+  httpStatus?: number;
+}
+
+/** This computer's Tailscale, as reported by its CLI (src-tauri/src/tailscale.rs). */
+export interface TailscaleStatus {
+  installed: boolean;
+  /** Running | Stopped | NeedsLogin | NeedsMachineAuth | Starting | NoState | DaemonDown | NotInstalled | Unknown */
+  state: string;
+  ips: string[];
+  dnsName?: string;
+  /** Sign-in link while state is NeedsLogin. */
+  authUrl?: string;
+  /** Problems tailscaled reports about itself. */
+  health: string[];
+  error?: string;
+}
+
+export interface TailscaleActionResult {
+  ok: boolean;
+  status: TailscaleStatus;
+  message?: string;
 }
 
 /**
@@ -80,4 +104,14 @@ export interface HostPlatform {
    * entry point entirely.
    */
   openAdminConsole?(): Promise<void>;
+
+  /**
+   * Tailscale control (Tauri only). Undefined in browser dev, so the UI hides
+   * every Tailscale control there.
+   */
+  tailscaleStatus?(): Promise<TailscaleStatus>;
+  tailscaleUp?(): Promise<TailscaleActionResult>;
+  tailscaleDown?(): Promise<TailscaleActionResult>;
+  /** Open an https link in the default browser (Tauri only). */
+  openExternal?(url: string): Promise<void>;
 }

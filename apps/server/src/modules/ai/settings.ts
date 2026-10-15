@@ -1,7 +1,7 @@
-import type { AiStatus, QualityModelMap } from "@vault/shared";
+import { LOCAL_PROVIDERS, type AiStatus, type QualityModelMap } from "@vault/shared";
 import type { FastifyInstance } from "fastify";
 import type { AppConfig } from "../../config.js";
-import { getProvider, isConfigured, type AiConfig } from "./providers/index.js";
+import { describeAiError, getProvider, isConfigured, type AiConfig } from "./providers/index.js";
 import { decryptSecret } from "../../secret-crypto.js";
 
 export interface ResolvedAiSettings {
@@ -58,12 +58,14 @@ export async function statusFor(
   const configured = isConfigured(aiConfig);
   let availableModels: string[] = [];
   let reachable = false;
+  let problem: { error: string; hint: string } | undefined;
   if (enabled && configured) {
     try {
       availableModels = await getProvider(aiConfig.provider).listModels(aiConfig);
       reachable = true;
-    } catch {
+    } catch (err) {
       reachable = false;
+      problem = describeAiError(err, aiConfig);
     }
   }
   return {
@@ -72,10 +74,11 @@ export async function statusFor(
     reachable,
     provider: aiConfig.provider,
     model: aiConfig.model,
-    baseUrl: aiConfig.provider === "ollama" ? aiConfig.baseUrl : "",
+    baseUrl: LOCAL_PROVIDERS.has(aiConfig.provider) ? aiConfig.baseUrl : "",
     hasApiKey: (aiConfig.apiKey?.length ?? 0) > 0,
     availableModels,
     qualityModels: settings.qualityModels,
     showModelNames: settings.showModelNames,
+    ...(problem ?? {}),
   };
 }
