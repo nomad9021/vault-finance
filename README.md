@@ -25,6 +25,24 @@ You install the **server once** on an always-on machine, then install the
 
 ### 1. Install the server
 
+#### One-line install (Linux)
+
+On a fresh Linux server (Ubuntu/Debian, Fedora, or Arch), as root or a user
+with sudo:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nomad9021/vault-finance/main/installers/server/bootstrap.sh | bash
+```
+
+It installs git and Docker if they're missing, clones the repo to
+`~/vault-finance`, and starts the guided installer below. Re-running it
+updates the checkout and re-runs the installer with your saved answers. Set
+`VF_DIR` to clone somewhere else, or pass installer flags with
+`| bash -s -- --yes`. Prefer to read it first? It's
+[`installers/server/bootstrap.sh`](installers/server/bootstrap.sh).
+
+The rest of this section is the same thing, step by step.
+
 #### Prerequisites
 
 - A **64-bit machine that stays on** — a home server, NAS, mini-PC, or spare
