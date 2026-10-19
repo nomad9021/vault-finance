@@ -47,9 +47,19 @@ export interface ConnectionRef {
   accessToken: string | null;
 }
 
+/** One incremental pull: what's new, what changed, what disappeared since `cursor`. */
+export interface TransactionSync {
+  added: BankTransactionData[];
+  modified: BankTransactionData[];
+  /** Provider ids of transactions to delete (e.g. a pending charge that posted). */
+  removedIds: string[];
+  /** Pass back next time; null = provider doesn't do incremental sync. */
+  cursor: string | null;
+}
+
 export interface BankProviderClient {
-  /** Establish a new sandbox/mock connection (no interactive Link widget). */
+  /** Mock only: make a local demo connection with no sign-in. */
   connect(): Promise<ConnectResult>;
   listAccounts(conn: ConnectionRef): Promise<BankAccountData[]>;
-  syncTransactions(conn: ConnectionRef): Promise<BankTransactionData[]>;
+  syncTransactions(conn: ConnectionRef, cursor: string | null): Promise<TransactionSync>;
 }

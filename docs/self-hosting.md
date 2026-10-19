@@ -342,3 +342,54 @@ run one isolated instance per family with `docker/multi/familyctl.sh`. See
 Moved to [releasing.md](releasing.md): cutting a release, the updater
 signing key, and the one-time macOS notarization setup (browser + CI only —
 no Mac required, per the project's constraints).
+
+## 14. Linking real banks with Plaid (optional)
+
+Bank linking is off by default, and the app works fully without it. With Plaid, your bank sign-in and
+transactions go through Plaid's cloud under **your own** Plaid account. That's
+the one part of Vault Finance that leaves your hardware, so the Settings screen
+warns before you turn it on.
+
+### 1. Get Plaid keys
+
+1. Sign up at [dashboard.plaid.com](https://dashboard.plaid.com/signup). Turn on
+   two-factor authentication for that account.
+2. **Developers → Keys**: copy the **client ID**, plus the **Sandbox** secret and
+   (once approved) the **Production** secret. Keep them in your password manager.
+3. Production with real banks needs Plaid's approval: in the Dashboard, request
+   Production access for **Transactions** and fill in the use-case description.
+   Large banks that sign in through their own website (Chase, Bank of America,
+   Wells Fargo, Capital One…) also need Plaid's **OAuth institution
+   registration**, which Plaid finishes after Production approval. Check the
+   Dashboard's **Billing** page for current pricing before you link banks.
+
+### 2. Try it with Sandbox first
+
+**Settings → Bank linking**: provider **Plaid**, environment **Sandbox**, your
+client ID and Sandbox secret, tick **Enable bank linking**, **Save**, then
+**Link a bank**. Plaid's sign-in page opens in your browser: pick any test bank
+and sign in with `user_good` / `pass_good`. The app shows the new accounts when
+you finish.
+
+### 3. Switch to your real banks
+
+Change the environment to **Production**, paste the Production secret, **Save**,
+and **Link a bank** again. Sign in to your bank on Plaid's page. Repeat for each
+bank.
+
+- Up to 2 years of history is requested. Older transactions can take a few
+  minutes to arrive; they come in with the next sync (automatic every hour, or
+  press **Sync**).
+- Pending charges show as "Pending" and are replaced by the posted transaction.
+- **Needs you to sign in to the bank again**: the bank's password changed or
+  its consent expired. Press **Reconnect** and sign in on Plaid's page.
+- **Disconnect** also tells Plaid to drop its access to that bank. Accounts and
+  history already imported stay in Vault.
+
+Vault finds out you've finished by asking Plaid, so this works on a server
+that's only reachable on your LAN or Tailscale. No public address or webhook is
+needed.
+
+Keys and tokens are encrypted at rest. If your Plaid secret might have leaked,
+rotate it in the Plaid Dashboard and paste the new one in Settings
+([operations §8](operations.md#8-rotating-secrets)).
