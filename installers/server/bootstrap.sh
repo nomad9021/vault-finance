@@ -105,7 +105,9 @@ main() {
   local installer="$dir/installers/server/install-server.sh"
   [ -f "$installer" ] || die "Installer not found at $installer (ref '$ref' may predate it)."
   hdr "Starting the server installer"
-  local q_args; q_args="$(printf '%q ' "$@")"
+  # With no args, printf '%q ' still emits '' — an empty flag the installer rejects.
+  local q_args=""
+  [ "$#" -gt 0 ] && q_args="$(printf '%q ' "$@")"
   if [ "$use_sg" = "1" ]; then
     exec sg docker -c "bash $(printf '%q' "$installer") $q_args" <"${tty_in:-/dev/null}"
   fi
