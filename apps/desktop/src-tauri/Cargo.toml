@@ -34,7 +34,7 @@ thiserror = "2"
 
 # Biometric sign-in (src/biometric.rs): one native API per OS.
 [target."cfg(windows)".dependencies]
-windows = { version = "0.61", features = [
+windows = { version = "0.62", features = [
   "Foundation",
   "Security_Credentials_UI",
   "Win32_Foundation",
