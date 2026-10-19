@@ -245,7 +245,7 @@ compose file entirely — the app doesn't need it unless you point Ollama at it.
 ### A shared AI server with priorities (ai-server)
 
 If several projects share one AI machine (Vault, a voice assistant, overnight
-jobs), run the [ai-server](https://github.com/nomad9021/ai-server) stack on it.
+jobs), put a priority gateway in front of its AI services (an OpenAI-compatible proxy that queues requests and reads the `X-Priority` header).
 Its gateway puts every request in one queue and runs the most urgent first.
 Vault tags its requests: chat is `interactive`, reports `normal`,
 auto-categorizing `background`.
