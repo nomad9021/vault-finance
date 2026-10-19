@@ -74,6 +74,12 @@ services:
       OLLAMA_HOST: ${OLLAMA_HOST:-ollama}
       OLLAMA_PORT: ${OLLAMA_PORT:-11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      # Optional: let the assistant start a separate AI server's Proxmox VM.
+      AI_HOST_PROXMOX_URL: ${AI_HOST_PROXMOX_URL:-}
+      AI_HOST_PROXMOX_NODE: ${AI_HOST_PROXMOX_NODE:-}
+      AI_HOST_VMID: ${AI_HOST_VMID:-}
+      AI_HOST_PROXMOX_TOKEN: ${AI_HOST_PROXMOX_TOKEN:-}
+      AI_HOST_PROXMOX_FINGERPRINT: ${AI_HOST_PROXMOX_FINGERPRINT:-}
       # Auto-sync linked banks every N minutes (0 disables). Keeps transactions
       # updating on their own for a self-hosted server that isn't internet-
       # reachable; Plaid webhooks give instant updates when it is.

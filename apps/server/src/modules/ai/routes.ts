@@ -1,6 +1,5 @@
 import { PassThrough } from "node:stream";
 import {
-  AI_FEATURE_QUALITY,
   AiTestRequest,
   ChatRequest,
   CLOUD_PROVIDERS,
@@ -15,7 +14,8 @@ import { aiConversations, aiMessages, aiSettings } from "../../db/schema.js";
 import { AppError, notFound } from "../../errors.js";
 import type { AppConfig } from "../../config.js";
 import { buildFinancialContext } from "./context.js";
-import { configForQuality } from "./model-manager.js";
+import { createAiHost, ProxmoxError } from "./host.js";
+import { configForFeature } from "./model-manager.js";
 import { describeAiError, getProvider, isConfigured, type ChatMessage } from "./providers/index.js";
 import { resolveSettings, statusFor } from "./settings.js";
 import { decryptSecret, encryptSecret } from "../../secret-crypto.js";
@@ -30,6 +30,23 @@ export default async function aiRoutes(
 
   app.get("/ai/status", async () => {
     return statusFor(await resolveSettings(app, opts.config));
+  });
+
+  // Separate AI server: on / asleep / starting, shown at the top of the
+  // assistant. Any signed-in member may start it (it only switches a VM on);
+  // stopping is left to the AI server's own idle timer.
+  const aiHost = createAiHost(opts.config);
+  app.get("/ai/host", async () => aiHost.status(await resolveSettings(app, opts.config)));
+  app.post("/ai/host/start", async (request) => {
+    try {
+      await aiHost.start();
+    } catch (err) {
+      if (!(err instanceof ProxmoxError)) throw err;
+      request.log.warn({ err }, "couldn't start the AI server");
+      throw new AppError("AI_HOST_START_FAILED", 502, err.message);
+    }
+    request.log.info({ userId: request.auth!.userId }, "AI server start requested");
+    return aiHost.status(await resolveSettings(app, opts.config));
   });
 
   app.post(
@@ -209,7 +226,7 @@ export default async function aiRoutes(
         "The AI assistant isn't fully configured yet. Add your provider details in Settings.",
       );
     }
-    const aiConfig = configForQuality(settings, AI_FEATURE_QUALITY.chat);
+    const aiConfig = configForFeature(settings, "chat");
     const provider = getProvider(aiConfig.provider);
     const isCloud = CLOUD_PROVIDERS.has(aiConfig.provider);
 
@@ -223,7 +240,9 @@ export default async function aiRoutes(
         503,
         isCloud
           ? `Couldn't reach ${aiConfig.provider} — check your API key and model in Settings. Every other feature keeps working.`
-          : `Can't reach Ollama at ${aiConfig.baseUrl}. Every other feature keeps working — check Settings → AI.`,
+          : aiHost.canStart
+            ? "The AI server is asleep or still starting. Press Start above the chat, then try again in a minute."
+            : `Can't reach the AI server at ${aiConfig.baseUrl}. Every other feature keeps working — check Settings → AI.`,
       );
     }
 

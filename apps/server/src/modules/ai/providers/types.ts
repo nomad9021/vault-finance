@@ -1,4 +1,4 @@
-import { LOCAL_PROVIDERS, type AiProvider } from "@vault/shared";
+import { LOCAL_PROVIDERS, type AiPriority, type AiProvider } from "@vault/shared";
 
 /** Resolved AI configuration (from ai_settings) passed to a provider client. */
 export interface AiConfig {
@@ -6,6 +6,8 @@ export interface AiConfig {
   model: string;
   apiKey: string | null;
   baseUrl: string;
+  /** Queue priority for a local AI server's gateway, sent as X-Priority. */
+  priority?: AiPriority;
 }
 
 export interface ChatMessage {

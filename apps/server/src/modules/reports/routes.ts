@@ -9,8 +9,7 @@ import {
   transactions,
 } from "../../db/schema.js";
 import type { AppConfig } from "../../config.js";
-import { AI_FEATURE_QUALITY } from "@vault/shared";
-import { configForQuality } from "../ai/model-manager.js";
+import { configForFeature } from "../ai/model-manager.js";
 import { getProvider, isConfigured } from "../ai/providers/index.js";
 import { resolveSettings } from "../ai/settings.js";
 
@@ -128,7 +127,7 @@ export default async function reportRoutes(
     try {
       summary = (
         await getProvider(settings.provider).generateText(
-          configForQuality(settings, AI_FEATURE_QUALITY.reports),
+          configForFeature(settings, "reports"),
           prompt,
         )
       ).trim();

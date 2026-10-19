@@ -65,6 +65,7 @@ import {
   AiModelsResponse,
   AiTestResponse,
   type AiTestRequest,
+  AiHostStatus,
   AiStatus,
   ChatStreamLine,
   ConversationDetail,
@@ -610,6 +611,14 @@ export class ApiClient {
   }
   aiModels() {
     return this.request(AiModelsResponse, "GET", "/ai/models");
+  }
+  /** Is the separate AI server on, asleep, or starting? */
+  aiHost() {
+    return this.request(AiHostStatus, "GET", "/ai/host");
+  }
+  /** Switch the AI server's VM on (needs a Proxmox token on the Vault server). */
+  startAiHost() {
+    return this.request(AiHostStatus, "POST", "/ai/host/start");
   }
   updateAiSettings(body: UpdateAiSettingsRequest) {
     return this.request(AiStatus, "POST", "/ai/settings", body);

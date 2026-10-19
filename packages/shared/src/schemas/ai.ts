@@ -66,6 +66,21 @@ export const AI_FEATURE_QUALITY = {
   chat: "high",
 } as const satisfies Record<string, AiQuality>;
 
+/**
+ * Queue priority each AI feature asks for, sent as `X-Priority` to a local AI
+ * server. The AI server's gateway runs the most urgent work first, so chat
+ * isn't stuck behind a batch of auto-categorizing. Servers without a gateway
+ * ignore the header.
+ */
+export const AiPriority = z.enum(["realtime", "interactive", "normal", "background", "batch"]);
+export type AiPriority = z.infer<typeof AiPriority>;
+export const AI_FEATURE_PRIORITY = {
+  categorize: "background",
+  reports: "normal",
+  chat: "interactive",
+} as const satisfies Record<keyof typeof AI_FEATURE_QUALITY, AiPriority>;
+export type AiFeature = keyof typeof AI_FEATURE_QUALITY;
+
 /** quality-tier → model-name map (free-form so future tiers just work). */
 export const QualityModelMap = z.record(z.string(), z.string());
 export type QualityModelMap = z.infer<typeof QualityModelMap>;
@@ -127,6 +142,25 @@ export function plainHttpToPublicHost(baseUrl: string | undefined): boolean {
 }
 const PUBLIC_HTTP_MESSAGE =
   "An AI server on the internet must use https:// — plain http:// would send your financial data unencrypted. http:// is fine on your own network or Tailscale.";
+
+/**
+ * Power state of a separate AI server, shown at the top of the assistant.
+ * `applies` is false when there's no separate machine to report on (AI off,
+ * or a cloud provider). `canStart` is true when the Vault server holds a
+ * Proxmox token that can switch the AI server's VM on.
+ */
+export const AiHostPower = z.enum(["on", "off", "starting", "unknown"]);
+export type AiHostPower = z.infer<typeof AiHostPower>;
+export const AiHostStatus = z.object({
+  applies: z.boolean(),
+  power: AiHostPower,
+  canStart: z.boolean(),
+  /** Requests the AI server's gateway is running and has waiting (absent without a gateway). */
+  queue: z.object({ active: z.number().int(), waiting: z.number().int() }).optional(),
+  /** Plain-language detail when something's wrong (e.g. Proxmox rejected the token). */
+  message: z.string().optional(),
+});
+export type AiHostStatus = z.infer<typeof AiHostStatus>;
 
 /**
  * Try a provider configuration without saving it — powers "Test connection"

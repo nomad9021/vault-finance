@@ -3,8 +3,7 @@ import type { FastifyInstance } from "fastify";
 import type { AppConfig } from "../../config.js";
 import type { Db } from "../../plugins/db.js";
 import { categories, categorizationRules, transactions } from "../../db/schema.js";
-import { AI_FEATURE_QUALITY } from "@vault/shared";
-import { configForQuality } from "../ai/model-manager.js";
+import { configForFeature } from "../ai/model-manager.js";
 import { getProvider, isConfigured } from "../ai/providers/index.js";
 import { resolveSettings } from "../ai/settings.js";
 import {
@@ -129,7 +128,7 @@ export async function aiCategorizeUncategorized(
   }
 
   const provider = getProvider(settings.provider);
-  const aiConfig = configForQuality(settings, AI_FEATURE_QUALITY.categorize);
+  const aiConfig = configForFeature(settings, "categorize");
   const nameList = cats.map((c) => c.name).join(", ");
   let categorized = 0;
   // Cap the number of model calls per pass so a huge backlog can't stall a sync.
