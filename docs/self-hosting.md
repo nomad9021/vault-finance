@@ -242,6 +242,57 @@ server talks to the AI machine directly; the desktop app never does.
 Using a separate AI machine? You can drop the `ollama` service from the
 compose file entirely — the app doesn't need it unless you point Ollama at it.
 
+### A shared AI server with priorities (ai-server)
+
+If several projects share one AI machine (Vault, a voice assistant, overnight
+jobs), put a priority gateway in front of its AI services (an OpenAI-compatible proxy that queues requests and reads the `X-Priority` header).
+Its gateway puts every request in one queue and runs the most urgent first.
+Vault tags its requests: chat is `interactive`, reports `normal`,
+auto-categorizing `background`.
+
+In **Settings → AI**: *Other local AI (OpenAI-compatible)*, address
+`http://<ai-server>:8080/v1`, and as the **Access token** the
+`GATEWAY_KEY_VAULT_FINANCE` value from the AI server's `~/ai-server/.env`
+(`grep GATEWAY_KEY_VAULT_FINANCE ~/ai-server/.env`). The assistant then also shows how many requests the AI
+server is running and how many are waiting.
+
+### Waking a separate AI server
+
+An AI server in a Proxmox VM can power itself off when idle (ai-server does this
+by default after 30 minutes). Give Vault a Proxmox API token, and the assistant
+shows **AI server is asleep** with a **Start** button. Any household member can
+press it; it only switches the VM on.
+
+1. **On a Proxmox node**, in a shell (replace `105` with the AI server's VM ID):
+
+   ```bash
+   pveum role add VaultAIPower -privs "VM.Audit,VM.PowerMgmt"
+   pveum user add vault@pve
+   pveum user token add vault@pve ai-power --privsep 1
+   pveum acl modify /vms/105 -token 'vault@pve!ai-power' -role VaultAIPower
+   openssl x509 -in /etc/pve/local/pve-ssl.pem -noout -fingerprint -sha256
+   ```
+
+   The token command prints a secret **once**. Copy it. The token can only see,
+   start and stop that one VM. If you installed your own certificate for the
+   Proxmox web UI, fingerprint `/etc/pve/local/pveproxy-ssl.pem` instead.
+
+2. **In the Vault server's `docker/.env`:**
+
+   ```bash
+   AI_HOST_PROXMOX_URL=https://192.168.1.102:8006   # any node of the cluster
+   AI_HOST_PROXMOX_NODE=pve3                        # the node the VM runs on
+   AI_HOST_VMID=105
+   AI_HOST_PROXMOX_TOKEN=vault@pve!ai-power=<the secret>
+   AI_HOST_PROXMOX_FINGERPRINT=AB:CD:…               # from the openssl command
+   ```
+
+   Then `docker compose up -d` in the `docker/` folder.
+
+Vault checks Proxmox's certificate against the fingerprint before it sends the
+token. If they don't match (for example after Proxmox renews its certificate),
+the assistant says so instead of starting anything; update the fingerprint.
+
 ## 8. Hardware sizing for Ollama
 
 *(numbers to be measured and filled in during M4 — placeholder guidance:)*

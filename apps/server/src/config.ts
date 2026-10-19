@@ -42,6 +42,18 @@ const EnvSchema = z.object({
   OLLAMA_PORT: z.coerce.number().int().default(11434),
   OLLAMA_MODEL: z.string().default("llama3.1:8b"),
 
+  // ── Separate AI server on Proxmox (optional) ──
+  // With all four set, the assistant shows whether the AI server's VM is on
+  // and can start it. The token needs only VM.Audit + VM.PowerMgmt on that VM
+  // (see docs/self-hosting.md). FINGERPRINT pins Proxmox's self-signed
+  // certificate (SHA-256, as Proxmox shows it); leave it blank only if the
+  // Proxmox API has a publicly trusted certificate.
+  AI_HOST_PROXMOX_URL: z.string().url().optional().or(z.literal("")),
+  AI_HOST_PROXMOX_NODE: z.string().optional(),
+  AI_HOST_VMID: z.coerce.number().int().positive().optional().or(z.literal("").transform(() => undefined)),
+  AI_HOST_PROXMOX_TOKEN: z.string().optional(),
+  AI_HOST_PROXMOX_FINGERPRINT: z.string().optional(),
+
   // Optional override of the Plaid API base URL (e.g. a mock server in tests).
   // When unset, the plaid provider derives it from the connection's env.
   PLAID_BASE_URL: z.string().optional(),
@@ -92,6 +104,15 @@ export interface AppConfig {
   corsOrigins: string[];
   accessTokenTtlSeconds: number;
   ollama: { host: string; port: number; model: string };
+  /** Proxmox VM running the separate AI server; undefined ⇒ power control off. */
+  aiHost?: {
+    proxmoxUrl: string;
+    node: string;
+    vmid: number;
+    /** "user@realm!tokenid=secret" */
+    token: string;
+    fingerprint?: string;
+  };
   plaidBaseUrl?: string;
   bankAutoSyncMinutes: number;
   logLevel: string;
@@ -154,6 +175,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       port: parsed.OLLAMA_PORT,
       model: parsed.OLLAMA_MODEL,
     },
+    ...(parsed.AI_HOST_PROXMOX_URL && parsed.AI_HOST_PROXMOX_NODE && parsed.AI_HOST_VMID && parsed.AI_HOST_PROXMOX_TOKEN
+      ? {
+          aiHost: {
+            proxmoxUrl: parsed.AI_HOST_PROXMOX_URL.replace(/\/+$/, ""),
+            node: parsed.AI_HOST_PROXMOX_NODE,
+            vmid: parsed.AI_HOST_VMID,
+            token: parsed.AI_HOST_PROXMOX_TOKEN,
+            ...(parsed.AI_HOST_PROXMOX_FINGERPRINT ? { fingerprint: parsed.AI_HOST_PROXMOX_FINGERPRINT } : {}),
+          },
+        }
+      : {}),
     ...(parsed.PLAID_BASE_URL ? { plaidBaseUrl: parsed.PLAID_BASE_URL } : {}),
     bankAutoSyncMinutes: parsed.BANK_AUTO_SYNC_MINUTES,
     logLevel: parsed.LOG_LEVEL,

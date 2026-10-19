@@ -1,12 +1,14 @@
 import {
   AI_PROVIDER_LABELS,
   ApiRequestError,
+  type AiHostStatus,
   type AiStatus,
 } from "@vault/shared";
 import { Banner, Button, Spinner, Tag } from "@vault/ui";
 import { useEffect, useRef, useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
+import { AiHostBar } from "./AiHostBar.js";
 import type { PageId } from "./AppShell.js";
 
 interface ChatMessage {
@@ -32,6 +34,15 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
     () => client.aiStatus(),
     [client],
   );
+
+  // The AI server's power state. When it comes on, re-check AI status so the
+  // input unlocks without leaving the page.
+  const [hostPower, setHostPower] = useState<AiHostStatus["power"] | null>(null);
+  const onHostChange = (host: AiHostStatus) => {
+    const power = host.applies ? host.power : null;
+    if (power === "on" && hostPower !== null && hostPower !== "on") void reloadStatus();
+    setHostPower(power);
+  };
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -99,7 +110,9 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
   return (
     <div style={{ display: "flex", height: "100%", minHeight: 0, animation: "fadeUp .3s both", margin: -24 }}>
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: 0 }}>
-        {aiOffline && (
+        <AiHostBar onChange={onHostChange} />
+        {/* The bar above already says the AI server is asleep or starting. */}
+        {aiOffline && !(status.enabled && status.configured && hostPower && hostPower !== "on") && (
           <Banner
             tone="warning"
             action={

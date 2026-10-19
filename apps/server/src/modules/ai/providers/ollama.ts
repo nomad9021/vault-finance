@@ -10,6 +10,7 @@ import { ProviderHttpError, type AiConfig, type ChatMessage, type ProviderClient
 function headers(config: AiConfig, json = false): Record<string, string> {
   const h: Record<string, string> = json ? { "content-type": "application/json" } : {};
   if (config.apiKey?.trim()) h["authorization"] = `Bearer ${config.apiKey.trim()}`;
+  if (config.priority) h["x-priority"] = config.priority;
   return h;
 }
 

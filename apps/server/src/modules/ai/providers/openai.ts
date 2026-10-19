@@ -32,6 +32,8 @@ function localClient(config: AiConfig): OpenAI {
     apiKey: config.apiKey?.trim() || "not-needed",
     baseURL: base,
     maxRetries: 0,
+    // Read by the AI server's gateway (ai-server repo); other servers ignore it.
+    ...(config.priority ? { defaultHeaders: { "X-Priority": config.priority } } : {}),
   });
 }
 
