@@ -251,8 +251,9 @@ Vault tags its requests: chat is `interactive`, reports `normal`,
 auto-categorizing `background`.
 
 In **Settings → AI**: *Other local AI (OpenAI-compatible)*, address
-`http://<ai-server>:8080/v1`, and the `vault-finance` key the installer printed
-as the **Access token**. The assistant then also shows how many requests the AI
+`http://<ai-server>:8080/v1`, and as the **Access token** the
+`GATEWAY_KEY_VAULT_FINANCE` value from the AI server's `~/ai-server/.env`
+(`grep GATEWAY_KEY_VAULT_FINANCE ~/ai-server/.env`). The assistant then also shows how many requests the AI
 server is running and how many are waiting.
 
 ### Waking a separate AI server

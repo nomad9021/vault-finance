@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import EmbeddedPostgres from "embedded-postgres";
 import type { FastifyInstance } from "fastify";
-import selfsigned from "selfsigned";
+import { generate } from "selfsigned";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildTestApp as buildApp } from "./helpers/test-app.js";
 import { loadConfig } from "../src/config.js";
@@ -38,7 +38,11 @@ describe("AI server power and priority", () => {
     a.inject({ method: "POST", url, headers: owner, ...(payload === undefined ? {} : { payload }) });
 
   beforeAll(async () => {
-    const pems = selfsigned.generate([{ name: "commonName", value: "pve3" }], { days: 1, keySize: 2048 });
+    const pems = await generate([{ name: "commonName", value: "pve3" }], {
+      notAfterDate: new Date(Date.now() + 86_400_000),
+      keySize: 2048,
+      algorithm: "sha256",
+    });
     proxmox = createHttpsServer({ key: pems.private, cert: pems.cert }, (req, res) => {
       res.setHeader("content-type", "application/json");
       if (req.headers.authorization !== `PVEAPIToken=${TOKEN}`) {
