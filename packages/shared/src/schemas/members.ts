@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { NewPassword } from "./password.js";
 import { UserRole } from "./common.js";
 
 export const Member = z.object({
@@ -35,7 +36,7 @@ export type InviteMemberRequest = z.infer<typeof InviteMemberRequest>;
 export const CreateMemberRequest = z.object({
   displayName: z.string().min(1).max(100),
   email: z.string().email(),
-  tempPassword: z.string().min(10).max(200),
+  tempPassword: NewPassword,
 });
 export type CreateMemberRequest = z.infer<typeof CreateMemberRequest>;
 
@@ -48,6 +49,6 @@ export const InvitePreviewResponse = z.object({
 export type InvitePreviewResponse = z.infer<typeof InvitePreviewResponse>;
 
 export const AcceptInviteRequest = z.object({
-  password: z.string().min(10).max(200),
+  password: NewPassword,
 });
 export type AcceptInviteRequest = z.infer<typeof AcceptInviteRequest>;

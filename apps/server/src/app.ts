@@ -15,6 +15,7 @@ import aiRoutes from "./modules/ai/routes.js";
 import authRoutes from "./modules/auth/routes.js";
 import bankRoutes from "./modules/bank/routes.js";
 import { startBankAutoSync } from "./modules/bank/scheduler.js";
+import { startRetention } from "./lib/retention.js";
 import billRoutes from "./modules/bills/routes.js";
 import budgetRoutes from "./modules/budgets/routes.js";
 import cashflowRoutes from "./modules/cashflow/routes.js";
@@ -64,13 +65,52 @@ export interface BuildAppOptions {
   https?: { cert: string; key: string };
 }
 
+/** Single-use tokens travel in some URLs (member invites); keep them out of logs. */
+export function redactUrl(url: string): string {
+  return url.replace(/(\/members\/invite\/)[^/?#]+/, "$1[redacted]");
+}
+
 export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> {
   // Before anything can touch a secret column. Deliberately eager: a missing
   // key must fail at boot, never silently at the moment a secret is written.
   configureSecretCrypto(opts.config.dataDir, opts.config.dataKey);
 
   const app = Fastify({
-    logger: { level: opts.config.logLevel },
+    logger: {
+      level: opts.config.logLevel,
+      // Logs must never hold credentials. Belt and braces: the request
+      // serializer below never logs headers or bodies, and these paths are
+      // censored wherever an error or object carrying them gets logged.
+      redact: {
+        paths: [
+          "req.headers.authorization",
+          "req.headers.cookie",
+          "*.password",
+          "*.newPassword",
+          "*.currentPassword",
+          "*.ownerPassword",
+          "*.tempPassword",
+          "*.totpCode",
+          "*.apiKey",
+          "*.plaidSecret",
+          "*.accessToken",
+          "*.refreshToken",
+          "*.deviceSecret",
+          "*.secret",
+          "*.token",
+          "*.key",
+          "err.config.headers",
+        ],
+        censor: "[redacted]",
+      },
+      serializers: {
+        req: (req) => ({
+          method: req.method,
+          url: redactUrl(req.url),
+          remoteAddress: req.ip,
+        }),
+      },
+    },
     trustProxy: false,
     ...(opts.https ? { https: opts.https } : {}),
   });
@@ -134,6 +174,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
   await app.register(mobileRoutes);
 
   startBankAutoSync(app, opts.config);
+  startRetention(app);
   startUpdateChecks(app, opts.config);
 
   return app;

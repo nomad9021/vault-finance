@@ -144,7 +144,8 @@ export default async function bankRoutes(
         .values({
           provider: settings.provider,
           externalItemId: result.externalItemId,
-          accessToken: result.accessToken,
+          // Bank access tokens can read every linked account — encrypted like the other secrets.
+          accessToken: encryptSecret(result.accessToken),
           institutionName: result.institutionName,
         })
         .returning();

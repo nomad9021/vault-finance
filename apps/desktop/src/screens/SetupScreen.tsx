@@ -1,4 +1,4 @@
-import { ApiRequestError } from "@vault/shared";
+import { ApiRequestError, passwordProblem } from "@vault/shared";
 import { Button, Field, Spinner } from "@vault/ui";
 import { useState } from "react";
 import { useApp } from "../state/store.js";
@@ -25,7 +25,7 @@ export function SetupScreen() {
   const valid =
     displayName.trim() &&
     /.+@.+\..+/.test(email) &&
-    password.length >= 10 &&
+    passwordProblem(password) === null &&
     password === confirm;
 
   const finish = async () => {
@@ -90,7 +90,7 @@ export function SetupScreen() {
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          hint="At least 10 characters. A few random words work well."
+          hint={(password && passwordProblem(password)) || "At least 12 characters. A few random words work well."}
           error={fieldErrors["ownerPassword"]}
         />
         <Field

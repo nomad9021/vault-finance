@@ -98,14 +98,47 @@ export const AiStatus = z.object({
 export type AiStatus = z.infer<typeof AiStatus>;
 
 /**
+ * True for addresses that never leave your own networks: loopback, private
+ * LAN ranges, Tailscale (100.64.0.0/10, *.ts.net — WireGuard-encrypted),
+ * and single-label or .local/.lan/.internal names (Docker services, mDNS).
+ */
+export function isPrivateHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (!h.includes(".") && !h.includes(":")) return true; // "ollama", "localhost"
+  if (/\.(local|lan|home|internal|home\.arpa|ts\.net)$/.test(h)) return true;
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254);
+  }
+  return h === "::1" || /^f[cd][0-9a-f]{2}:/.test(h) || /^fe[89ab][0-9a-f]:/.test(h);
+}
+
+/** Financial context must never cross the internet unencrypted. */
+export function plainHttpToPublicHost(baseUrl: string | undefined): boolean {
+  const raw = baseUrl?.trim() ?? "";
+  if (!/^http:\/\//i.test(raw)) return false;
+  // No URL global in this package's lib; the host is between "://" and the next "/", "?" or "#".
+  const authority = raw.slice(7).split(/[/?#]/)[0] ?? "";
+  const host = authority.replace(/^[^@]*@/, "");
+  const hostname = host.startsWith("[") ? host.slice(0, host.indexOf("]") + 1) : host.replace(/:\d*$/, "");
+  return hostname !== "" && !isPrivateHost(hostname);
+}
+const PUBLIC_HTTP_MESSAGE =
+  "An AI server on the internet must use https:// — plain http:// would send your financial data unencrypted. http:// is fine on your own network or Tailscale.";
+
+/**
  * Try a provider configuration without saving it — powers "Test connection"
  * for a separate AI machine. Omit apiKey to reuse the stored key.
  */
-export const AiTestRequest = z.object({
-  provider: AiProvider,
-  baseUrl: z.string().max(300).optional(),
-  apiKey: z.string().max(400).optional(),
-});
+export const AiTestRequest = z
+  .object({
+    provider: AiProvider,
+    baseUrl: z.string().max(300).optional(),
+    apiKey: z.string().max(400).optional(),
+  })
+  .refine((v) => !plainHttpToPublicHost(v.baseUrl), { message: PUBLIC_HTTP_MESSAGE, path: ["baseUrl"] });
 export type AiTestRequest = z.infer<typeof AiTestRequest>;
 
 export const AiTestResponse = z.object({
@@ -145,7 +178,8 @@ export const UpdateAiSettingsRequest = z
   .refine((v) => !LOCAL_PROVIDERS.has(v.provider) || /^https?:\/\/\S+$/.test(v.baseUrl?.trim() ?? ""), {
     message: "A local AI server needs a base URL starting with http:// or https://, e.g. http://ollama:11434",
     path: ["baseUrl"],
-  });
+  })
+  .refine((v) => !plainHttpToPublicHost(v.baseUrl), { message: PUBLIC_HTTP_MESSAGE, path: ["baseUrl"] });
 export type UpdateAiSettingsRequest = z.infer<typeof UpdateAiSettingsRequest>;
 
 export const AiMessage = z.object({

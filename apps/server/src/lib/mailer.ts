@@ -47,6 +47,10 @@ class SmtpMailer implements Mailer {
       host: cfg.host,
       port: cfg.port,
       secure: cfg.secure,
+      // Never fall back to plaintext: on port 587 the server must offer
+      // STARTTLS, or nothing (including the SMTP password) is sent.
+      requireTLS: !cfg.secure,
+      tls: { minVersion: "TLSv1.2" },
       ...(cfg.user && cfg.pass ? { auth: { user: cfg.user, pass: cfg.pass } } : {}),
     });
   }

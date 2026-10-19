@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Server console for device approval (ADR-0009). Runs inside the server
+ * Server console for device approval (ADR-0009) and secret rotation. Runs inside the server
  * container, so having shell access to the server is the credential:
  *
  *   docker compose exec server vault pending
@@ -11,6 +11,7 @@ import postgres from "postgres";
 import * as schema from "./db/schema.js";
 import type { Db } from "./plugins/db.js";
 import * as devices from "./modules/devices/service.js";
+import { otherConnections, rotateDataKey, rotateJwtSecret, signOutEveryone } from "./rotate.js";
 
 const HELP = `Vault Finance server console — device approval
 
@@ -24,11 +25,19 @@ const HELP = `Vault Finance server console — device approval
   vault methods                    show which approval methods are allowed
   vault methods device=on|off console=on|off
                                    change them (at least one stays on)
+
+Rotating secrets (when one is, or may have been, exposed):
+  vault sign-out-everyone          end every sign-in and delete biometric keys
+  vault rotate-jwt-secret          new token-signing secret (restart the server after)
+  vault rotate-data-key            re-encrypt stored secrets under a new key
+                                   (stop the server first — see docs/operations.md)
 `;
 
 function when(iso: string | null): string {
   return iso ? iso.replace("T", " ").slice(0, 16) + " UTC" : "—";
 }
+
+const dataDir = () => process.env["VAULT_DATA_DIR"] ?? "/data";
 
 async function run(db: Db, args: string[]): Promise<number> {
   const [cmd, arg] = args;
@@ -92,6 +101,38 @@ async function run(db: Db, args: string[]): Promise<number> {
       const shown = args.length > 1 ? await devices.setMethods(db, next) : current;
       console.log(`Approve from a trusted device: ${shown.trustedDevice ? "on" : "off"}`);
       console.log(`Approve on the server console: ${shown.serverConsole ? "on" : "off"}`);
+      return 0;
+    }
+    case "sign-out-everyone": {
+      const n = await signOutEveryone(db);
+      console.log(`Ended ${n.sessions} sign-in(s) and deleted ${n.deviceKeys} biometric key(s). Everyone signs in again with their password.`);
+      return 0;
+    }
+    case "rotate-jwt-secret": {
+      if (process.env["VAULT_JWT_SECRET"]) {
+        console.error("VAULT_JWT_SECRET is set in the environment — change it there (openssl rand -base64 48), then restart the server.");
+        return 2;
+      }
+      rotateJwtSecret(dataDir());
+      console.log("New token-signing secret written. Restart the server now: docker compose restart server");
+      return 0;
+    }
+    case "rotate-data-key": {
+      const others = await otherConnections(db);
+      if (others > 0 && arg !== "--force") {
+        console.error(
+          `The server is still connected to the database (${others} connection(s)). Stop it first, so nothing is written with the old key:\n` +
+            "  docker compose stop server\n" +
+            "  docker compose run --rm --no-deps server vault rotate-data-key\n" +
+            "  docker compose start server",
+        );
+        return 2;
+      }
+      const r = await rotateDataKey(db, dataDir(), process.env["VAULT_DATA_KEY"]);
+      console.log(`Re-encrypted ${r.rotated} secret(s) under a new data key.`);
+      if (r.newKeyForEnv) {
+        console.log(`Set VAULT_DATA_KEY to this new value before starting the server:\n  ${r.newKeyForEnv}`);
+      }
       return 0;
     }
   }

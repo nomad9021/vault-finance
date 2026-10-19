@@ -3,7 +3,7 @@ import { loadConfig } from "./config.js";
 import { certFingerprint, resolveTls } from "./tls.js";
 
 const config = loadConfig();
-const tls = resolveTls(config);
+const tls = await resolveTls(config);
 
 const app = await buildApp({
   config,

@@ -147,32 +147,44 @@ Then sign in with just your password and re-enroll.
 
 ## 5. Backups
 
-Your important data is Postgres. Two options:
-
-**A. Logical dump (works while running — recommended for regular backups):**
-
-```bash
-docker compose -f docker/docker-compose.yml exec -T postgres \
-  pg_dump -U vault vault > vault-backup-$(date +%F).sql
-```
-
-Restore into a fresh DB with `psql -U vault -d vault < vault-backup-YYYY-MM-DD.sql`.
-
-**B. Cold copy (stop first, copy the whole data dir):**
+Use the backup script. Every backup is a single file, **encrypted with AES-256
+before it's written**: the database plus the server's data folder (TLS
+certificate, data key, token-signing secret).
 
 ```bash
-docker compose -f docker/docker-compose.yml down
-cp -a docker/data /path/to/backup/vault-data-$(date +%F)
-docker compose -f docker/docker-compose.yml up -d
+bash installers/server/backup-server.sh                  # one backup now
+bash installers/server/backup-server.sh --install-timer  # plus every day at 03:00
 ```
 
-Also back up **`docker/data/vault/`** (the TLS cert + JWT secret) if you want
-sign-ins and the client's pinned fingerprint to survive a full restore without
-re-pinning / re-login.
+- Backups go to `~/vault-backups` (`BACKUP_DIR`) and are **deleted after 30
+  days** (`BACKUP_KEEP_DAYS`).
+- The first run creates a random passphrase in
+  `/etc/vault-finance/backup-passphrase` and prints it. **Save it in your
+  password manager.** Without it the backups can't be opened, by you or anyone.
+- Copy backups somewhere off this machine (another disk, another server). They're
+  safe to store anywhere because they're encrypted.
 
-> **Encryption at rest:** for maximum security, put `docker/data` (or the whole
-> drive) on a LUKS-encrypted volume. That's an OS-level step done outside this
-> app.
+Never run a bare `pg_dump > file.sql` for backups: that writes your financial
+data to disk unencrypted.
+
+**Restore** (onto a fresh install, stack stopped except Postgres):
+
+```bash
+gpg -d vault-2026-10-19-0300.tar.gpg | tar -xf -     # asks for the passphrase
+cd docker && docker compose up -d postgres
+docker compose exec -T postgres psql -U vault -d vault < ../database.sql
+sudo tar -C data -xf ../server-data.tar               # TLS cert, keys, JWT secret
+docker compose up -d
+shred -u ../database.sql ../server-data.tar           # don't leave plaintext behind
+```
+
+> **Encryption at rest.** Secrets inside the database (2FA secrets, bank tokens,
+> API keys) are always encrypted with the data key. The rest of the live
+> database (transactions, balances) is protected by the disk it sits on, so run
+> the server on an **encrypted disk**: choose "Encrypt the new Ubuntu
+> installation" (LUKS) when installing Ubuntu, or keep the VM on encrypted
+> Proxmox storage. The backup script warns when the data folder is on an
+> unencrypted disk.
 
 ---
 
@@ -235,3 +247,33 @@ end of a build is only the auto-updater signing step; the app itself is built.
 
 See also [self-hosting.md](self-hosting.md) for first-time setup and hardware
 sizing.
+
+---
+
+## 8. Rotating secrets
+
+If a password, key or token is (or might have been) exposed, change it
+**immediately**. Work down whichever rows apply:
+
+| What was exposed | Do this |
+| --- | --- |
+| A member's password | Change it in **Settings → Account** (or the owner resets it). Then `vault sign-out-everyone`. |
+| A device or refresh token (lost laptop, stolen phone) | **Settings → Devices** → revoke it, or `vault sign-out-everyone`. |
+| The token-signing secret (`data/vault/jwt-secret`) | `vault rotate-jwt-secret`, then restart the server. |
+| The data key (`data/vault/data-key`) or a backup + its passphrase | Rotate the data key (below), then also rotate every secret it protected: re-enroll 2FA, new Plaid secret, new AI key. |
+| Plaid secret | Rotate it in the Plaid dashboard, paste the new one in **Settings → Bank**. |
+| AI provider key / gateway key | Revoke it at the provider (or in the AI server's `.env`), paste the new one in **Settings → AI**. |
+| SMTP password, Proxmox token, Postgres password | Change it at the source, update `docker/.env`, `docker compose up -d`. |
+
+Rotating the data key re-encrypts every stored secret. Stop the server first, so
+nothing is written with the old key while it runs:
+
+```bash
+cd docker
+docker compose stop server
+docker compose run --rm --no-deps server vault rotate-data-key
+docker compose start server
+```
+
+Then make a new backup. Backups made before the rotation still open with the
+old key inside them, so delete the ones that might have been exposed.

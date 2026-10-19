@@ -4,7 +4,8 @@ import path from "node:path";
 
 /**
  * Envelope encryption for the handful of columns that hold real secrets:
- * `users.totp_secret`, `bank_settings.plaid_secret`, `ai_settings.api_key`.
+ * `users.totp_secret`, `bank_settings.plaid_secret`, `bank_connections.access_token`,
+ * `ai_settings.api_key`.
  *
  * Why, given the docs already recommend a LUKS volume: a `pg_dump` backup —
  * the procedure in docs/operations.md §5 — copies those columns *off* the

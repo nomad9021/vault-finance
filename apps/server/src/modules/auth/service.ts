@@ -1,11 +1,12 @@
 import { randomBytes } from "node:crypto";
 import argon2 from "argon2";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Platform, User } from "@vault/shared";
 import { deviceKeys, deviceSessions, users } from "../../db/schema.js";
 import type { Db } from "../../plugins/db.js";
 import { AppError } from "../../errors.js";
 import {
+  accountLocked,
   invalidCredentials,
   notFound,
   refreshTokenReused,
@@ -89,23 +90,57 @@ export async function login(
   // response time doesn't reveal which emails are registered.
   const DUMMY_HASH =
     "$argon2id$v=19$m=65536,t=3,p=4$AAAAAAAAAAAAAAAAAAAAAA$Zm5vdF9hX3JlYWxfaGFzaF92YWx1ZQ";
+  if (user?.lockedUntil && user.lockedUntil > new Date()) throw accountLocked(user.lockedUntil);
   const ok = await argon2
     .verify(user?.passwordHash ?? DUMMY_HASH, input.password)
     .catch(() => false);
-  if (!user || !ok) throw invalidCredentials();
+  if (!user) throw invalidCredentials();
+  if (!ok) {
+    await recordFailedLogin(db, user);
+    throw invalidCredentials();
+  }
 
   // Two-factor gate: once enabled, a valid current code is required. Password
   // is verified first (above) so a missing/expired code never reveals whether
   // the password was right.
   if (user.totpEnabled) {
     if (!input.totpCode) throw totpRequired();
-    if (!verifyTotp(decryptSecret(user.totpSecret) ?? "", input.totpCode)) throw totpInvalid();
+    if (!verifyTotp(decryptSecret(user.totpSecret) ?? "", input.totpCode)) {
+      await recordFailedLogin(db, user);
+      throw totpInvalid();
+    }
+  }
+  if (user.failedLoginCount > 0 || user.lockedUntil) {
+    await db.update(users).set({ failedLoginCount: 0, lockedUntil: null }).where(eq(users.id, user.id));
   }
 
   // Device approval comes last, so a request only reaches approvers once the
   // password (and code) were right (ADR-0009).
   const trustedDeviceId = await gateDevice(db, user, input);
   return startSession(db, user, { ...input, trustedDeviceId });
+}
+
+/**
+ * Account lockout. The per-IP limits in the rate-limit plugin don't stop
+ * someone guessing one account's password from many addresses; this does.
+ * After LOCKOUT_THRESHOLD wrong passwords or 2FA codes the account refuses
+ * every sign-in for LOCKOUT_MINUTES, then the count starts over.
+ */
+export const LOCKOUT_THRESHOLD = 10;
+export const LOCKOUT_MINUTES = 15;
+
+async function recordFailedLogin(db: Db, user: typeof users.$inferSelect): Promise<void> {
+  const [row] = await db
+    .update(users)
+    .set({ failedLoginCount: sql`${users.failedLoginCount} + 1` })
+    .where(eq(users.id, user.id))
+    .returning({ count: users.failedLoginCount });
+  if ((row?.count ?? 0) >= LOCKOUT_THRESHOLD) {
+    await db
+      .update(users)
+      .set({ failedLoginCount: 0, lockedUntil: new Date(Date.now() + LOCKOUT_MINUTES * 60_000) })
+      .where(eq(users.id, user.id));
+  }
 }
 
 export async function startSession(
@@ -262,6 +297,9 @@ export async function disableTotp(db: Db, userId: string, password: string): Pro
     .where(eq(users.id, userId));
 }
 
+/** Days a device may go unused before its sign-in ends. */
+export const SESSION_IDLE_DAYS = 30;
+
 export interface RefreshResult {
   user: typeof users.$inferSelect;
   sessionId: string;
@@ -281,6 +319,12 @@ export async function refresh(
   });
   if (!session) throw invalidCredentials();
   if (session.revokedAt) throw sessionRevoked();
+  // A sign-in unused for SESSION_IDLE_DAYS ends: a refresh token copied off a
+  // device nobody uses any more stops working on its own.
+  if (session.lastUsedAt.getTime() < Date.now() - SESSION_IDLE_DAYS * 86_400_000) {
+    await db.update(deviceSessions).set({ revokedAt: new Date() }).where(eq(deviceSessions.id, session.id));
+    throw sessionRevoked();
+  }
 
   const matches = await argon2
     .verify(session.refreshTokenHash, parts.secret)

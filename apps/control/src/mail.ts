@@ -37,6 +37,9 @@ export async function sendWelcome(input: WelcomeInput): Promise<boolean> {
       host: smtp.host,
       port: smtp.port,
       secure: smtp.secure,
+      // Never fall back to plaintext (see apps/server/src/lib/mailer.ts).
+      requireTLS: !smtp.secure,
+      tls: { minVersion: "TLSv1.2" },
       ...(smtp.user && smtp.pass ? { auth: { user: smtp.user, pass: smtp.pass } } : {}),
     });
     await transport.sendMail({

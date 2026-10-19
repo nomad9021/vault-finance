@@ -388,7 +388,7 @@ function MembersSection() {
           />
           {mode === "create" && (
             <Field
-              label="Temporary password (min 10 characters)"
+              label="Temporary password (min 12 characters)"
               type="text"
               value={form.tempPassword}
               onChange={(e) => setForm({ ...form, tempPassword: e.target.value })}

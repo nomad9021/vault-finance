@@ -36,6 +36,10 @@ export const users = pgTable("users", {
   totpSecret: text("totp_secret"),
   /** True once the user has confirmed a code — login then requires TOTP. */
   totpEnabled: boolean("totp_enabled").notNull().default(false),
+  /** Wrong passwords / 2FA codes since the last success or lockout. */
+  failedLoginCount: integer("failed_login_count").notNull().default(0),
+  /** Sign-in refused until this time (account lockout). */
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
