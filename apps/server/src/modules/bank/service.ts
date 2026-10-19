@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { AppConfig } from "../../config.js";
 import type { Db } from "../../plugins/db.js";
@@ -8,6 +8,7 @@ import { decryptSecret } from "../../secret-crypto.js";
 import {
   getBankProvider,
   isConfigured,
+  PlaidError,
   type BankProviderConfig,
   type ConnectionRef,
 } from "./providers/index.js";
@@ -49,6 +50,22 @@ export interface SyncOutcome {
  * runs through the local categorizer.
  */
 export async function syncConnection(
+  db: Db,
+  cfg: BankProviderConfig,
+  connection: BankConnectionRow,
+  ownerUserId: string,
+): Promise<SyncOutcome> {
+  try {
+    return await pullConnection(db, cfg, connection, ownerUserId);
+  } catch (err) {
+    if (err instanceof PlaidError && err.needsReconnect) {
+      await db.update(bankConnections).set({ needsReconnect: true }).where(eq(bankConnections.id, connection.id));
+    }
+    throw err;
+  }
+}
+
+async function pullConnection(
   db: Db,
   cfg: BankProviderConfig,
   connection: BankConnectionRow,
@@ -103,10 +120,10 @@ export async function syncConnection(
   }
 
   const categorizer = await loadCategorizer(db);
-  const provTxns = await provider.syncTransactions(conn);
+  const delta = await provider.syncTransactions(conn, connection.syncCursor);
   let imported = 0;
   let skippedDuplicates = 0;
-  for (const t of provTxns) {
+  for (const t of delta.added) {
     const accountId = acctIdByExternal.get(t.externalAccountId);
     if (!accountId) continue;
     const inserted = await db
@@ -130,9 +147,28 @@ export async function syncConnection(
     else skippedDuplicates++;
   }
 
+  // Changed at the bank (a pending charge's final amount, a corrected date).
+  // Category and notes are the owner's and stay as they are.
+  const ownAccounts = [...acctIdByExternal.values()];
+  for (const t of delta.modified) {
+    const accountId = acctIdByExternal.get(t.externalAccountId);
+    if (!accountId) continue;
+    await db
+      .update(transactions)
+      .set({ postedAt: t.postedAt, amountCents: t.amountCents, merchantName: t.merchantName, description: t.description ?? null })
+      .where(and(eq(transactions.accountId, accountId), eq(transactions.externalId, t.externalId)));
+  }
+  // Gone at the bank (usually a pending charge replaced by its posted one).
+  // Only imported rows carry an externalId, so hand-entered ones can't match.
+  if (delta.removedIds.length > 0 && ownAccounts.length > 0) {
+    await db
+      .delete(transactions)
+      .where(and(inArray(transactions.accountId, ownAccounts), inArray(transactions.externalId, delta.removedIds)));
+  }
+
   await db
     .update(bankConnections)
-    .set({ lastSyncedAt: new Date() })
+    .set({ lastSyncedAt: new Date(), syncCursor: delta.cursor, needsReconnect: false })
     .where(eq(bankConnections.id, connection.id));
 
   return { accountsLinked: provAccounts.length, imported, skippedDuplicates };

@@ -83,6 +83,9 @@ import {
   BankStatus,
   BankSyncResponse,
   type UpdateBankSettingsRequest,
+  BankLinkStartResponse,
+  BankLinkStatus,
+  type BankLinkStartRequest,
 } from "../schemas/bank.js";
 import {
   Holding,
@@ -556,6 +559,13 @@ export class ApiClient {
   }
   bankConnect() {
     return this.request(BankSyncResponse, "POST", "/bank/connect");
+  }
+  /** Start Plaid Hosted Link; open the returned URL in the browser. */
+  bankLinkStart(body: BankLinkStartRequest = {}) {
+    return this.request(BankLinkStartResponse, "POST", "/bank/link", body);
+  }
+  bankLinkStatus(sessionId: string) {
+    return this.request(BankLinkStatus, "GET", `/bank/link/${encodeURIComponent(sessionId)}`);
   }
   bankSync(connectionId: string) {
     return this.request(BankSyncResponse, "POST", `/bank/connections/${connectionId}/sync`);

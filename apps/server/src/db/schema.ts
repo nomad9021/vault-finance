@@ -206,6 +206,10 @@ export const bankConnections = pgTable("bank_connections", {
   institutionName: text("institution_name").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+  /** Where Plaid's /transactions/sync left off; null = from the beginning. */
+  syncCursor: text("sync_cursor"),
+  /** The bank needs the owner to sign in again (Plaid ITEM_LOGIN_REQUIRED etc.). */
+  needsReconnect: boolean("needs_reconnect").notNull().default(false),
 });
 
 // Singleton settings row (mirrors ai_settings): whether bank linking is on,
@@ -216,7 +220,7 @@ export const bankSettings = pgTable("bank_settings", {
   provider: text("provider", { enum: ["mock", "plaid"] }).notNull().default("mock"),
   plaidClientId: text("plaid_client_id"),
   plaidSecret: text("plaid_secret"),
-  plaidEnv: text("plaid_env", { enum: ["sandbox", "development", "production"] })
+  plaidEnv: text("plaid_env", { enum: ["sandbox", "production"] })
     .notNull()
     .default("sandbox"),
 });

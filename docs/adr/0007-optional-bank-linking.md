@@ -26,10 +26,21 @@ prototype it without forcing anyone through a Plaid signup.
    - **`mock`**: fabricates accounts and transactions entirely on the server.
      Nothing leaves the machine. This is what makes the prototype demoable and
      testable with zero external dependencies, and it is the default provider.
-   - **`plaid`**: real Plaid over raw REST, using the **Sandbox** flow
-     (`/sandbox/public_token/create` skips the interactive Link widget). The
-     owner supplies their own Plaid credentials; the secret is stored on the
-     server and never returned (`hasPlaidCredentials` boolean only).
+   - **`plaid`**: real Plaid over raw REST. The owner supplies their own Plaid
+     credentials; the secret is stored on the server, encrypted, and never
+     returned (`hasPlaidCredentials` boolean only).
+
+     *Update, 2026-10:* the prototype's Sandbox shortcut
+     (`/sandbox/public_token/create`) is replaced by **Plaid Hosted Link**, so
+     real banks work. The server creates a link token with `hosted_link`, the
+     desktop opens `hosted_link_url` in the browser, and the server polls
+     `/link/token/get` for `results.item_add_results[].public_token`. Polling,
+     not the `SESSION_FINISHED` webhook, because a self-hosted server is
+     usually not reachable from Plaid. Sync uses `/transactions/sync` with a
+     stored cursor (added / modified / removed). Plaid errors that need the
+     owner (`ITEM_LOGIN_REQUIRED`…) flag the connection for **Reconnect**,
+     which is Hosted Link in update mode. Plaid's Development environment was
+     retired on 2024-06-20, so only Sandbox and Production remain.
 3. **Honest privacy.** With `mock`, nothing leaves the server. With `plaid`,
    the bank login and transactions flow through Plaid's cloud under the owner's
    keys — the UI shows an explicit warning before Plaid can be selected, and the

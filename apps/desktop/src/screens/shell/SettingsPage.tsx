@@ -19,6 +19,8 @@ import {
   type TrustedDevice,
   type MemberListResponse,
   type UpdateStatusResponse,
+  ApiRequestError,
+  type PlaidEnv,
 } from "@vault/shared";
 import { THEMES, THEME_LABELS } from "@vault/design-tokens";
 import { Button, Card, Dialog, Field, Segmented, Select, Spinner, Tag } from "@vault/ui";
@@ -1473,8 +1475,12 @@ function BankSection() {
   const user = useApp((s) => s.user);
   const { data: status, reload } = useData<BankStatus>(() => client.bankStatus(), [client]);
 
+  const platform = useApp((s) => s.platform);
   const [enabled, setEnabled] = useState(false);
   const [provider, setProvider] = useState<BankProvider>("mock");
+  const [plaidEnv, setPlaidEnv] = useState<PlaidEnv>("sandbox");
+  // An open Plaid sign-in: the app polls until the person finishes in the browser.
+  const [linking, setLinking] = useState<{ sessionId: string; url: string; reconnect: boolean } | null>(null);
   const [plaidClientId, setPlaidClientId] = useState("");
   const [plaidSecret, setPlaidSecret] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -1486,6 +1492,7 @@ function BankSection() {
     if (status && !dirty) {
       setEnabled(status.enabled);
       setProvider(status.provider);
+      setPlaidEnv(status.plaidEnv);
       setPlaidClientId("");
       setPlaidSecret("");
     }
@@ -1504,6 +1511,7 @@ function BankSection() {
       await client.updateBankSettings({
         enabled,
         provider,
+        ...(provider === "plaid" ? { plaidEnv } : {}),
         ...(plaidClientId.trim() ? { plaidClientId: plaidClientId.trim() } : {}),
         ...(plaidSecret.trim() ? { plaidSecret: plaidSecret.trim() } : {}),
       });
@@ -1517,6 +1525,67 @@ function BankSection() {
       setBusy(false);
     }
   };
+
+  const openInBrowser = (url: string) => {
+    if (platform.openExternal) void platform.openExternal(url);
+    else window.open(url, "_blank", "noopener");
+  };
+
+  /** Plaid: open its sign-in page in the browser, then wait for the result. */
+  const linkBank = async (connectionId?: string) => {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const r = await client.bankLinkStart(connectionId ? { connectionId } : {});
+      setLinking({ sessionId: r.sessionId, url: r.url, reconnect: Boolean(connectionId) });
+      openInBrowser(r.url);
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : "Couldn't start Plaid. Check your Plaid keys and environment.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!linking) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      try {
+        const r = await client.bankLinkStatus(linking.sessionId);
+        if (stopped) return;
+        if (r.status === "waiting") {
+          timer = setTimeout(poll, 3_000);
+          return;
+        }
+        setLinking(null);
+        if (r.status === "connected" || r.status === "reconnected") {
+          const parts = r.results.map(
+            (x) => `${x.institutionName}: ${x.accountsLinked} account${x.accountsLinked === 1 ? "" : "s"}, ${x.imported} transactions`,
+          );
+          setMessage(
+            (r.status === "reconnected" ? "Reconnected. " : "Connected. ") +
+              parts.join("; ") +
+              (r.message ? ` (${r.message})` : "") +
+              ". Older history can take a few minutes to arrive; it comes in with the next sync.",
+          );
+          await reload();
+        } else if (r.status === "exited") {
+          setError(r.message ?? "Plaid was closed before a bank was connected.");
+        } else {
+          setError(r.message ?? "The sign-in session ended. Press Link a bank to try again.");
+        }
+      } catch {
+        if (!stopped) timer = setTimeout(poll, 5_000);
+      }
+    };
+    timer = setTimeout(poll, 3_000);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [linking, client, reload]);
 
   const connect = async () => {
     setBusy(true);
@@ -1543,8 +1612,9 @@ function BankSection() {
       const r = await client.bankSync(id);
       setMessage(`Synced: ${r.imported} new, ${r.skippedDuplicates} already imported.`);
       await reload();
-    } catch {
-      setError("Sync failed.");
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : "Sync failed.");
+      await reload();
     } finally {
       setBusy(false);
     }
@@ -1616,6 +1686,27 @@ function BankSection() {
           )}
 
           {isPlaid && (
+            <div style={{ marginTop: 12, maxWidth: 360 }}>
+              <Select
+                label="Plaid environment"
+                value={plaidEnv}
+                onChange={(e) => {
+                  setPlaidEnv(e.target.value as PlaidEnv);
+                  touch();
+                }}
+              >
+                <option value="sandbox">Sandbox: Plaid's test banks</option>
+                <option value="production">Production: your real banks</option>
+              </Select>
+              <p className="card-meta" style={{ marginTop: 6 }}>
+                {plaidEnv === "sandbox"
+                  ? "Use your Sandbox keys. At the bank sign-in, use user_good / pass_good."
+                  : "Use your Production keys. Plaid must have approved your account for Production."}
+              </p>
+            </div>
+          )}
+
+          {isPlaid && (
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
               <div style={{ flex: 1, minWidth: 180 }}>
                 <Field
@@ -1668,12 +1759,47 @@ function BankSection() {
             <Button variant="primary" onClick={() => void save()} disabled={busy || !dirty}>
               Save
             </Button>
-            {status?.enabled && status?.configured && (
-              <Button variant="secondary" onClick={() => void connect()} disabled={busy}>
-                {provider === "mock" ? "Connect a sandbox bank" : "Connect a bank"}
-              </Button>
+            {status?.enabled && status?.configured && !dirty && (
+              status.provider === "plaid" ? (
+                <Button variant="secondary" onClick={() => void linkBank()} disabled={busy || linking !== null}>
+                  Link a bank
+                </Button>
+              ) : (
+                <Button variant="secondary" onClick={() => void connect()} disabled={busy}>
+                  Connect a sandbox bank
+                </Button>
+              )
             )}
           </div>
+
+          {linking && (
+            <div
+              role="status"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                flexWrap: "wrap",
+                marginTop: 12,
+                padding: "10px 12px",
+                borderRadius: "var(--radius-md)",
+                border: "1px solid var(--color-divider)",
+                fontSize: "var(--text-sm)",
+              }}
+            >
+              <Spinner label="Waiting for Plaid" />
+              <span style={{ flex: 1, minWidth: 200 }}>
+                {linking.reconnect ? "Sign in to your bank again" : "Finish connecting your bank"} in the browser window
+                that opened. This updates on its own when you're done.
+              </span>
+              <Button variant="ghost" onClick={() => openInBrowser(linking.url)}>
+                Open again
+              </Button>
+              <Button variant="ghost" onClick={() => setLinking(null)}>
+                Cancel
+              </Button>
+            </div>
+          )}
 
           {message && (
             <div role="status" style={{ fontSize: "var(--text-sm)", color: "var(--content-secondary)", marginTop: 8 }}>
@@ -1701,6 +1827,11 @@ function BankSection() {
                 >
                   <div>
                     <div style={{ fontWeight: 600, fontSize: "var(--text-sm)" }}>{c.institutionName}</div>
+                    {c.needsReconnect && (
+                      <div className="warn" style={{ fontSize: "var(--text-xs)", fontWeight: 600 }}>
+                        Needs you to sign in to the bank again
+                      </div>
+                    )}
                     <div style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>
                       {c.accountCount} account{c.accountCount === 1 ? "" : "s"} ·{" "}
                       {c.lastSyncedAt
@@ -1709,9 +1840,15 @@ function BankSection() {
                     </div>
                   </div>
                   <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-                    <Button variant="secondary" onClick={() => void sync(c.id)} disabled={busy}>
-                      Sync
-                    </Button>
+                    {c.needsReconnect ? (
+                      <Button variant="primary" onClick={() => void linkBank(c.id)} disabled={busy || linking !== null}>
+                        Reconnect
+                      </Button>
+                    ) : (
+                      <Button variant="secondary" onClick={() => void sync(c.id)} disabled={busy}>
+                        Sync
+                      </Button>
+                    )}
                     <Button variant="ghost" onClick={() => void disconnect(c.id)} disabled={busy}>
                       Disconnect
                     </Button>

@@ -5,6 +5,7 @@ import type {
   BankTransactionData,
   ConnectResult,
   ConnectionRef,
+  TransactionSync,
 } from "./types.js";
 
 /**
@@ -70,7 +71,7 @@ export class MockBankProvider implements BankProviderClient {
     ];
   }
 
-  async syncTransactions(conn: ConnectionRef): Promise<BankTransactionData[]> {
+  async syncTransactions(conn: ConnectionRef): Promise<TransactionSync> {
     const base = conn.externalItemId;
     const out: BankTransactionData[] = [];
     // Eight weekly cycles of the merchant set, most-recent first.
@@ -88,6 +89,6 @@ export class MockBankProvider implements BankProviderClient {
         });
       }
     }
-    return out;
+    return { added: out, modified: [], removedIds: [], cursor: null };
   }
 }
