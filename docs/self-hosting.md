@@ -262,30 +262,17 @@ correctly but reason clumsily about them.
 
 ## 9. Backups
 
-All state lives in named Docker volumes:
-
-| Volume | Contents |
-|---|---|
-| `pgdata` | every account, transaction, budget — the database |
-| `vaultdata` | TLS cert, JWT secret, uploaded receipts/attachments |
-| `ollamadata` | downloaded AI models (re-pullable, skip if space matters) |
-| `redisdata` | cache only — safe to lose |
-
-Simple offline backup:
+Back up with the encrypted backup script. Each backup is one AES-256-encrypted
+file holding the database and the server's data folder, kept 30 days:
 
 ```bash
-docker compose stop server
-docker run --rm -v vault-finance_pgdata:/v -v "$PWD":/backup alpine \
-  tar czf /backup/pgdata-$(date +%F).tar.gz -C /v .
-docker run --rm -v vault-finance_vaultdata:/v -v "$PWD":/backup alpine \
-  tar czf /backup/vaultdata-$(date +%F).tar.gz -C /v .
-docker compose start server
+bash installers/server/backup-server.sh                  # one backup now
+bash installers/server/backup-server.sh --install-timer  # plus daily at 03:00
 ```
 
-For a live backup of just the database:
-`docker compose exec postgres pg_dump -U vault vault | gzip > vault-$(date +%F).sql.gz`
-
-Backups never leave your machine unless you move them.
+Save the passphrase it prints in your password manager, and copy backups off
+the machine. Restoring, and why not to use a plain `pg_dump`, are covered in
+[operations §5](operations.md#5-backups).
 
 ## 10. Updating
 
