@@ -35,6 +35,7 @@ function makeWindow(max: number, windowMs: number) {
 // path after the /api/v1 prefix is stripped.
 const SENSITIVE = [
   "/auth/login",
+  "/auth/login/device-key",
   "/auth/refresh",
   "/auth/2fa/enable",
   "/auth/2fa/disable",

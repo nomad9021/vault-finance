@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { NewPassword } from "./password.js";
 import { UserRole } from "./common.js";
 
 export const User = z.object({
@@ -16,7 +17,7 @@ export const UpdateMeRequest = z
     displayName: z.string().min(1).max(100),
     avatarColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
     currentPassword: z.string().min(1),
-    newPassword: z.string().min(10).max(200),
+    newPassword: NewPassword,
   })
   .partial()
   .refine((v) => !v.newPassword || v.currentPassword, {

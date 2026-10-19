@@ -46,6 +46,15 @@ export const notFound = (what = "Resource") =>
 export const rateLimited = () =>
   new AppError("RATE_LIMITED", 429, "Too many attempts. Try again shortly.");
 
+export const accountLocked = (until: Date) => {
+  const minutes = Math.max(1, Math.ceil((until.getTime() - Date.now()) / 60_000));
+  return new AppError(
+    "RATE_LIMITED",
+    429,
+    `Too many failed sign-in attempts. This account is locked for ${minutes} more minute${minutes === 1 ? "" : "s"}.`,
+  );
+};
+
 export const totpRequired = () =>
   new AppError("TOTP_REQUIRED", 401, "This account has two-factor authentication. Enter your code.");
 

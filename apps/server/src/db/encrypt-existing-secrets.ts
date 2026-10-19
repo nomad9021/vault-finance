@@ -2,7 +2,7 @@ import { eq, isNotNull } from "drizzle-orm";
 import type { FastifyBaseLogger } from "fastify";
 import { encryptSecret, isEncrypted } from "../secret-crypto.js";
 import type { Db } from "../plugins/db.js";
-import { aiSettings, bankSettings, users } from "./schema.js";
+import { aiSettings, bankConnections, bankSettings, users } from "./schema.js";
 
 /**
  * One-time upgrade of secret columns written before column encryption existed.
@@ -10,7 +10,7 @@ import { aiSettings, bankSettings, users } from "./schema.js";
  * This can't be a SQL migration — the key lives in the data dir, not the
  * database — so it runs at boot, after migrations. It is idempotent: rows
  * already carrying the `v1.` prefix are skipped, so a normal restart does
- * nothing and costs one indexed scan of three tiny tables.
+ * nothing and costs one indexed scan of four tiny tables.
  */
 export async function encryptExistingSecrets(db: Db, log: FastifyBaseLogger): Promise<void> {
   let migrated = 0;
@@ -34,6 +34,19 @@ export async function encryptExistingSecrets(db: Db, log: FastifyBaseLogger): Pr
       .update(bankSettings)
       .set({ plaidSecret: encryptSecret(bank.plaidSecret) })
       .where(eq(bankSettings.id, true));
+    migrated++;
+  }
+
+  const connections = await db
+    .select({ id: bankConnections.id, accessToken: bankConnections.accessToken })
+    .from(bankConnections)
+    .where(isNotNull(bankConnections.accessToken));
+  for (const row of connections) {
+    if (!row.accessToken || isEncrypted(row.accessToken)) continue;
+    await db
+      .update(bankConnections)
+      .set({ accessToken: encryptSecret(row.accessToken) })
+      .where(eq(bankConnections.id, row.id));
     migrated++;
   }
 

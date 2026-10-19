@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import Fastify from "fastify";
-import selfsigned from "selfsigned";
+import { generate } from "selfsigned";
 import { loadControlConfig, registerControlRoutes } from "./app.js";
 
 const config = loadControlConfig();
@@ -10,14 +10,15 @@ const host = process.env["CONTROL_HOST"] ?? "0.0.0.0";
 const dataDir = process.env["CONTROL_DATA_DIR"] ?? "/data";
 const tlsOn = process.env["CONTROL_TLS"] !== "off";
 
-function selfSignedTls(): { cert: string; key: string } {
+async function selfSignedTls(): Promise<{ cert: string; key: string }> {
   const certPath = path.join(dataDir, "control-cert.pem");
   const keyPath = path.join(dataDir, "control-key.pem");
   if (existsSync(certPath) && existsSync(keyPath)) {
     return { cert: readFileSync(certPath, "utf8"), key: readFileSync(keyPath, "utf8") };
   }
-  const pems = selfsigned.generate([{ name: "commonName", value: "vault-control" }], {
-    days: 3650,
+  const pems = await generate([{ name: "commonName", value: "vault-control" }], {
+    notAfterDate: new Date(Date.now() + 3650 * 86_400_000),
+    algorithm: "sha256",
     keySize: 2048,
   });
   mkdirSync(dataDir, { recursive: true });
@@ -26,7 +27,7 @@ function selfSignedTls(): { cert: string; key: string } {
   return { cert: pems.cert, key: pems.private };
 }
 
-const tls = tlsOn ? selfSignedTls() : null;
+const tls = tlsOn ? await selfSignedTls() : null;
 const app = Fastify({
   logger: { level: config.logLevel },
   trustProxy: false,

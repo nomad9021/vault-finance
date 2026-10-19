@@ -1,7 +1,7 @@
 import { createHash, X509Certificate } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import selfsigned from "selfsigned";
+import { generate } from "selfsigned";
 import type { AppConfig } from "./config.js";
 
 export interface TlsMaterial {
@@ -31,7 +31,7 @@ export function certFingerprint(certPem: string): string {
  * and reuse it on every subsequent boot (a stable fingerprint is what makes
  * the client's trust-on-first-use pinning meaningful).
  */
-export function resolveTls(config: AppConfig): TlsMaterial | null {
+export async function resolveTls(config: AppConfig): Promise<TlsMaterial | null> {
   if (!config.tls.enabled) return null;
 
   if (config.tls.certPath && config.tls.keyPath) {
@@ -50,10 +50,11 @@ export function resolveTls(config: AppConfig): TlsMaterial | null {
     };
   }
 
-  const pems = selfsigned.generate(
+  const pems = await generate(
     [{ name: "commonName", value: "vault-finance" }],
     {
-      days: 3650,
+      notAfterDate: new Date(Date.now() + 3650 * 86_400_000),
+      algorithm: "sha256",
       keySize: 2048,
       extensions: [
         { name: "basicConstraints", cA: false },

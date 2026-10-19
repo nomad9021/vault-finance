@@ -57,7 +57,7 @@ export async function syncConnection(
   const provider = getBankProvider(cfg);
   const conn: ConnectionRef = {
     externalItemId: connection.externalItemId,
-    accessToken: connection.accessToken,
+    accessToken: decryptSecret(connection.accessToken),
   };
 
   const provAccounts = await provider.listAccounts(conn);

@@ -9,13 +9,23 @@
 
 name: vault-finance
 
+# Container logs rotate at 10 MB, keeping 3 files per service, so old logs are
+# deleted instead of piling up forever. They never contain secrets (see the
+# logger's redaction list in apps/server/src/app.ts).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
+    logging: *logging
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-vault}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vault}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in docker/.env - installers/server/install-server.sh generates one}
       POSTGRES_DB: ${POSTGRES_DB:-vault}
     volumes:
       - ${VAULT_DISK:-./data}/postgres:/var/lib/postgresql/data
@@ -26,6 +36,7 @@ services:
       retries: 5
 
   redis:
+    logging: *logging
     image: redis:7-alpine
     restart: unless-stopped
     # Optional: the server runs fine without Redis (in-memory fallbacks).
@@ -34,6 +45,7 @@ services:
       - ${VAULT_DISK:-./data}/redis:/data
 
   server:
+    logging: *logging
     # Default: pull a prebuilt release image so `docker compose pull && up -d`
     # (i.e. `vault-update`) upgrades without a local build. To build from source
     # instead, comment out `image:` and uncomment the `build:` block.
@@ -51,7 +63,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-vault}:${POSTGRES_PASSWORD:-vault}@postgres:5432/${POSTGRES_DB:-vault}
+      DATABASE_URL: postgres://${POSTGRES_USER:-vault}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in docker/.env - installers/server/install-server.sh generates one}@postgres:5432/${POSTGRES_DB:-vault}
       VAULT_PORT: "8443"
       # TLS: a self-signed cert is generated into the data volume on first
       # boot (stable across restarts — clients pin its fingerprint). To use
@@ -84,6 +96,7 @@ services:
       - "${VAULT_PORT:-8443}:8443"
 
   ollama:
+    logging: *logging
     image: ollama/ollama:latest
     restart: unless-stopped
     # Local AI runtime. Optional: comment this service out (or set
