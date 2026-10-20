@@ -250,6 +250,11 @@ ok "Created data directories under $VAULT_DISK"
 hdr "Building and starting the stack"
 say "${DIM}First run compiles the server image and pulls Postgres/Redis/Ollama — give it a few minutes.${RST}"
 ( cd "$COMPOSE_DIR" && $DC up -d --build )
+# The server runs as the image's unprivileged `vault` user, but mkdir above
+# made its bind-mounted data dir owned by whoever ran this script.
+( cd "$COMPOSE_DIR" && $DC run --rm --no-deps --user root --entrypoint chown server -R vault:vault /data \
+    && $DC restart server >/dev/null ) \
+  || warn "Couldn't hand $VAULT_DISK/vault to the container's vault user — the server may not be able to write there."
 ok "Containers are up."
 
 # ---- wait for health --------------------------------------------------------

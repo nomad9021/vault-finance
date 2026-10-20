@@ -5,6 +5,7 @@ Compose stack) on the machine that will host your data.
 
 | Script | Platform |
 |---|---|
+| [`bootstrap.sh`](bootstrap.sh) | Linux one-liner: installs git + Docker, clones, runs `install-server.sh` |
 | [`install-server.sh`](install-server.sh) | Linux / macOS |
 | [`install-server.ps1`](install-server.ps1) | Windows (Docker Desktop + PowerShell) |
 
@@ -14,6 +15,16 @@ account — then write `docker/.env`, create the data directories, and run
 `docker compose up -d --build`.
 
 ## Usage
+
+One line, on a fresh Linux box (no checkout needed):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nomad9021/vault-finance/main/installers/server/bootstrap.sh | bash
+# headless / accept defaults:
+curl -fsSL https://raw.githubusercontent.com/nomad9021/vault-finance/main/installers/server/bootstrap.sh | bash -s -- --yes
+```
+
+From an existing checkout:
 
 ```bash
 # Linux / macOS, from the repo root

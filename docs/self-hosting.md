@@ -20,7 +20,17 @@ Compose.
 
 ## 2. Quick start
 
-### Easiest: the guided installer
+### Easiest: one line (Linux)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nomad9021/vault-finance/main/installers/server/bootstrap.sh | bash
+```
+
+Installs git + Docker if needed, clones the repo to `~/vault-finance`
+(override with `VF_DIR`, branch with `VF_REF`), then runs the guided
+installer described next. Script: `installers/server/bootstrap.sh`.
+
+### The guided installer
 
 Clone the repo, then run the installer for your OS. It asks where to store
 your data, which port to use, whether to enable local AI, and (optionally)
