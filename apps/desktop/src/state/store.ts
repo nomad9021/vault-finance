@@ -67,6 +67,8 @@ interface AppState {
   theme: Theme;
   /** Settings → Finance reviews (per device). */
   reviewPrefs: ReviewPrefs;
+  /** Assistant auto mode: apply its proposed changes without asking (per device). */
+  aiAutoApply: boolean;
   /** Whether AI is on AND configured — gates every AI surface (off by default). */
   aiVisible: boolean;
   /** The household's own name ("The Carters"); null until the owner sets one. */
@@ -110,6 +112,7 @@ interface AppState {
   signOut(): Promise<void>;
   setTheme(theme: Theme): Promise<void>;
   setReviewPrefs(prefs: ReviewPrefs): Promise<void>;
+  setAiAutoApply(on: boolean): Promise<void>;
   changeServer(): Promise<void>;
   /** Back out of the connect screen, restoring the prior server. No-op (and no
    *  button shown) when there's no prior server to return to. */
@@ -133,6 +136,7 @@ const TOKENS_KEY = "refresh-tokens";
 const ADDRESS_KEY = "server-address";
 const THEME_KEY = "theme";
 const REVIEW_PREFS_KEY = "review-prefs";
+const AI_AUTO_APPLY_KEY = "ai-auto-apply";
 /** Non-secret list of enrolled user ids, so the login screen needn't touch the keychain. */
 const biometricUsersKey = (address: string) => `biometric-users:${address}`;
 /** Keychain entry holding `{ id, key }` for one user's device key on one server. */
@@ -207,6 +211,7 @@ export const useApp = create<AppState>((set, get) => ({
   user: null,
   theme: "light",
   reviewPrefs: DEFAULT_REVIEW_PREFS,
+  aiAutoApply: false,
   aiVisible: false,
   householdName: null,
   lockedUser: null,
@@ -556,6 +561,11 @@ export const useApp = create<AppState>((set, get) => ({
     await get().platform.saveValue(REVIEW_PREFS_KEY, JSON.stringify(reviewPrefs));
   },
 
+  async setAiAutoApply(aiAutoApply) {
+    set({ aiAutoApply });
+    await get().platform.saveValue(AI_AUTO_APPLY_KEY, aiAutoApply ? "on" : "off");
+  },
+
   /** Settings → connect to a different server. Keeps the pin; drops the session. */
   async changeServer() {
     // Non-destructive: keep the current server/session so the user can cancel
@@ -707,7 +717,10 @@ export async function bootstrap(): Promise<void> {
     console.error("loading theme failed; using default", err);
   }
   try {
-    useApp.setState({ reviewPrefs: parseReviewPrefs(await platform.loadValue(REVIEW_PREFS_KEY)) });
+    useApp.setState({
+      reviewPrefs: parseReviewPrefs(await platform.loadValue(REVIEW_PREFS_KEY)),
+      aiAutoApply: (await platform.loadValue(AI_AUTO_APPLY_KEY)) === "on",
+    });
   } catch (err) {
     console.error("loading review preferences failed; using defaults", err);
   }

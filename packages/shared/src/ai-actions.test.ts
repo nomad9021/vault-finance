@@ -1,0 +1,30 @@
+import { describe, expect, it } from "vitest";
+import { describeAiAction, extractAssistantBlocks, stripAssistantBlocks } from "./schemas/ai-actions.js";
+
+describe("assistant blocks", () => {
+  it("pulls out valid actions and memory notes, reports bad ones", () => {
+    const out = extractAssistantBlocks(
+      [
+        "Here's the plan.",
+        '<vault-action>{"type":"set_budget","category":"Dining","amount":250}</vault-action>',
+        '<vault-action>{"type":"drop_tables"}</vault-action>',
+        "<vault-action>not json</vault-action>",
+        "<vault-remember>Paid biweekly on Fridays</vault-remember>",
+      ].join("\n"),
+    );
+    expect(out.visible).toBe("Here's the plan.");
+    expect(out.actions).toEqual([{ type: "set_budget", category: "Dining", amount: 250 }]);
+    expect(out.invalid).toHaveLength(2);
+    expect(out.remember).toEqual(["Paid biweekly on Fridays"]);
+  });
+
+  it("hides a block that is still streaming in", () => {
+    expect(stripAssistantBlocks('Okay.\n<vault-action>{"type":"create_')).toBe("Okay.");
+  });
+
+  it("describes actions in plain words", () => {
+    expect(describeAiAction({ type: "move_category", category: "Vet", newParent: null })).toBe(
+      'Make "Vet" a top-level category',
+    );
+  });
+});

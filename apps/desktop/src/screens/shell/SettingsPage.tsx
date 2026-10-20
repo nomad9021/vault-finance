@@ -47,6 +47,7 @@ export function SettingsPage() {
       <CategorizationRulesSection />
       <BankSection />
       <AiSection />
+      <AiMemorySection />
       <BiometricSection />
       <TwoFactorSection />
       <UpdatesSection />
@@ -1955,6 +1956,74 @@ function AppearanceSection() {
         value={theme}
         onChange={(t) => void setTheme(t)}
       />
+    </Card>
+  );
+}
+
+/**
+ * What the assistant may change on its own, and what it has remembered. The
+ * memory is an append-only file on the server that's never deleted — not
+ * even with the chats — so this is read-only by design.
+ */
+function AiMemorySection() {
+  const client = useApp((s) => s.client);
+  const aiVisible = useApp((s) => s.aiVisible);
+  const autoApply = useApp((s) => s.aiAutoApply);
+  const setAutoApply = useApp((s) => s.setAiAutoApply);
+  const { data, loading } = useData(() => (aiVisible ? client.aiMemory() : Promise.resolve(null)), [client, aiVisible]);
+  if (!aiVisible) return null;
+  const notes = data?.notes ?? [];
+  return (
+    <Card kicker="AI assistant" title="Changes & memory">
+      <p className="card-body">
+        The assistant can reorganise categories, add auto-categorization rules, set budgets
+        and planned income, rename the household, and change the theme and finance review
+        settings. It can't touch security, members, bank links or AI settings.
+      </p>
+      <div className="field">
+        <label>When it wants to change something</label>
+        <Segmented
+          aria-label="When the assistant wants to change something"
+          options={[
+            { value: "ask", label: "Ask me first" },
+            { value: "auto", label: "Auto — just do it" },
+          ]}
+          value={autoApply ? "auto" : "ask"}
+          onChange={(v) => void setAutoApply(v === "auto")}
+        />
+      </div>
+      <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, marginTop: 6 }}>
+        What it remembers about you {notes.length > 0 && <Tag>{notes.length}</Tag>}
+      </div>
+      <p className="card-meta" style={{ marginTop: 0 }}>
+        Kept permanently in an encrypted file on your server (included in backups), even if
+        you delete every chat.
+      </p>
+      {loading && !data ? (
+        <Spinner label="Loading memory" />
+      ) : notes.length === 0 ? (
+        <p className="card-meta">Nothing yet — it saves lasting facts and preferences as you chat.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", maxHeight: 280, overflow: "auto" }}>
+          {[...notes].reverse().map((n, i) => (
+            <div
+              key={`${n.at}:${i}`}
+              style={{
+                display: "flex",
+                gap: 10,
+                padding: "7px 2px",
+                borderTop: "1px solid color-mix(in srgb, var(--color-text) 7%, transparent)",
+                fontSize: "var(--text-sm)",
+              }}
+            >
+              <span style={{ flex: 1 }}>{n.text}</span>
+              <span style={{ color: "var(--content-tertiary)", fontSize: "var(--text-xs)", whiteSpace: "nowrap" }}>
+                {new Date(n.at).toLocaleDateString()}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </Card>
   );
 }

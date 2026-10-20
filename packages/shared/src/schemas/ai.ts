@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AiActionRecord } from "./ai-actions.js";
 
 /**
  * AI providers the assistant can use. The user brings their own credentials
@@ -221,6 +222,8 @@ export const AiMessage = z.object({
   role: z.enum(["user", "assistant"]),
   content: z.string(),
   createdAt: z.string().datetime(),
+  /** Changes this reply proposed (assistant messages only). */
+  actions: z.array(AiActionRecord).default([]),
 });
 export type AiMessage = z.infer<typeof AiMessage>;
 
@@ -245,6 +248,12 @@ export type ConversationDetail = z.infer<typeof ConversationDetail>;
 export const ChatRequest = z.object({
   conversationId: z.string().uuid().optional(),
   message: z.string().min(1).max(4000),
+  /**
+   * Auto mode: apply the assistant's proposed changes straight away instead
+   * of waiting for approval. Changes the app applies itself (theme, review
+   * preferences) come back pending either way; the app applies them.
+   */
+  autoApply: z.boolean().optional(),
 });
 export type ChatRequest = z.infer<typeof ChatRequest>;
 
@@ -253,9 +262,13 @@ export type ChatRequest = z.infer<typeof ChatRequest>;
  *   { token }                          — next piece of assistant text
  *   { done: true, conversationId }     — final line, stream complete
  *   { error: { code, message } }       — terminal failure mid-stream
+ *   { actions: [...] }                 — proposed (or auto-applied) changes, before done
+ *   { remembered: [...] }              — notes added to the assistant's memory
  */
 export const ChatStreamLine = z.union([
   z.object({ token: z.string() }),
+  z.object({ actions: z.array(AiActionRecord) }),
+  z.object({ remembered: z.array(z.string()) }),
   z.object({ done: z.literal(true), conversationId: z.string().uuid() }),
   z.object({ error: z.object({ code: z.string(), message: z.string() }) }),
 ]);

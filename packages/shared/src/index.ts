@@ -14,6 +14,7 @@ export * from "./schemas/categories.js";
 export * from "./schemas/transactions.js";
 export * from "./schemas/budgets.js";
 export * from "./schemas/ai.js";
+export * from "./schemas/ai-actions.js";
 export * from "./schemas/cashflow.js";
 export * from "./schemas/investments.js";
 export * from "./schemas/goals.js";
