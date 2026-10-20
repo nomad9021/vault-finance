@@ -65,6 +65,10 @@ export function createBrowserPlatform(): HostPlatform {
       return { ok: false, reason: "unavailable" };
     },
     async biometricCancel() {},
+    async setFullscreen(on) {
+      if (on && !document.fullscreenElement) await document.documentElement.requestFullscreen();
+      else if (!on && document.fullscreenElement) await document.exitFullscreen();
+    },
 
     async getSecret(key) {
       return localStorage.getItem(prefix + "secret." + key);

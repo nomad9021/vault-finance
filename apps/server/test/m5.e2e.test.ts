@@ -564,6 +564,44 @@ describe("reports", () => {
     expect(body.totalIncomeCents).toBe(expectedIncome);
   });
 
+  it("builds a monthly review with comparisons and daily spending", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/v1/reports/review?period=month&start=${THIS_MONTH}-15`,
+      headers: auth,
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).toMatchObject({
+      period: "month",
+      start: `${THIS_MONTH}-01`,
+      incomeCents: 400_000,
+      spendingCents: 30_000,
+      transactionCount: 2,
+      previous: { incomeCents: 400_000, spendingCents: 50_000 },
+    });
+    expect(body.categories[0]).toMatchObject({
+      name: "Groceries",
+      spentCents: 30_000,
+      previousSpentCents: 50_000,
+    });
+    expect(body.topMerchants[0]).toMatchObject({ name: "Grocer", spentCents: 30_000, count: 1 });
+    expect(body.largestPurchases[0]).toMatchObject({ merchantName: "Grocer", amountCents: -30_000 });
+    expect(body.dailySpending.find((d: { date: string }) => d.date === `${THIS_MONTH}-08`))
+      .toMatchObject({ spentCents: 30_000 });
+  });
+
+  it("builds a 7-day weekly review from the given start", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/v1/reports/review?period=week&start=${THIS_MONTH}-05`,
+      headers: auth,
+    });
+    const body = res.json();
+    expect(body.dailySpending).toHaveLength(7);
+    expect(body).toMatchObject({ incomeCents: 400_000, spendingCents: 30_000 });
+  });
+
   it("exports transactions as CSV", async () => {
     const res = await app.inject({
       method: "GET",

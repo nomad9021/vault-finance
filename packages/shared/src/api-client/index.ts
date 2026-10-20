@@ -115,7 +115,12 @@ import {
 import { SubscriptionListResponse } from "../schemas/subscriptions.js";
 import { InsightListResponse } from "../schemas/insights.js";
 import { DebtPlan, type UpdateDebtPlanRequest } from "../schemas/debts.js";
-import { MonthlyReport, YearlyReport } from "../schemas/reports.js";
+import {
+  MonthlyReport,
+  PeriodReview,
+  YearlyReport,
+  type ReviewPeriod,
+} from "../schemas/reports.js";
 
 /**
  * Transport abstraction: the browser passes global fetch; the Tauri desktop
@@ -824,6 +829,14 @@ export class ApiClient {
       YearlyReport,
       "GET",
       `/reports/yearly${year ? `?year=${year}` : ""}`,
+    );
+  }
+  /** Weekly or monthly finance review (the presenter's data). */
+  periodReview(period: ReviewPeriod, start?: string) {
+    return this.request(
+      PeriodReview,
+      "GET",
+      `/reports/review?period=${period}${start ? `&start=${start}` : ""}`,
     );
   }
   /** Raw CSV text — the caller saves it (download in browser, dialog in Tauri). */

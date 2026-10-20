@@ -8,6 +8,7 @@ import {
   type User,
 } from "@vault/shared";
 import { applyTheme, isTheme, type Theme } from "@vault/design-tokens";
+import { DEFAULT_REVIEW_PREFS, parseReviewPrefs, type ReviewPrefs } from "../lib/reviewPrefs.js";
 import { create } from "zustand";
 import {
   getPlatform,
@@ -64,6 +65,8 @@ interface AppState {
   connection: ConnectionStatus;
   user: User | null;
   theme: Theme;
+  /** Settings → Finance reviews (per device). */
+  reviewPrefs: ReviewPrefs;
   /** Whether AI is on AND configured — gates every AI surface (off by default). */
   aiVisible: boolean;
   /** The household's own name ("The Carters"); null until the owner sets one. */
@@ -106,6 +109,7 @@ interface AppState {
   signedIn(user: User): void;
   signOut(): Promise<void>;
   setTheme(theme: Theme): Promise<void>;
+  setReviewPrefs(prefs: ReviewPrefs): Promise<void>;
   changeServer(): Promise<void>;
   /** Back out of the connect screen, restoring the prior server. No-op (and no
    *  button shown) when there's no prior server to return to. */
@@ -128,6 +132,7 @@ interface AppState {
 const TOKENS_KEY = "refresh-tokens";
 const ADDRESS_KEY = "server-address";
 const THEME_KEY = "theme";
+const REVIEW_PREFS_KEY = "review-prefs";
 /** Non-secret list of enrolled user ids, so the login screen needn't touch the keychain. */
 const biometricUsersKey = (address: string) => `biometric-users:${address}`;
 /** Keychain entry holding `{ id, key }` for one user's device key on one server. */
@@ -201,6 +206,7 @@ export const useApp = create<AppState>((set, get) => ({
   connection: "online",
   user: null,
   theme: "light",
+  reviewPrefs: DEFAULT_REVIEW_PREFS,
   aiVisible: false,
   householdName: null,
   lockedUser: null,
@@ -545,6 +551,11 @@ export const useApp = create<AppState>((set, get) => ({
     await get().platform.saveValue(THEME_KEY, theme);
   },
 
+  async setReviewPrefs(reviewPrefs) {
+    set({ reviewPrefs });
+    await get().platform.saveValue(REVIEW_PREFS_KEY, JSON.stringify(reviewPrefs));
+  },
+
   /** Settings → connect to a different server. Keeps the pin; drops the session. */
   async changeServer() {
     // Non-destructive: keep the current server/session so the user can cancel
@@ -694,6 +705,11 @@ export async function bootstrap(): Promise<void> {
     useApp.setState({ theme });
   } catch (err) {
     console.error("loading theme failed; using default", err);
+  }
+  try {
+    useApp.setState({ reviewPrefs: parseReviewPrefs(await platform.loadValue(REVIEW_PREFS_KEY)) });
+  } catch (err) {
+    console.error("loading review preferences failed; using defaults", err);
   }
 
   // The OS keychain is best-effort: if it's locked, missing, or slow (common

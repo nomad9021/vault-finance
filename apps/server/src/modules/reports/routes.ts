@@ -1,5 +1,12 @@
-import type { CategorySpend, MonthlyReport, MonthSummary } from "@vault/shared";
-import { and, asc, eq, gte, lt, sql } from "drizzle-orm";
+import {
+  ReviewQuery,
+  type CategorySpend,
+  type MonthlyReport,
+  type MonthSummary,
+  type PeriodReview,
+  type ReviewPeriod,
+} from "@vault/shared";
+import { and, asc, desc, eq, gte, lt, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import {
@@ -29,6 +36,41 @@ function monthBounds(month: string): { first: string; nextFirst: string } {
   const [y, m] = month.split("-").map(Number) as [number, number];
   const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
   return { first: `${month}-01`, nextFirst: `${next}-01` };
+}
+
+function isoDay(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+function addDays(day: string, n: number): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return isoDay(d);
+}
+
+/**
+ * [start, end) for a review period plus the same-length period before it.
+ * Months snap to the 1st; weeks are 7 days from `start` (the client picks
+ * Sunday or Monday), defaulting to this week's Monday.
+ */
+export function reviewBounds(
+  period: ReviewPeriod,
+  start: string | undefined,
+  today: Date = new Date(),
+): { start: string; end: string; prevStart: string } {
+  if (period === "month") {
+    const month = (start ?? isoDay(today)).slice(0, 7);
+    const { first, nextFirst } = monthBounds(month);
+    const [y, m] = month.split("-").map(Number) as [number, number];
+    const prevStart = isoDay(new Date(Date.UTC(y, m - 2, 1)));
+    return { start: first, end: nextFirst, prevStart };
+  }
+  let first = start;
+  if (!first) {
+    const sinceMonday = (today.getUTCDay() + 6) % 7;
+    first = addDays(isoDay(today), -sinceMonday);
+  }
+  return { start: first, end: addDays(first, 7), prevStart: addDays(first, -7) };
 }
 
 function csvEscape(value: string): string {
@@ -193,6 +235,132 @@ export default async function reportRoutes(
         totalIncomeCents > 0
           ? Math.round(((totalIncomeCents - totalSpendingCents) / totalIncomeCents) * 1000) / 1000
           : null,
+    };
+  });
+
+  async function rangeTotals(from: string, to: string) {
+    const [row] = await app.db
+      .select({
+        income: sql<string>`coalesce(sum(${transactions.amountCents}) filter (where ${transactions.amountCents} > 0), 0)`,
+        spending: sql<string>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)`,
+        count: sql<string>`count(*)`,
+      })
+      .from(transactions)
+      .where(and(gte(transactions.postedAt, from), lt(transactions.postedAt, to)));
+    const incomeCents = Number(row?.income ?? 0);
+    const spendingCents = Number(row?.spending ?? 0);
+    return {
+      incomeCents,
+      spendingCents,
+      savedCents: incomeCents - spendingCents,
+      transactionCount: Number(row?.count ?? 0),
+    };
+  }
+
+  async function spendByCategory(from: string, to: string) {
+    const rows = await app.db
+      .select({
+        categoryId: transactions.categoryId,
+        spent: sql<string>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)`,
+      })
+      .from(transactions)
+      .where(and(gte(transactions.postedAt, from), lt(transactions.postedAt, to)))
+      .groupBy(transactions.categoryId);
+    return new Map(rows.map((r) => [r.categoryId, Number(r.spent)]));
+  }
+
+  /** Weekly / monthly review — everything the presenter slideshow shows. */
+  app.get("/reports/review", async (request): Promise<PeriodReview> => {
+    const query = ReviewQuery.parse(request.query);
+    const { start, end, prevStart } = reviewBounds(query.period, query.start);
+    const inPeriod = and(gte(transactions.postedAt, start), lt(transactions.postedAt, end));
+
+    const totals = await rangeTotals(start, end);
+    const previous = await rangeTotals(prevStart, start);
+
+    const cats = await app.db.select().from(categories);
+    const byId = new Map(cats.map((c) => [c.id, c]));
+    const catName = (id: string | null) =>
+      id ? (byId.get(id)?.name ?? "Unknown") : "Uncategorized";
+    const catColor = (id: string | null) => (id ? (byId.get(id)?.color ?? "#9aa0ab") : "#9aa0ab");
+
+    const now = await spendByCategory(start, end);
+    const before = await spendByCategory(prevStart, start);
+    const categoryRows = [...now]
+      .filter(([, spent]) => spent > 0)
+      .map(([categoryId, spentCents]) => ({
+        categoryId,
+        name: catName(categoryId),
+        color: catColor(categoryId),
+        spentCents,
+        previousSpentCents: before.get(categoryId) ?? 0,
+      }))
+      .sort((a, b) => b.spentCents - a.spentCents);
+
+    const merchants = await app.db
+      .select({
+        name: transactions.merchantName,
+        spent: sql<string>`sum(-${transactions.amountCents})`,
+        count: sql<string>`count(*)`,
+      })
+      .from(transactions)
+      .where(and(inPeriod, lt(transactions.amountCents, 0)))
+      .groupBy(transactions.merchantName)
+      .orderBy(desc(sql`sum(-${transactions.amountCents})`))
+      .limit(5);
+
+    const largest = await app.db
+      .select({
+        id: transactions.id,
+        postedAt: transactions.postedAt,
+        merchantName: transactions.merchantName,
+        amountCents: transactions.amountCents,
+        categoryId: transactions.categoryId,
+      })
+      .from(transactions)
+      .where(and(inPeriod, lt(transactions.amountCents, 0)))
+      .orderBy(asc(transactions.amountCents))
+      .limit(5);
+
+    const daily = await app.db
+      .select({
+        date: transactions.postedAt,
+        spent: sql<string>`sum(-${transactions.amountCents})`,
+      })
+      .from(transactions)
+      .where(and(inPeriod, lt(transactions.amountCents, 0)))
+      .groupBy(transactions.postedAt);
+    const dailyByDate = new Map(daily.map((d) => [String(d.date), Number(d.spent)]));
+    const dailySpending: PeriodReview["dailySpending"] = [];
+    for (let day = start; day < end; day = addDays(day, 1)) {
+      dailySpending.push({ date: day, spentCents: dailyByDate.get(day) ?? 0 });
+    }
+
+    return {
+      period: query.period,
+      start,
+      end,
+      ...totals,
+      savingsRate:
+        totals.incomeCents > 0
+          ? Math.round((totals.savedCents / totals.incomeCents) * 1000) / 1000
+          : null,
+      previous,
+      categories: categoryRows,
+      topMerchants: merchants.map((m) => ({
+        name: m.name,
+        spentCents: Number(m.spent),
+        count: Number(m.count),
+      })),
+      largestPurchases: largest.map((t) => ({
+        id: t.id,
+        postedAt: String(t.postedAt),
+        merchantName: t.merchantName,
+        amountCents: t.amountCents,
+        categoryName: catName(t.categoryId),
+        color: catColor(t.categoryId),
+      })),
+      dailySpending,
     };
   });
 

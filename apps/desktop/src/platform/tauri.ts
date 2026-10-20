@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { platform as osPlatform, hostname } from "@tauri-apps/plugin-os";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { LazyStore } from "@tauri-apps/plugin-store";
@@ -142,6 +143,9 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
     },
     async tailscaleDown() {
       return await invoke<TailscaleActionResult>("tailscale_down");
+    },
+    async setFullscreen(on) {
+      await getCurrentWindow().setFullscreen(on);
     },
     async openExternal(url) {
       await invoke("open_external", { url });

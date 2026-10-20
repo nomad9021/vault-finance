@@ -2,13 +2,15 @@ import {
   formatCentsWhole,
   type Goal,
   type MonthlyReport,
+  type ReviewPeriod,
   type YearlyReport,
 } from "@vault/shared";
-import { Button, Card, PieChart, Spinner, Tag } from "@vault/ui";
+import { Button, Card, PieChart, Segmented, Spinner, Tag } from "@vault/ui";
 import { useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 import type { Navigate } from "./AppShell.js";
+import { ReviewPresenter } from "./ReviewPresenter.js";
 
 function monthLabel(month: string): string {
   const [y, m] = month.split("-").map(Number) as [number, number];
@@ -54,6 +56,7 @@ export function ReportsPage({ onNavigate }: { onNavigate: Navigate }) {
 
   return (
     <div className="page">
+      <ReviewLauncher />
       <div
         style={{
           background:
@@ -173,6 +176,47 @@ export function ReportsPage({ onNavigate }: { onNavigate: Navigate }) {
         />
       )}
     </div>
+  );
+}
+
+/** Start a weekly / monthly review — windowed or straight into full screen. */
+function ReviewLauncher() {
+  const defaultPeriod = useApp((s) => s.reviewPrefs.defaultPeriod);
+  const startFullscreen = useApp((s) => s.reviewPrefs.startFullscreen);
+  const [period, setPeriod] = useState<ReviewPeriod>(defaultPeriod);
+  const [presenting, setPresenting] = useState<{ fullscreen: boolean } | null>(null);
+  return (
+    <Card kicker="Finance review" title={period === "week" ? "Weekly review" : "Monthly review"}>
+      <p className="card-body">
+        A slide-by-slide look at the {period}: what came in, where it went, budgets, bills and
+        goals. Choose the slides in Settings → Finance reviews.
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+        <Segmented
+          aria-label="Review period"
+          options={[
+            { value: "week", label: "Weekly" },
+            { value: "month", label: "Monthly" },
+          ]}
+          value={period}
+          onChange={setPeriod}
+        />
+        <div style={{ flex: 1 }} />
+        <Button variant="secondary" icon="expand" onClick={() => setPresenting({ fullscreen: true })}>
+          Full screen
+        </Button>
+        <Button variant="primary" icon="play" onClick={() => setPresenting({ fullscreen: startFullscreen })}>
+          Present
+        </Button>
+      </div>
+      {presenting && (
+        <ReviewPresenter
+          initialPeriod={period}
+          fullscreen={presenting.fullscreen}
+          onClose={() => setPresenting(null)}
+        />
+      )}
+    </Card>
   );
 }
 
