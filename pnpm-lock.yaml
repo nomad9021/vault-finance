@@ -151,8 +151,8 @@ importers:
         specifier: ^5.0.1
         version: 5.1.0
       jose:
-        specifier: ^5.9.6
-        version: 5.10.0
+        specifier: ^6.2.12
+        version: 6.2.12
       nodemailer:
         specifier: ^10.1.7
         version: 10.1.7
@@ -1430,8 +1430,8 @@ packages:
     resolution: {integrity: sha512-6B3tLtFqtQS4ekarvLVMZ+X+VlvQekbe4taUkf/rhVO3d/h0M2rfARm/pXLcPEsjjMsFgrFgSrhQIxcSVrBz8w==}
     engines: {node: '>=18'}
 
-  jose@5.10.0:
-    resolution: {integrity: sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg==}
+  jose@6.2.12:
+    resolution: {integrity: sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -2921,7 +2921,7 @@ snapshots:
   isexe@3.1.5:
     optional: true
 
-  jose@5.10.0: {}
+  jose@6.2.12: {}
 
   js-tokens@4.0.0: {}
 
