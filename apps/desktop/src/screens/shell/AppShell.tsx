@@ -19,6 +19,7 @@ import { NetWorthPage } from "./NetWorthPage.js";
 import { ReportsPage } from "./ReportsPage.js";
 import { SettingsPage } from "./SettingsPage.js";
 import { SubscriptionsPage } from "./SubscriptionsPage.js";
+import { TaxesPage } from "./TaxesPage.js";
 import { TransactionsPage } from "./TransactionsPage.js";
 import { Rail, Sidebar } from "./Sidebar.js";
 import { GroupTabs, TabBar } from "./TabBar.js";
@@ -193,6 +194,8 @@ function PageBody({
       return <SubscriptionsPage onNavigate={onNavigate} />;
     case "budgets":
       return <BudgetsPage onNavigate={onNavigate} {...(filter.tab ? { initialTab: filter.tab } : {})} />;
+    case "taxes":
+      return <TaxesPage />;
     case "bills":
       return <BillsPage {...(filter.tab ? { initialTab: filter.tab } : {})} />;
     case "cashflow":

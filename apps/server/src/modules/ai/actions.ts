@@ -267,66 +267,26 @@ function isDescendant(all: Category[], id: string, ancestorId: string): boolean 
 }
 
 /**
- * The part of the system prompt that teaches the model how to propose
- * changes, plus the current category tree and rules so it names real rows.
+ * The part of the system prompt that teaches the model how to look things up
+ * and propose changes, for the agents this message needs (agents.ts), plus
+ * the data those agents work with (category tree, tax profile, bills…) so it
+ * names real rows.
  */
-export async function buildActionGuide(app: FastifyInstance, request: FastifyRequest): Promise<string> {
-  const { categories } = await call<{ categories: Category[] }>(app, request, "GET", "/categories");
-  const { rules } = await call<{ rules: { keyword: string; categoryId: string }[] }>(
-    app,
-    request,
-    "GET",
-    "/categorization-rules",
-  );
-  const byParent = new Map<string | null, Category[]>();
-  for (const c of categories) {
-    const list = byParent.get(c.parentCategoryId) ?? [];
-    list.push(c);
-    byParent.set(c.parentCategoryId, list);
-  }
-  const tree: string[] = [];
-  const walk = (parent: string | null, depth: number) => {
-    for (const c of byParent.get(parent) ?? []) {
-      if (tree.length > 150) return;
-      tree.push(`${"  ".repeat(depth + 1)}- ${c.name} (${c.kind}${c.isSystem ? ", built-in" : ""})`);
-      if (depth < 6) walk(c.id, depth + 1);
-    }
-  };
-  walk(null, 0);
-  const catName = new Map(categories.map((c) => [c.id, c.name]));
+export async function buildActionGuide(app: FastifyInstance, request: FastifyRequest, agentIds: AgentId[] = AGENTS.map((a) => a.id)): Promise<string> {
+  const agents = AGENTS.filter((a) => agentIds.includes(a.id));
+  const has = (id: AgentId) => agentIds.includes(id);
+  const others = AGENTS.filter((a) => !agentIds.includes(a.id)).map((a) => a.name);
 
-  return [
+  const lines: string[] = [
     "",
     "=== CHANGING THINGS ===",
-    "You can propose changes to the category tree (including its order),",
-    "which category transactions are in, auto-categorization rules, budgets,",
-    "planned income, the household name, the app theme, and the weekly/monthly",
-    "finance review settings. The cash-flow and budget Sankey diagrams are drawn",
-    "from the category tree, its order, budgets and planned income, so changing",
-    "those is how you set the Sankeys up. You can NOT change security settings,",
-    "members, bank links, AI settings, or transaction amounts/dates — say so if asked.",
+    `Specialist agents active for this message: ${agents.map((a) => a.name).join(", ")}.`,
+    ...(others.length ? [`(Also available if the user asks: ${others.join(", ")}.)`] : []),
+    "You can NOT change security settings, members, bank links, AI settings, or",
+    "transaction amounts/dates — say so if asked.",
     "Only propose a change when the user asks for it or clearly agrees to one.",
     "To propose a change, put ONE JSON object per block on its own line:",
     '<vault-action>{"type":"create_category","name":"Pets","parent":"Household"}</vault-action>',
-    "Types and fields:",
-    '  create_category {name, parent?, kind?: "expense"|"income", color?: "#rrggbb"}',
-    "  rename_category {category, newName}",
-    "  move_category {category, newParent: name or null for top level}",
-    '  recolor_category {category, color: "#rrggbb"}',
-    "  delete_category {category}   (only works if nothing uses it)",
-    "  create_rule {keyword, category}   delete_rule {keyword}",
-    "  set_budget {category, amount: monthly dollars}   remove_budget {category}",
-    "  set_planned_income {amount: monthly dollars}",
-    "  rename_household {name}",
-    '  recategorize {merchant: text in the merchant name, category, from?: category or "Uncategorized", since?: "YYYY-MM-DD"}',
-    "  reorder_categories {parent: name or null for top level, order: [sibling names, first = top]}",
-    "  autocategorize {}   (applies the rules to uncategorized transactions)",
-    '  set_theme {theme: "automatic"|"light"|"dark"|"oled"|"contrast"}',
-    '  set_review_prefs {defaultPeriod?: "week"|"month", weekStartsOn?: "monday"|"sunday",',
-    "    compare?: bool, autoAdvanceSeconds?: number, startFullscreen?: bool,",
-    "    showSlides?: [ids], hideSlides?: [ids]}",
-    "    slide ids: overview, categories, daily, merchants, largest, budgets, bills, goals, ai",
-    'Name categories exactly as below; if two share a name use "Parent > Child".',
     "Briefly say what you're proposing in plain words too; the app shows each",
     "change as a card the user approves (or it applies automatically in auto mode).",
     "",
@@ -334,26 +294,82 @@ export async function buildActionGuide(app: FastifyInstance, request: FastifyReq
     "The snapshot is short. To see more before answering or proposing changes,",
     "put look-ups on their own lines and STOP writing; the results come back to",
     "you and you continue (a few rounds per message):",
-    '<vault-query>{"type":"merchants","months":3,"uncategorizedOnly":true}</vault-query>',
-    "Types:",
-    '  transactions {merchant?, category?: name or "Uncategorized", from?, to?: "YYYY-MM-DD", limit?: up to 100}',
-    "  merchants {months?: 1-24, uncategorizedOnly?: bool}   (who you pay, how often, which category)",
-    "  category_totals {months?: 1-24}   (spending and income per category)",
-    "To organize their finances: look up merchants and category totals first,",
-    "then propose a tidy tree, recategorize/rules for the messy merchants, and",
-    "budgets — in one reply, so the user can approve it all at once.",
+    '<vault-query>{"type":"category_totals","months":3}</vault-query>',
+    "",
+  ];
+  for (const a of agents) {
+    lines.push(`--- ${a.name} agent ---`);
+    if (a.queries.length) lines.push("Look-ups:", ...a.queries);
+    if (a.actions.length) lines.push("Changes:", ...a.actions);
+    if (a.tips?.length) lines.push(...a.tips);
+    lines.push("");
+  }
+  lines.push(
+    "RULES (changes that break these are sent back to you to fix):",
+    "  - Income and expense categories are separate trees: never nest one inside",
+    "    the other; reorder_categories only orders siblings (same parent).",
+    "  - Budgets are only for expense categories.",
+    "  - Built-in categories can't be deleted; a category with sub-categories",
+    "    can't be deleted until they're moved out.",
+    "  - Only use names (categories, bills, goals, funds, earners) that exist below",
+    "    or that you create earlier in the same reply.",
     "",
     "=== MEMORY ===",
     "To remember a lasting fact or preference about the user for future chats",
     "(goals, preferences, household facts — never passwords or account numbers),",
     "add: <vault-remember>Prefers weekly reviews on Sunday evenings</vault-remember>",
     "Don't re-save things already listed under REMEMBERED.",
-    "",
-    "CATEGORY TREE:",
-    ...(tree.length ? tree : ["  (none)"]),
-    "AUTO-CATEGORIZATION RULES (keyword → category):",
-    ...(rules.length
-      ? rules.slice(0, 60).map((r) => `  "${r.keyword}" → ${catName.get(r.categoryId) ?? "?"}`)
-      : ["  (none)"]),
-  ].join("\n");
+  );
+
+  // The data the active agents act on.
+  if (has("organizer") || has("budget") || has("bills")) {
+    const { categories } = await call<{ categories: Category[] }>(app, request, "GET", "/categories");
+    const byParent = new Map<string | null, Category[]>();
+    for (const c of categories) {
+      const list = byParent.get(c.parentCategoryId) ?? [];
+      list.push(c);
+      byParent.set(c.parentCategoryId, list);
+    }
+    const tree: string[] = [];
+    const walk = (parent: string | null, depth: number) => {
+      for (const c of byParent.get(parent) ?? []) {
+        if (tree.length > 150) return;
+        tree.push(`${"  ".repeat(depth + 1)}- ${c.name} (${c.kind}${c.isSystem ? ", built-in" : ""})`);
+        if (depth < 6) walk(c.id, depth + 1);
+      }
+    };
+    walk(null, 0);
+    lines.push("", 'CATEGORY TREE (name categories exactly; if two share a name use "Parent > Child"):', ...(tree.length ? tree : ["  (none)"]));
+    if (has("organizer")) {
+      const { rules } = await call<{ rules: { keyword: string; categoryId: string }[] }>(app, request, "GET", "/categorization-rules");
+      const catName = new Map(categories.map((c) => [c.id, c.name]));
+      lines.push(
+        "AUTO-CATEGORIZATION RULES (keyword → category):",
+        ...(rules.length ? rules.slice(0, 60).map((r) => `  "${r.keyword}" → ${catName.get(r.categoryId) ?? "?"}`) : ["  (none)"]),
+      );
+    }
+  }
+  if (has("tax")) {
+    const { profile } = await call<{ profile: TaxProfile | null }>(app, request, "GET", "/tax-profile");
+    lines.push(
+      "",
+      "TAX PROFILE:",
+      ...(profile
+        ? [
+            `  ${profile.filingStatus.replace(/_/g, " ")}, ${profile.state}${profile.locality ? ` (${profile.locality})` : ""}, ${profile.dependents} child(ren) under 17`,
+            ...profile.earners.map((e) => `  earner "${e.name}": $${Math.round(e.grossAnnualCents / 100).toLocaleString("en-US")}/yr gross, paid ${e.payFrequency}${e.retirementPct ? `, 401(k) ${e.retirementPct}%` : ""}`),
+          ]
+        : ["  (not set up yet — ask for salary, state and filing status, then use set_tax_profile + set_salary)"]),
+    );
+  }
+  const named = async (agent: AgentId, url: string, key: string, label: string) => {
+    if (!has(agent)) return;
+    const body = await call<Record<string, Array<{ name: string }>>>(app, request, "GET", url);
+    const names = (body[key] ?? []).map((x) => `"${x.name}"`);
+    lines.push(`${label}: ${names.length ? names.slice(0, 40).join(", ") : "(none)"}`);
+  };
+  await named("bills", "/bills", "bills", "BILLS");
+  await named("goals", "/goals", "goals", "SAVINGS GOALS");
+  await named("giving", "/giving", "funds", "GIVING FUNDS");
+  return lines.join("\n");
 }

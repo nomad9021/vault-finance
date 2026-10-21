@@ -56,6 +56,99 @@ export const AiAction = z.discriminatedUnion("type", [
   }),
   /** Run the auto-categorization rules (and AI, if on) over uncategorized transactions. */
   z.object({ type: z.literal("autocategorize") }),
+
+  // ── Tax & salary agent ──
+  z.object({
+    type: z.literal("set_tax_profile"),
+    filingStatus: z.enum(["single", "married_joint", "married_separate", "head_of_household"]).optional(),
+    state: z.string().regex(/^[A-Za-z]{2}$/).optional(),
+    /** Locality id from the tax places list, or null for none. */
+    locality: z.string().max(40).nullable().optional(),
+    customLocalRatePct: z.number().min(0).max(10).nullable().optional(),
+    dependents: z.number().int().min(0).max(20).optional(),
+    syncPlannedIncome: z.boolean().optional(),
+  }),
+  /** Set (or add) an earner's salary before tax. */
+  z.object({
+    type: z.literal("set_salary"),
+    earner: Name,
+    grossAnnual: Dollars,
+    payFrequency: z.enum(["weekly", "biweekly", "semimonthly", "monthly"]).optional(),
+  }),
+  z.object({
+    type: z.literal("set_pretax"),
+    earner: Name,
+    retirementPct: z.number().min(0).max(100).optional(),
+    hsaAnnual: Dollars.optional(),
+    healthPremiumsAnnual: Dollars.optional(),
+    otherPretaxAnnual: Dollars.optional(),
+  }),
+  z.object({ type: z.literal("remove_earner"), earner: Name }),
+
+  // ── Bills agent ──
+  z.object({
+    type: z.literal("create_bill"),
+    name: Name,
+    amount: Dollars,
+    dueDay: z.number().int().min(1).max(31),
+    cadence: z.enum(["weekly", "monthly", "quarterly", "yearly"]).optional(),
+    autopay: z.boolean().optional(),
+    category: Name.optional(),
+  }),
+  z.object({
+    type: z.literal("update_bill"),
+    bill: Name,
+    amount: Dollars.optional(),
+    dueDay: z.number().int().min(1).max(31).optional(),
+    cadence: z.enum(["weekly", "monthly", "quarterly", "yearly"]).optional(),
+    autopay: z.boolean().optional(),
+  }),
+  z.object({ type: z.literal("delete_bill"), bill: Name }),
+
+  // ── Goals agent ──
+  z.object({
+    type: z.literal("create_goal"),
+    name: Name,
+    target: Dollars,
+    monthly: Dollars.optional(),
+    saved: Dollars.optional(),
+    targetDate: Day.optional(),
+  }),
+  z.object({
+    type: z.literal("update_goal"),
+    goal: Name,
+    target: Dollars.optional(),
+    monthly: Dollars.optional(),
+    saved: Dollars.optional(),
+    targetDate: Day.nullable().optional(),
+  }),
+  z.object({ type: z.literal("delete_goal"), goal: Name }),
+
+  // ── Giving agent ──
+  z.object({
+    type: z.literal("create_giving_fund"),
+    name: Name,
+    kind: z.enum(["giving", "gift"]).optional(),
+    monthly: Dollars.optional(),
+    target: Dollars.optional(),
+    recipient: z.string().trim().max(120).optional(),
+    occasionDate: Day.optional(),
+  }),
+  z.object({
+    type: z.literal("update_giving_fund"),
+    fund: Name,
+    monthly: Dollars.optional(),
+    target: Dollars.optional(),
+    occasionDate: Day.nullable().optional(),
+  }),
+  z.object({ type: z.literal("delete_giving_fund"), fund: Name }),
+
+  // ── Debt agent ──
+  z.object({
+    type: z.literal("set_debt_plan"),
+    strategy: z.enum(["avalanche", "snowball"]).optional(),
+    extraMonthly: Dollars.optional(),
+  }),
   // Applied by the app itself (they're per-device preferences).
   z.object({ type: z.literal("set_theme"), theme: z.string().min(1).max(20) }),
   z.object({
@@ -142,6 +235,48 @@ export function describeAiAction(a: AiAction): string {
       return `Order ${a.parent ? `the categories under "${a.parent}"` : "the top-level categories"}: ${a.order.join(", ")}`;
     case "autocategorize":
       return "Auto-categorize uncategorized transactions";
+    case "set_tax_profile": {
+      const parts: string[] = [];
+      if (a.filingStatus) parts.push(`file as ${a.filingStatus.replace(/_/g, " ")}`);
+      if (a.state) parts.push(`live in ${a.state.toUpperCase()}`);
+      if (a.locality !== undefined) parts.push(a.locality ? `local tax: ${a.locality}` : "no local tax");
+      if (a.customLocalRatePct != null) parts.push(`local tax ${a.customLocalRatePct}%`);
+      if (a.dependents !== undefined) parts.push(`${a.dependents} child${a.dependents === 1 ? "" : "ren"} under 17`);
+      if (a.syncPlannedIncome !== undefined) parts.push(a.syncPlannedIncome ? "budget from take-home" : "keep budget income separate");
+      return `Tax profile: ${parts.join("; ") || "no change"}`;
+    }
+    case "set_salary":
+      return `Set ${a.earner}'s salary to $${a.grossAnnual.toLocaleString("en-US")} a year before tax${a.payFrequency ? `, paid ${a.payFrequency}` : ""}`;
+    case "set_pretax": {
+      const parts: string[] = [];
+      if (a.retirementPct !== undefined) parts.push(`401(k) ${a.retirementPct}%`);
+      if (a.hsaAnnual !== undefined) parts.push(`HSA $${a.hsaAnnual.toLocaleString("en-US")}/yr`);
+      if (a.healthPremiumsAnnual !== undefined) parts.push(`premiums $${a.healthPremiumsAnnual.toLocaleString("en-US")}/yr`);
+      if (a.otherPretaxAnnual !== undefined) parts.push(`other pre-tax $${a.otherPretaxAnnual.toLocaleString("en-US")}/yr`);
+      return `${a.earner}'s pre-tax deductions: ${parts.join(", ") || "no change"}`;
+    }
+    case "remove_earner":
+      return `Remove ${a.earner} from the tax profile`;
+    case "create_bill":
+      return `Add bill "${a.name}": $${a.amount.toLocaleString("en-US")} ${a.cadence ?? "monthly"}, due on day ${a.dueDay}`;
+    case "update_bill":
+      return `Update bill "${a.bill}"`;
+    case "delete_bill":
+      return `Delete bill "${a.bill}"`;
+    case "create_goal":
+      return `Add savings goal "${a.name}": $${a.target.toLocaleString("en-US")}${a.monthly ? `, $${a.monthly.toLocaleString("en-US")}/month` : ""}`;
+    case "update_goal":
+      return `Update savings goal "${a.goal}"`;
+    case "delete_goal":
+      return `Delete savings goal "${a.goal}"`;
+    case "create_giving_fund":
+      return `Add ${a.kind === "gift" ? "gift" : "giving"} fund "${a.name}"${a.monthly ? `, $${a.monthly.toLocaleString("en-US")}/month` : ""}`;
+    case "update_giving_fund":
+      return `Update giving fund "${a.fund}"`;
+    case "delete_giving_fund":
+      return `Delete giving fund "${a.fund}"`;
+    case "set_debt_plan":
+      return `Debt plan: ${[a.strategy && `${a.strategy} order`, a.extraMonthly !== undefined && `$${a.extraMonthly.toLocaleString("en-US")} extra a month`].filter(Boolean).join(", ") || "no change"}`;
     case "set_theme":
       return `Switch the theme to ${a.theme}`;
     case "set_review_prefs": {
@@ -183,6 +318,29 @@ export const AiQuery = z.discriminatedUnion("type", [
     uncategorizedOnly: z.boolean().optional(),
   }),
   z.object({ type: z.literal("category_totals"), months: z.number().int().min(1).max(24).optional() }),
+  z.object({ type: z.literal("budgets") }),
+  z.object({ type: z.literal("tax_estimate") }),
+  /** The saved tax profile with some things changed — nothing is saved. */
+  z.object({
+    type: z.literal("tax_whatif"),
+    state: z.string().regex(/^[A-Za-z]{2}$/).optional(),
+    locality: z.string().max(40).nullable().optional(),
+    filingStatus: z.enum(["single", "married_joint", "married_separate", "head_of_household"]).optional(),
+    dependents: z.number().int().min(0).max(20).optional(),
+    earner: Name.optional(),
+    grossAnnual: z.number().nonnegative().max(10_000_000).optional(),
+    retirementPct: z.number().min(0).max(100).optional(),
+  }),
+  z.object({ type: z.literal("tax_compare"), states: z.array(z.string().regex(/^[A-Za-z]{2}$/)).min(1).max(10) }),
+  z.object({ type: z.literal("tax_places"), state: z.string().regex(/^[A-Za-z]{2}$/) }),
+  z.object({ type: z.literal("bills") }),
+  z.object({ type: z.literal("subscriptions") }),
+  z.object({ type: z.literal("goals") }),
+  z.object({ type: z.literal("giving") }),
+  z.object({ type: z.literal("debts") }),
+  z.object({ type: z.literal("cashflow"), months: z.number().int().min(1).max(24).optional() }),
+  z.object({ type: z.literal("insights") }),
+  z.object({ type: z.literal("accounts") }),
 ]);
 export type AiQuery = z.infer<typeof AiQuery>;
 

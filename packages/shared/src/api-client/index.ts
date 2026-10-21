@@ -24,6 +24,7 @@ import { Household } from "../schemas/household.js";
 import { SetupStatusResponse, type SetupCompleteRequest } from "../schemas/setup.js";
 import { User } from "../schemas/user.js";
 import { VersionResponse } from "../schemas/version.js";
+import { TaxEstimateSchema, TaxPlacesResponse, TaxProfileResponse, type TaxProfileInput } from "../schemas/taxes.js";
 import { ServerStatusResponse, StatusDetailsResponse } from "../schemas/status.js";
 import { UpdateStatusResponse } from "../schemas/updates.js";
 import {
@@ -644,6 +645,19 @@ export class ApiClient {
   /** Try an AI provider configuration without saving it. */
   testAiConnection(body: AiTestRequest) {
     return this.request(AiTestResponse, "POST", "/ai/test", body);
+  }
+  taxProfile() {
+    return this.request(TaxProfileResponse, "GET", "/tax-profile");
+  }
+  saveTaxProfile(body: TaxProfileInput) {
+    return this.request(TaxProfileResponse, "PUT", "/tax-profile", body);
+  }
+  /** What-if estimate for any profile; nothing is saved. */
+  estimateTax(body: TaxProfileInput) {
+    return this.request(TaxEstimateSchema, "POST", "/tax/estimate", body);
+  }
+  taxPlaces() {
+    return this.request(TaxPlacesResponse, "GET", "/tax/places");
   }
   conversations() {
     return this.request(ConversationListResponse, "GET", "/ai/conversations");

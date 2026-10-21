@@ -1,3 +1,4 @@
+import type { TaxProfile } from "@vault/shared";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -446,6 +447,15 @@ export const debtPlan = pgTable("debt_plan", {
 export const budgetPlan = pgTable("budget_plan", {
   id: integer("id").primaryKey().default(1),
   plannedIncomeCents: bigint("planned_income_cents", { mode: "number" }).notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Single-row (id = 1) household tax profile: earners' gross pay, pre-tax
+// deductions, filing status and location. The take-home estimate is
+// computed from it with the shared tax engine, never stored.
+export const taxProfile = pgTable("tax_profile", {
+  id: integer("id").primaryKey().default(1),
+  profile: jsonb("profile").$type<TaxProfile>().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

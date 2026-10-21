@@ -35,6 +35,7 @@ import mobileRoutes from "./modules/mobile/routes.js";
 import setupRoutes from "./modules/setup/routes.js";
 import statusRoutes from "./modules/status/routes.js";
 import subscriptionRoutes from "./modules/subscriptions/routes.js";
+import taxRoutes from "./modules/taxes/routes.js";
 import transactionRoutes from "./modules/transactions/routes.js";
 import updateRoutes from "./modules/updates/routes.js";
 import { startUpdateChecks } from "./modules/updates/scheduler.js";
@@ -156,6 +157,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       await api.register(categorizeRoutes, { config: opts.config });
       await api.register(bankRoutes, { config: opts.config });
       await api.register(budgetRoutes);
+      await api.register(taxRoutes);
       await api.register(aiRoutes, { config: opts.config });
       await api.register(cashflowRoutes);
       await api.register(investmentRoutes);
