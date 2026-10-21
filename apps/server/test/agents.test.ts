@@ -7,6 +7,10 @@ describe("agent router", () => {
     expect(routeAgents("Add my Netflix subscription as a bill")).toEqual(expect.arrayContaining(["bills"]));
     expect(routeAgents("Pay off my credit card faster")).toContain("debt");
     expect(routeAgents("switch to dark theme")).toEqual(["app"]);
+    expect(routeAgents("what would I make in grand rapids?")).toContain("tax");
+    expect(routeAgents("would montgomery county be cheaper?")).toContain("tax");
+    // Typos and the Sankey still reach the budget agent; a city reaches tax.
+    expect(routeAgents("set up my buject sankey with taxes from Grand Rapids MI")).toEqual(expect.arrayContaining(["budget", "tax"]));
   });
 
   it("turns everything on for organize-everything requests", () => {

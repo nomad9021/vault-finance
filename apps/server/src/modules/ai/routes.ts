@@ -443,6 +443,7 @@ export default async function aiRoutes(
           thinking = false;
         }
         let blocks = extractAssistantBlocks(assistantText);
+        const droppedReasons: string[] = [];
 
         // Rule check: changes that would fail (or don't parse) go back to the
         // model once to fix; whatever still fails is dropped, so the user
@@ -479,8 +480,22 @@ export default async function aiRoutes(
           const fixProblems = checkActions(treeNow, [...kept, ...fixes]).slice(kept.length);
           const accepted = fixes.filter((_, i) => !fixProblems[i]);
           const dropped = blocks.actions.length - kept.length + blocks.invalid.length - accepted.length;
-          if (dropped > 0) request.log.info({ dropped }, "AI changes dropped by the rule check");
+          if (dropped > 0) {
+            request.log.info({ dropped }, "AI changes dropped by the rule check");
+            droppedReasons.push(...problems.filter((p): p is string => !!p), ...fixProblems.filter((p): p is string => !!p));
+          }
           blocks = { ...extractAssistantBlocks(assistantText), actions: [...kept, ...accepted], invalid: [] };
+        }
+        // Never leave the user with an empty reply.
+        if (!blocks.visible.trim()) {
+          const note = blocks.actions.length
+            ? `Here's what I'd change (${blocks.actions.length} change${blocks.actions.length > 1 ? "s" : ""}):`
+            : droppedReasons.length
+              ? `I couldn't make those changes: ${[...new Set(droppedReasons)].slice(0, 3).join(" ")} Try rephrasing, or pick a higher AI level.`
+              : "I didn't find anything to change. Could you say a bit more about what you'd like?";
+          assistantText += (assistantText ? "\n\n" : "") + note;
+          writeLine({ token: (blocks.visible ? "\n\n" : "") + note });
+          blocks = { ...blocks, visible: note };
         }
         const [saved] = await app.db
           .insert(aiMessages)
