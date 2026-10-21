@@ -31,6 +31,16 @@ import { describeAiError, getProvider, isConfigured, type ChatMessage } from "./
 import { resolveSettings, statusFor } from "./settings.js";
 import { decryptSecret, encryptSecret } from "../../secret-crypto.js";
 
+/** The user asked for something to be changed (not just a question). */
+export const asksForChange = (message: string) =>
+  /\b(add|set|create|make|move|put|rename|change|update|delete|remove|always|budget|organi[sz]e|recategori[sz]e|split|turn|switch|start|track|save|plan|want to|need to)\b/i.test(message);
+/** The reply talks as if a change was made or is being made. */
+export const claimsChange = (reply: string) =>
+  /\b(added|created|set|moved|renamed|updated|changed|removed|deleted|now (in|under|has|set|be)|will now|will be|is now|are now|tracked|i('ve| have| will|'ll)|done|here's what i'd change|adding|setting|moving|creating|renaming)\b/i.test(reply);
+
+/** A question about an amount, which must come from a look-up, not the model's arithmetic. */
+export const asksHowMuch = (message: string) => /\b(how much|how many|total|sum|spent|spend|earned|average)\b/i.test(message);
+
 const HISTORY_LIMIT = 20;
 /** Model calls per chat message: the answer plus up to 3 rounds of look-ups. */
 const AGENT_MAX_STEPS = 4;
@@ -400,9 +410,19 @@ export default async function aiRoutes(
       .header("cache-control", "no-store")
       .send(stream);
 
+    // Stop button: the app drops the connection; stop the model too.
+    const gone = new AbortController();
+    reply.raw.on("close", () => {
+      if (!reply.raw.writableFinished) gone.abort();
+    });
+    const stopped = () => {
+      if (gone.signal.aborted) throw new Error("stopped by the user");
+    };
+
     // Pump in the background — the reply stream is already on its way.
     void (async () => {
       let assistantText = "";
+      writeLine({ conversationId, started: true });
       writeLine({ status: `${agentNames(agentIds)} ${agentIds.length > 1 ? "agents are" : "agent is"} on it…` });
       try {
         // Agent loop: a reply may ask for look-ups (<vault-query>); the
@@ -410,6 +430,14 @@ export default async function aiRoutes(
         // rounds. Plain text both ways, so it works with every model.
         let thinking = false;
         let convo = messages;
+        // Amount questions: point the model at a look-up before it answers, so the
+        // number comes from the database, not from adding up the snapshot.
+        if (asksHowMuch(body.message) && convo.at(-1)?.role === "user") {
+          convo = [
+            ...convo.slice(0, -1),
+            { role: "user", content: `${convo.at(-1)!.content}\n\n(Get the exact figure with a transactions or category_totals look-up first; don't add up amounts from the snapshot.)` },
+          ];
+        }
         const seenQueries = new Set<string>();
         let lastStep = "";
         for (let step = 1; ; step++) {
@@ -422,13 +450,14 @@ export default async function aiRoutes(
               assistantText += token;
               writeLine({ token });
             },
-            undefined,
+            gone.signal,
             () => {
               if (thinking || assistantText) return;
               thinking = true;
               writeLine({ thinking: true });
             },
           );
+          stopped();
           lastStep = stepText;
           const { queries, invalid } = extractQueryBlocks(stepText);
           if ((!queries.length && !invalid.length) || step >= AGENT_MAX_STEPS) break;
@@ -444,6 +473,37 @@ export default async function aiRoutes(
         }
         let blocks = extractAssistantBlocks(assistantText);
         const droppedReasons: string[] = [];
+
+        // Completion check: small models often say they've made a change
+        // without writing the block that makes it. Ask once for the blocks.
+        if (!blocks.actions.length && !blocks.invalid.length && asksForChange(body.message) && claimsChange(blocks.visible)) {
+          writeLine({ status: "Making those changes…" });
+          let fixText = "";
+          await provider.streamChat(
+            aiConfig,
+            [
+              ...convo,
+              { role: "assistant", content: lastStep },
+              {
+                role: "user",
+                content:
+                  "You described a change but wrote no <vault-action> block, so nothing has changed yet. Write the <vault-action> block(s) for what the user asked now, each JSON object on its own line, plus one short sentence.",
+              },
+            ],
+            (token) => {
+              fixText += token;
+            },
+            gone.signal,
+          );
+          stopped();
+          const fixed = extractAssistantBlocks(fixText);
+          if (fixed.actions.length || fixed.invalid.length) {
+            const tags = fixText.match(/<?vault-action>?[\s\S]*?<\/vault-action>/g)?.join("\n") ?? "";
+            assistantText += `\n${tags}`;
+            writeLine({ token: `\n${tags}` });
+            blocks = extractAssistantBlocks(assistantText);
+          }
+        }
 
         // Rule check: changes that would fail (or don't parse) go back to the
         // model once to fix; whatever still fails is dropped, so the user
@@ -472,7 +532,9 @@ export default async function aiRoutes(
               assistantText += token;
               writeLine({ token });
             },
+            gone.signal,
           );
+          stopped();
           const kept = blocks.actions.filter((_, i) => !problems[i]);
           // Ignore fixes that just repeat a change that was already fine.
           const keptJson = new Set(kept.map((x) => JSON.stringify(x)));
@@ -528,6 +590,16 @@ export default async function aiRoutes(
         }
         writeLine({ done: true, conversationId });
       } catch (err) {
+        if (gone.signal.aborted) {
+          // Keep what was written so far; no changes are proposed from a cut-off reply.
+          const partial = extractAssistantBlocks(assistantText).visible;
+          await app.db
+            .insert(aiMessages)
+            .values({ conversationId, role: "assistant", content: `${partial}${partial ? "\n\n" : ""}(Stopped.)` })
+            .catch(() => {});
+          request.log.info("ai chat stopped by the user");
+          return;
+        }
         request.log.warn({ err }, "ai chat stream failed");
         writeLine({
           error: {

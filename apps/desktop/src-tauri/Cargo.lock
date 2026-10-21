@@ -4677,6 +4677,7 @@ dependencies = [
  "tauri-plugin-store",
  "tauri-plugin-updater",
  "thiserror 2.0.21",
+ "tokio",
  "windows 0.61.3",
  "windows-future 0.2.1",
  "zbus",

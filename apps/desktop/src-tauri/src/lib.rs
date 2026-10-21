@@ -29,6 +29,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::http_request,
             commands::http_request_stream,
+            commands::cancel_stream,
             commands::probe_server,
             commands::get_secret,
             commands::set_secret,

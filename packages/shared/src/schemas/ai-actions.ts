@@ -17,6 +17,9 @@ const Color = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 /** Whole or decimal dollars, as the model writes them. */
 const Dollars = z.number().nonnegative().max(10_000_000);
 const Day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+/** Look-up windows, coerced and clamped rather than rejected. */
+const Days = z.coerce.number().int().min(1).transform((n) => Math.min(n, 730));
+const Months = z.coerce.number().int().min(1).transform((n) => Math.min(n, 24));
 /** "Uncategorized" is accepted wherever a source category is named. */
 export const UNCATEGORIZED = "Uncategorized";
 
@@ -294,9 +297,20 @@ export function describeAiAction(a: AiAction): string {
   }
 }
 
-const ACTION_RE = /<vault-action>([\s\S]*?)<\/vault-action>/g;
+// Tolerant of the ways small models mangle the tag: a missing "<" or ">",
+// stray text before it ("$vault-action{…}") or a ```json fence inside.
+const ACTION_RE = /<?vault-action>?([\s\S]*?)<\/vault-action>/g;
 const REMEMBER_RE = /<vault-remember>([\s\S]*?)<\/vault-remember>/g;
-const QUERY_RE = /<vault-query>([\s\S]*?)<\/vault-query>/g;
+const QUERY_RE = /<?vault-query>?([\s\S]*?)<\/vault-query>/g;
+
+/** A block's JSON without the code fences some models wrap it in. */
+const blockJson = (raw: string) =>
+  raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "")
+    // Curly quotes (some models' typography) aren't JSON.
+    .replace(/[\u201C\u201D\u201E\u201F\u2033]/g, '"');
 
 /**
  * Look-ups the assistant asks the server for mid-answer (the agent loop):
@@ -310,14 +324,17 @@ export const AiQuery = z.discriminatedUnion("type", [
     category: Name.optional(),
     from: Day.optional(),
     to: Day.optional(),
-    limit: z.number().int().min(1).max(100).optional(),
+    /** Last N days (instead of from/to). */
+    days: Days.optional(),
+    limit: z.coerce.number().int().min(1).transform((n) => Math.min(n, 100)).optional(),
   }),
   z.object({
     type: z.literal("merchants"),
-    months: z.number().int().min(1).max(24).optional(),
+    months: Months.optional(),
+    days: Days.optional(),
     uncategorizedOnly: z.boolean().optional(),
   }),
-  z.object({ type: z.literal("category_totals"), months: z.number().int().min(1).max(24).optional() }),
+  z.object({ type: z.literal("category_totals"), months: Months.optional(), days: Days.optional() }),
   z.object({ type: z.literal("budgets") }),
   z.object({ type: z.literal("tax_estimate") }),
   /** The saved tax profile with some things changed — nothing is saved. */
@@ -345,13 +362,38 @@ export const AiQuery = z.discriminatedUnion("type", [
 export type AiQuery = z.infer<typeof AiQuery>;
 
 /** The look-ups in a reply; malformed ones come back as raw text to report to the model. */
+/**
+ * Look-up names models invent for the real ones ("merchant_totals" for a
+ * merchant's transactions); mapped rather than rejected.
+ */
+const QUERY_ALIASES: Record<string, string> = {
+  merchant_totals: "transactions",
+  merchant_total: "transactions",
+  merchant_spending: "transactions",
+  transaction_totals: "transactions",
+  spending: "transactions",
+  totals: "transactions",
+  search: "transactions",
+  transaction: "transactions",
+  category_spending: "category_totals",
+  categories: "category_totals",
+  category_total: "category_totals",
+  merchant: "merchants",
+  budget: "budgets",
+  bill: "bills",
+  goal: "goals",
+  account: "accounts",
+};
+
 export function extractQueryBlocks(text: string): { queries: AiQuery[]; invalid: string[] } {
   const queries: AiQuery[] = [];
   const invalid: string[] = [];
   for (const m of text.matchAll(QUERY_RE)) {
     const raw = (m[1] ?? "").trim();
     try {
-      const parsed = AiQuery.safeParse(JSON.parse(raw));
+      const obj = JSON.parse(blockJson(raw)) as Record<string, unknown>;
+      if (typeof obj?.type === "string" && QUERY_ALIASES[obj.type]) obj.type = QUERY_ALIASES[obj.type];
+      const parsed = AiQuery.safeParse(obj);
       if (parsed.success) queries.push(parsed.data);
       else invalid.push(raw);
     } catch {
@@ -378,7 +420,7 @@ export function extractAssistantBlocks(text: string): {
   for (const m of text.matchAll(ACTION_RE)) {
     const raw = (m[1] ?? "").trim();
     try {
-      const parsed = AiAction.safeParse(JSON.parse(raw));
+      const parsed = AiAction.safeParse(JSON.parse(blockJson(raw)));
       if (parsed.success) actions.push(parsed.data);
       else invalid.push(raw);
     } catch {
@@ -401,7 +443,7 @@ export function stripAssistantBlocks(text: string): string {
     .replace(ACTION_RE, "")
     .replace(REMEMBER_RE, "")
     .replace(QUERY_RE, "")
-    .replace(/<vault-(action|remember|query)>[\s\S]*$/, "")
+    .replace(/<?vault-(action|remember|query)>?[\s\S]*$/, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }

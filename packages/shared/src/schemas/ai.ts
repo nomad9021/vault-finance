@@ -289,8 +289,10 @@ export type ChatRequest = z.infer<typeof ChatRequest>;
  *   { remembered: [...] }              — notes added to the assistant's memory
  *   { thinking: true }                 — the model is reasoning before it answers
  *   { status }                         — what the assistant is looking up ("Checking transactions…")
+ *   { conversationId }                 — first line: the conversation this reply belongs to
  */
 export const ChatStreamLine = z.union([
+  z.object({ conversationId: z.string().uuid(), started: z.literal(true) }),
   z.object({ token: z.string() }),
   z.object({ thinking: z.literal(true) }),
   z.object({ status: z.string() }),
