@@ -117,50 +117,189 @@ function UpdatesSection() {
   );
 }
 
+const codeStyle: CSSProperties = {
+  fontFamily: "ui-monospace, monospace",
+  background: "var(--color-neutral-900)",
+  padding: "1px 6px",
+  borderRadius: 6,
+};
+
+/**
+ * Server version + in-app updating. The owner can check now and, when the
+ * host has the update agent (installers/server/enable-app-updates.sh), update
+ * the server from here; we then poll until it comes back on the new version.
+ * Members only see the card when an update is out.
+ */
 function ServerUpdateSection() {
   const client = useApp((s) => s.client);
+  const user = useApp((s) => s.user);
+  const isOwner = user?.role === "owner";
   const [status, setStatus] = useState<UpdateStatusResponse | null>(null);
+  const [busy, setBusy] = useState<"check" | "start" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  // Set while the server is down mid-update (requests fail until it's back).
+  const [restarting, setRestarting] = useState(false);
+  const [updatedTo, setUpdatedTo] = useState<string | null>(null);
+  const startedFrom = useRef<string | null>(null);
 
-  useEffect(() => {
-    client
-      .updateStatus()
-      .then(setStatus)
-      .catch(() => setStatus(null));
+  const load = useCallback(async () => {
+    try {
+      const next = await client.updateStatus();
+      setStatus(next);
+      setRestarting(false);
+      if (startedFrom.current && next.currentVersion !== startedFrom.current) {
+        setUpdatedTo(next.currentVersion);
+        startedFrom.current = null;
+      } else if (next.selfUpdate?.state === "failed" || next.selfUpdate?.state === "succeeded") {
+        startedFrom.current = null; // finished without a version change: show the agent's message
+      }
+    } catch {
+      if (startedFrom.current) setRestarting(true);
+      else setStatus(null);
+    }
   }, [client]);
 
-  if (!status || !status.updateAvailable) return null;
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const self = status?.selfUpdate ?? null;
+  const inProgress =
+    restarting || self?.state === "requested" || self?.state === "running" || startedFrom.current !== null;
+
+  useEffect(() => {
+    if (!inProgress) return;
+    const t = setInterval(() => void load(), 3000);
+    return () => clearInterval(t);
+  }, [inProgress, load]);
+
+  const checkNow = async () => {
+    setBusy("check");
+    setError(null);
+    try {
+      setStatus(await client.checkServerUpdate());
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : "Couldn't check for updates.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const start = async () => {
+    setConfirming(false);
+    setBusy("start");
+    setError(null);
+    setUpdatedTo(null);
+    try {
+      const current = status?.currentVersion ?? null;
+      setStatus(await client.startServerUpdate());
+      startedFrom.current = current;
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : "Couldn't start the update.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (!status) return null;
+  if (!isOwner && !status.updateAvailable) return null;
+
+  const progressText = restarting
+    ? "The server is restarting on the new version…"
+    : self?.state === "requested"
+      ? "Waiting for the server to start the update…"
+      : (self?.message ?? "Updating…");
 
   return (
-    <Card kicker="Server" title="A server update is available">
-      <p className="card-body">
-        Your server is running <strong>v{status.currentVersion}</strong>.{" "}
-        <strong>v{status.latestVersion}</strong> has been released.
-      </p>
-      <p className="card-body">
-        {status.operatorManaged ? (
-          <>This server is managed by an administrator — they'll roll out the update.</>
-        ) : (
-          <>
-            On the machine hosting your server, run{" "}
-            <code
-              style={{
-                fontFamily: "ui-monospace, monospace",
-                background: "var(--color-neutral-900)",
-                padding: "1px 6px",
-                borderRadius: 6,
-              }}
-            >
-              vault-update
-            </code>
-            . Your data isn't touched.
-          </>
-        )}
-      </p>
-      {status.notesUrl && (
+    <Card kicker="Server" title={`Server update — v${status.currentVersion}`}>
+      {updatedTo ? (
+        <p className="card-body">
+          <Tag variant="positive">Updated</Tag> Your server is now on <strong>v{updatedTo}</strong>.
+        </p>
+      ) : status.updateAvailable ? (
+        <p className="card-body">
+          <strong>v{status.latestVersion}</strong> has been released. Your server is running{" "}
+          <strong>v{status.currentVersion}</strong>.
+        </p>
+      ) : (
+        <p className="card-body">
+          Your server is on the latest version
+          {status.checkedAt ? ` (checked ${new Date(status.checkedAt).toLocaleString()})` : ""}.
+        </p>
+      )}
+
+      {inProgress ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <Spinner label="Updating server" />
+          <span style={{ fontSize: "var(--text-sm)" }}>{progressText}</span>
+        </div>
+      ) : status.operatorManaged ? (
+        <p className="card-body">This server is managed by an administrator — they'll roll out the update.</p>
+      ) : !isOwner ? (
+        <p className="card-body">The household owner can install it from their Settings.</p>
+      ) : (
+        <>
+          {self?.state === "failed" && self.message && (
+            <p role="alert" className="card-body" style={{ color: "var(--color-negative)" }}>
+              {self.message}
+            </p>
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {status.updateAvailable && self && (
+              <Button variant="primary" onClick={() => setConfirming(true)} disabled={busy !== null}>
+                {busy === "start" ? (
+                  <Spinner label="Starting" />
+                ) : self.state === "failed" ? (
+                  "Try again"
+                ) : (
+                  `Update server to v${status.latestVersion}`
+                )}
+              </Button>
+            )}
+            <Button variant="secondary" onClick={() => void checkNow()} disabled={busy !== null}>
+              {busy === "check" ? <Spinner label="Checking" /> : "Check now"}
+            </Button>
+          </div>
+          {status.updateAvailable && !self && (
+            <p className="card-body">
+              To update, run <code style={codeStyle}>vault-update</code> on the machine hosting your server. To
+              update from here instead, run <code style={codeStyle}>installers/server/enable-app-updates.sh</code>{" "}
+              there once.
+            </p>
+          )}
+        </>
+      )}
+
+      {error && (
+        <p role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
+          {error}
+        </p>
+      )}
+      {status.notesUrl && status.updateAvailable && (
         <p className="card-meta">
           Release notes: <span style={{ userSelect: "all" }}>{status.notesUrl}</span>
         </p>
       )}
+
+      <Dialog
+        open={confirming}
+        title={`Update the server to v${status.latestVersion}?`}
+        onClose={() => setConfirming(false)}
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={() => void start()}>
+              Update server
+            </Button>
+          </>
+        }
+      >
+        The server downloads the new version and restarts, which usually takes a minute or two. Everyone using
+        Vault Finance is disconnected briefly and reconnects on their own. Your data isn't touched.
+      </Dialog>
     </Card>
   );
 }

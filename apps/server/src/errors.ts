@@ -43,6 +43,9 @@ export const forbidden = (message = "You do not have permission to do that.") =>
 export const notFound = (what = "Resource") =>
   new AppError("NOT_FOUND", 404, `${what} not found.`);
 
+export const updateUnavailable = (message: string) =>
+  new AppError("UPDATE_UNAVAILABLE", 409, message);
+
 export const rateLimited = () =>
   new AppError("RATE_LIMITED", 429, "Too many attempts. Try again shortly.");
 

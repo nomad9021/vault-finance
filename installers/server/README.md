@@ -8,6 +8,9 @@ Compose stack) on the machine that will host your data.
 | [`bootstrap.sh`](bootstrap.sh) | Linux one-liner: installs git + Docker, clones, runs `install-server.sh` |
 | [`install-server.sh`](install-server.sh) | Linux / macOS |
 | [`install-server.ps1`](install-server.ps1) | Windows (Docker Desktop + PowerShell) |
+| [`update-server.sh`](update-server.sh) | Update to the latest release (also installed as `vault-update`) |
+| [`enable-app-updates.sh`](enable-app-updates.sh) | Linux + systemd: let the owner update the server from the app's Settings ([how it works](../../docs/self-hosting.md#10-updating)) |
+| [`update-agent.sh`](update-agent.sh) | Run by `vault-update.service` for in-app updates, not by hand |
 
 They ask where to store your data, which HTTPS port to use, the database
 password, whether to enable local AI, and (optionally) create your owner

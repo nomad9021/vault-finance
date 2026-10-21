@@ -89,6 +89,9 @@ const EnvSchema = z.object({
   // Set true on operator-managed fleets so the "update available" email tells
   // owners to contact their admin rather than run vault-update themselves.
   UPDATE_OPERATOR_MANAGED: z.enum(["true", "false"]).default("false"),
+  // Folder shared with the host's update agent (enable-app-updates.sh). Unset
+  // = no in-app updating; the app shows the vault-update instructions instead.
+  UPDATE_AGENT_DIR: z.string().optional(),
 });
 
 export interface AppConfig {
@@ -135,6 +138,7 @@ export interface AppConfig {
     manifestUrl: string;
     intervalHours: number;
     operatorManaged: boolean;
+    agentDir: string | null;
   };
 }
 
@@ -206,6 +210,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       manifestUrl: parsed.UPDATE_MANIFEST_URL,
       intervalHours: parsed.UPDATE_CHECK_INTERVAL_HOURS,
       operatorManaged: parsed.UPDATE_OPERATOR_MANAGED === "true",
+      agentDir: parsed.UPDATE_AGENT_DIR ? path.resolve(parsed.UPDATE_AGENT_DIR) : null,
     },
   };
 }

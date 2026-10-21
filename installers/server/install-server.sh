@@ -291,6 +291,13 @@ if [ -n "$PULL_MODEL" ]; then
     && ok "Model ready." || warn "Model pull didn't finish — run later: (cd docker && $DC exec ollama ollama pull $PULL_MODEL)"
 fi
 
+# ---- in-app updates ---------------------------------------------------------
+if [ "$READY" = "1" ] && command -v systemctl >/dev/null 2>&1 \
+  && yesno "Let the owner update the server from the app's Settings? (installs a small systemd unit; asks for sudo)" "y"; then
+  bash "$SCRIPT_DIR/enable-app-updates.sh" \
+    || warn "Couldn't set up in-app updates — run later: bash installers/server/enable-app-updates.sh"
+fi
+
 # ---- summary ----------------------------------------------------------------
 LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"; LAN_IP="${LAN_IP:-<this-machine-ip>}"
 hdr "${GRN}Done.${RST}"

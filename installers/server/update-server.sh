@@ -14,6 +14,10 @@
 #
 set -euo pipefail
 
+# Braced so bash reads the whole script before running it: the git pull
+# below may rewrite this file mid-run (unattended via update-agent.sh).
+{
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 REPO_DIR="$(cd -- "$SCRIPT_DIR/../.." &>/dev/null && pwd)"
 COMPOSE_FILE="$REPO_DIR/docker/docker-compose.yml"
@@ -46,3 +50,5 @@ else
   ok "server updated — migrations run automatically on boot"
   say "  Check it came back up:  docker compose -f docker/docker-compose.yml ps"
 fi
+exit
+}
