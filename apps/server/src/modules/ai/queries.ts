@@ -1,8 +1,18 @@
-import { UNCATEGORIZED, type AiQuery, type Category } from "@vault/shared";
+import {
+  estimateTaxes,
+  findLocality,
+  LOCALITIES_2026,
+  STATES_2026,
+  UNCATEGORIZED,
+  type AiQuery,
+  type Category,
+  type TaxEstimate,
+  type TaxProfile,
+} from "@vault/shared";
 import { and, desc, eq, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { transactions } from "../../db/schema.js";
-import { resolveCategory } from "./actions.js";
+import { call, resolveCategory } from "./actions.js";
 
 /**
  * Answers the assistant's <vault-query> look-ups (the agent loop in
@@ -25,17 +35,43 @@ function monthsAgo(months: number): string {
 }
 
 /** One status line for the app while look-ups run ("Checking your merchants…"). */
+const QUERY_LABEL: Record<AiQuery["type"], string> = {
+  transactions: "transactions",
+  merchants: "merchants",
+  category_totals: "category totals",
+  budgets: "budgets",
+  tax_estimate: "taxes",
+  tax_whatif: "take-home what-if",
+  tax_compare: "take-home in other states",
+  tax_places: "local taxes",
+  bills: "bills",
+  subscriptions: "subscriptions",
+  goals: "goals",
+  giving: "giving",
+  debts: "debts",
+  cashflow: "cash flow",
+  insights: "insights",
+  accounts: "accounts",
+};
+
 export function describeQueries(queries: AiQuery[]): string {
-  const kinds = new Set(queries.map((q) => q.type));
-  const parts = [
-    kinds.has("transactions") && "transactions",
-    kinds.has("merchants") && "merchants",
-    kinds.has("category_totals") && "category totals",
-  ].filter(Boolean);
-  return parts.length ? `Checking your ${parts.join(" and ")}…` : "Looking things up…";
+  const parts = [...new Set(queries.map((q) => QUERY_LABEL[q.type]))];
+  return parts.length ? `Checking your ${parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0]}…` : "Looking things up…";
 }
 
-export async function runQuery(app: FastifyInstance, q: AiQuery): Promise<string> {
+function describeEstimate(e: TaxEstimate, title: string): string[] {
+  return [
+    `${title} (${e.year}, ${e.stateName}${e.locality ? `, ${findLocality(e.locality)?.name}` : ""}):`,
+    `  gross ${dollars(e.grossCents)} | pre-tax ${dollars(e.pretaxCents)} | taxes ${dollars(e.taxCents)} (${e.effectiveRatePct}% of gross) | take-home ${dollars(e.takeHomeCents)}/yr = ${dollars(Math.round(e.takeHomeCents / 12))}/mo`,
+    `  next dollar: ${e.marginalFederalPct}% federal + ${e.marginalStatePct}% state/local + FICA`,
+    ...e.lines.map((l) => `  ${l.label}: ${dollars(l.amountCents)}`),
+    ...e.perEarner.map((p) => `  earner "${p.name}": gross ${dollars(p.grossCents)}, take-home ${dollars(p.takeHomeCents)}`),
+    ...e.notes.map((n) => `  note: ${n}`),
+  ];
+}
+
+export async function runQuery(app: FastifyInstance, request: FastifyRequest, q: AiQuery): Promise<string> {
+  const get = <T>(url: string) => call<T>(app, request, "GET", url);
   // Same fields resolveCategory reads (name, parentCategoryId, id).
   const allCats = (await app.db.query.categories.findMany()) as unknown as Category[];
   const byId = new Map(allCats.map((c) => [c.id, c]));
@@ -125,12 +161,132 @@ export async function runQuery(app: FastifyInstance, q: AiQuery): Promise<string
         });
       return [`CATEGORY TOTALS since ${since} (${months} month${months > 1 ? "s" : ""}):`, ...(lines.length ? lines : ["  (no transactions)"])].join("\n");
     }
+
+    case "budgets": {
+      const month = new Date().toISOString().slice(0, 7);
+      const { budgets } = await get<{ budgets: Array<{ categoryId: string; amountCents: number; spentCents?: number }> }>(`/budgets?month=${month}`);
+      const plan = await get<{ plannedIncomeCents: number }>("/budget-plan");
+      return [
+        `BUDGETS ${month} (category | budget | spent): planned income ${dollars(plan.plannedIncomeCents)}/mo`,
+        ...(budgets.length ? budgets.map((b) => `  ${pathOf(b.categoryId)} | ${dollars(b.amountCents)} | ${b.spentCents != null ? dollars(b.spentCents) : "?"}`) : ["  (no budgets)"]),
+      ].join("\n");
+    }
+
+    case "tax_estimate":
+    case "tax_whatif":
+    case "tax_compare": {
+      const { profile } = await get<{ profile: TaxProfile | null }>("/tax-profile");
+      if (!profile || !profile.earners.length) return "TAX: no tax profile yet. Ask for each earner's salary, the state and filing status, then propose set_tax_profile and set_salary.";
+      if (q.type === "tax_estimate") return describeEstimate(estimateTaxes(profile), "TAX ESTIMATE (saved profile)").join("\n");
+      if (q.type === "tax_compare") {
+        const rows = q.states.map((code) => {
+          const st = code.toUpperCase();
+          if (!(st in STATES_2026)) return `  ${code}: not a US state code`;
+          const e = estimateTaxes({ ...profile, state: st, locality: null, customLocalRatePct: null, otherPayrollPct: null });
+          return `  ${e.stateName}: take-home ${dollars(e.takeHomeCents)}/yr (${dollars(Math.round(e.takeHomeCents / 12))}/mo), taxes ${e.effectiveRatePct}% of gross`;
+        });
+        return [`TAKE-HOME BY STATE (same pay, no local tax; now: ${dollars(estimateTaxes(profile).takeHomeCents)}/yr in ${profile.state}):`, ...rows].join("\n");
+      }
+      const next: TaxProfile = { ...profile, earners: profile.earners.map((e) => ({ ...e })) };
+      if (q.state) {
+        next.state = q.state.toUpperCase();
+        if (q.locality === undefined) next.locality = null;
+      }
+      if (q.locality !== undefined) next.locality = q.locality;
+      if (q.filingStatus) next.filingStatus = q.filingStatus;
+      if (q.dependents !== undefined) next.dependents = q.dependents;
+      if (q.grossAnnual !== undefined || q.retirementPct !== undefined) {
+        const e = q.earner ? next.earners.find((x) => x.name.toLowerCase() === q.earner!.toLowerCase()) : next.earners[0];
+        if (!e) return `No earner called "${q.earner}". Earners: ${profile.earners.map((x) => x.name).join(", ")}.`;
+        if (q.grossAnnual !== undefined) e.grossAnnualCents = Math.round(q.grossAnnual * 100);
+        if (q.retirementPct !== undefined) {
+          e.retirementPct = q.retirementPct;
+          e.retirementCents = null;
+        }
+      }
+      const before = estimateTaxes(profile);
+      const after = estimateTaxes(next);
+      const diff = after.takeHomeCents - before.takeHomeCents;
+      return [
+        ...describeEstimate(after, "TAX WHAT-IF (not saved)"),
+        `  compared with now: take-home ${diff >= 0 ? "+" : "-"}${dollars(Math.abs(diff))}/yr (${diff >= 0 ? "+" : "-"}${dollars(Math.abs(Math.round(diff / 12)))}/mo)`,
+      ].join("\n");
+    }
+
+    case "tax_places": {
+      const code = q.state.toUpperCase();
+      const st = (STATES_2026 as Record<string, { name: string; single: readonly unknown[] }>)[code];
+      if (!st) return `${q.state} isn't a US state code.`;
+      const locs = LOCALITIES_2026.filter((l) => l.state === code);
+      return [
+        `LOCAL TAXES IN ${st.name.toUpperCase()}${st.single.length ? "" : " (no state tax on wages)"}:`,
+        ...(locs.length ? locs.map((l) => `  ${l.id}: ${l.name}${l.verified ? "" : " (rate not confirmed with the city)"}`) : ["  (none listed — use customLocalRatePct if their city has one)"]),
+      ].join("\n");
+    }
+
+    case "bills": {
+      const { bills } = await get<{ bills: Array<{ name: string; amountCents: number; cadence: string; dueDay: number; autopay: boolean; nextDueDate: string }> }>("/bills");
+      return ["BILLS (name | amount | cadence | due):", ...(bills.length ? bills.map((b) => `  ${b.name} | ${dollars(b.amountCents)} | ${b.cadence} | day ${b.dueDay}, next ${b.nextDueDate}${b.autopay ? " | autopay" : ""}`) : ["  (none)"])].join("\n");
+    }
+
+    case "subscriptions": {
+      const { subscriptions } = await get<{ subscriptions: Array<{ merchantName: string; amountCents: number; monthlyCents: number; cadence: string; occurrences: number; lastChargedAt: string }> }>("/subscriptions");
+      return [
+        "RECURRING CHARGES found in transactions (merchant | charge | per month | cadence | last):",
+        ...(subscriptions.length ? subscriptions.slice(0, MAX_LINES).map((x) => `  ${x.merchantName} | ${dollars(x.amountCents)} | ${dollars(x.monthlyCents)}/mo | ${x.cadence} (${x.occurrences}×) | ${x.lastChargedAt}`) : ["  (none found)"]),
+      ].join("\n");
+    }
+
+    case "goals": {
+      const { goals } = await get<{ goals: Array<{ name: string; targetCents: number; savedCents: number; monthlyCents: number; targetDate: string | null }> }>("/goals");
+      return ["SAVINGS GOALS (name | saved / target | per month | by):", ...(goals.length ? goals.map((g) => `  ${g.name} | ${dollars(g.savedCents)} / ${dollars(g.targetCents)} | ${dollars(g.monthlyCents)}/mo | ${g.targetDate ?? "no date"}`) : ["  (none)"])].join("\n");
+    }
+
+    case "giving": {
+      const body = await get<{ funds: Array<{ name: string; kind: string; monthlyCents: number; savedCents: number; targetCents: number | null; occasionDate: string | null }>; givenThisYearCents: number }>("/giving");
+      return [
+        `GIVING FUNDS (given this year ${dollars(body.givenThisYearCents)}; name | kind | per month | saved / target | date):`,
+        ...(body.funds.length ? body.funds.map((f) => `  ${f.name} | ${f.kind} | ${dollars(f.monthlyCents)}/mo | ${dollars(f.savedCents)}${f.targetCents ? ` / ${dollars(f.targetCents)}` : ""} | ${f.occasionDate ?? "-"}`) : ["  (none)"]),
+      ].join("\n");
+    }
+
+    case "debts": {
+      const plan = await get<{ strategy: string; extraCents: number; manual: Array<{ name: string; balanceCents: number; apr: number; minCents: number }> }>("/debt-plan");
+      const { accounts } = await get<{ accounts: Array<{ name: string; type: string; balanceCents: number; isLiability: boolean; interestRate: string | null }> }>("/accounts");
+      const debts = accounts.filter((a) => a.isLiability);
+      return [
+        `DEBT PLAN: ${plan.strategy}, ${dollars(plan.extraCents)} extra a month.`,
+        "DEBTS (name | balance | APR | minimum):",
+        ...debts.map((d) => `  ${d.name} | ${dollars(d.balanceCents)} | ${d.interestRate ?? "?"}% | (from account)`),
+        ...plan.manual.map((d) => `  ${d.name} | ${dollars(d.balanceCents)} | ${d.apr}% | ${dollars(d.minCents)}`),
+        ...(debts.length || plan.manual.length ? [] : ["  (none)"]),
+      ].join("\n");
+    }
+
+    case "cashflow": {
+      const months = q.months ?? 6;
+      const body = await get<{ months?: Array<{ month: string; incomeCents: number; spendingCents: number }>; points?: Array<{ month: string; incomeCents: number; spendingCents: number }> }>(`/cashflow/trends?months=${months}`);
+      const rows = body.months ?? body.points ?? [];
+      return ["CASH FLOW (month | income | spending | saved):", ...(rows.length ? rows.map((r) => `  ${r.month} | ${dollars(r.incomeCents)} | ${dollars(r.spendingCents)} | ${dollars(r.incomeCents - r.spendingCents)}`) : ["  (no data)"])].join("\n");
+    }
+
+    case "insights": {
+      const { insights } = await get<{ insights: Array<{ title: string; detail?: string; severity?: string }> }>("/insights");
+      return ["INSIGHTS:", ...(insights.length ? insights.slice(0, 30).map((i) => `  [${i.severity ?? "info"}] ${i.title}${i.detail ? ` — ${i.detail}` : ""}`) : ["  (nothing needs attention)"])].join("\n");
+    }
+
+    case "accounts": {
+      const { accounts } = await get<{ accounts: Array<{ name: string; type: string; balanceCents: number; isLiability: boolean }> }>("/accounts");
+      const net = accounts.reduce((s, a) => s + a.balanceCents, 0);
+      return [`ACCOUNTS (net worth ${dollars(net)}; name | type | balance):`, ...accounts.map((a) => `  ${a.name} | ${a.type} | ${dollars(a.balanceCents)}`)].join("\n");
+    }
   }
 }
 
 /** All of a reply's look-ups, answered as one message back to the model. */
 export async function answerQueries(
   app: FastifyInstance,
+  request: FastifyRequest,
   queries: AiQuery[],
   invalid: string[],
   stepsLeft: number,
@@ -146,7 +302,7 @@ export async function answerQueries(
     }
     seen.add(key);
     try {
-      parts.push(await runQuery(app, q));
+      parts.push(await runQuery(app, request, q));
     } catch (err) {
       parts.push(`Look-up ${JSON.stringify(q)} failed: ${err instanceof Error ? err.message : String(err)}`);
     }

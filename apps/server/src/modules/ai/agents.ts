@@ -23,6 +23,9 @@ export interface AgentDef {
   tips?: string[];
 }
 
+const STATE_NAMES =
+  "alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming|district of columbia|nyc|philly|philadelphia|detroit|portland|baltimore";
+
 export const AGENTS: AgentDef[] = [
   {
     id: "organizer",
@@ -65,7 +68,10 @@ export const AGENTS: AgentDef[] = [
   {
     id: "tax",
     name: "Tax & salary",
-    keywords: /tax|salary|salaries|gross|take.?home|paycheck|pay stub|raise|wage|401\s?k|403\s?b|hsa|withh?old|bracket|filing|irs|move to|moving|relocat|cost of living|state|city|county|w-?2/i,
+    keywords: new RegExp(
+      `tax|salary|salaries|gross|take.?home|paycheck|pay stub|raise|wage|401\\s?k|403\\s?b|hsa|withh?old|bracket|filing|irs|move to|moving|relocat|cost of living|\\bstate\\b|city|county|w-?2|make in|earn in|${STATE_NAMES}`,
+      "i",
+    ),
     actions: [
       '  set_tax_profile {filingStatus?: "single"|"married_joint"|"married_separate"|"head_of_household",',
       "    state?: two-letter code, locality?: id from tax_places or null, customLocalRatePct?,",

@@ -1,4 +1,4 @@
-import type { Category, SankeyLink, SankeyNode } from "@vault/shared";
+import type { Category, SankeyLink, SankeyNode, TaxEstimate, TaxGroup } from "@vault/shared";
 
 /**
  * Build the budget-planner Sankey with the same hierarchical structure as the
@@ -79,4 +79,41 @@ export function buildBudgetSankey(
     links.push({ from: "hub", to: "saved", valueCents: unallocated });
   }
   return { nodes, links, allocated };
+}
+
+const TAX_BRANCH: Record<TaxGroup, { label: string; color: string }> = {
+  pretax: { label: "Pre-tax savings", color: "#43cfc0" },
+  federal: { label: "Federal tax", color: "#6f8ef2" },
+  fica: { label: "Social Security & Medicare", color: "#b47ef0" },
+  state: { label: "State tax", color: "#ec6a9c" },
+  local: { label: "Local tax", color: "#d8b23c" },
+  payroll: { label: "State payroll programs", color: "#4db6d0" },
+};
+
+/**
+ * The tax add-on: start the budget Sankey from gross pay. "Planned income"
+ * becomes "Gross pay", which splits into the monthly taxes and pre-tax
+ * savings (leaves beside the hub) and the take-home that flows on into the
+ * budget exactly as before. Gross is taxes + pre-tax + the planned income,
+ * so the diagram still balances when planned income isn't synced.
+ */
+export function withTaxBranch(
+  sankey: { nodes: SankeyNode[]; links: SankeyLink[] },
+  estimate: TaxEstimate,
+): { nodes: SankeyNode[]; links: SankeyLink[] } {
+  const groups = new Map<TaxGroup, number>();
+  for (const l of estimate.lines) groups.set(l.group, (groups.get(l.group) ?? 0) + Math.max(0, l.amountCents));
+  const monthly = [...groups].map(([g, c]) => [g, Math.round(c / 12)] as const).filter(([, c]) => c > 0);
+  const income = sankey.nodes.find((n) => n.id === "income");
+  if (!income || !monthly.length) return sankey;
+  const gross = income.valueCents + monthly.reduce((s, [, c]) => s + c, 0);
+  const nodes = sankey.nodes.map((n) =>
+    n.id === "income" ? { ...n, label: "Gross pay", valueCents: gross, color: "#6f8ef2" } : n.id === "hub" ? { ...n, label: "Take-home to allocate" } : n,
+  );
+  const links = [...sankey.links];
+  for (const [g, c] of monthly) {
+    nodes.push({ id: `tax:${g}`, label: TAX_BRANCH[g].label, valueCents: c, color: TAX_BRANCH[g].color, depth: 1, kind: "category", categoryId: null });
+    links.push({ from: "income", to: `tax:${g}`, valueCents: c });
+  }
+  return { nodes, links };
 }

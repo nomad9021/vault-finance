@@ -2,6 +2,9 @@ import {
   CLIENT_ACTION_TYPES,
   describeAiAction,
   UNCATEGORIZED,
+  findLocality,
+  STATES_2026,
+  type TaxProfile,
   type AiAction,
   type AiActionRecord,
   type Category,
@@ -9,6 +12,7 @@ import {
 import { eq } from "drizzle-orm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { aiActions } from "../../db/schema.js";
+import { AGENTS, type AgentId } from "./agents.js";
 
 /**
  * Carrying out what the assistant proposes. Every server-side change goes
@@ -137,6 +141,23 @@ export function resolveCategory(all: Category[], ref: string): Category {
 }
 
 const DEFAULT_COLOR = "#6b7bd6";
+
+/** A bill, goal, giving fund or earner by name (case-insensitive). */
+function resolveNamed<T extends { name: string }>(list: T[], ref: string, what: string): T {
+  const matches = list.filter((x) => x.name.trim().toLowerCase() === ref.trim().toLowerCase());
+  if (matches.length === 1) return matches[0]!;
+  if (!matches.length) throw new ActionError(`There's no ${what} called "${ref}".`);
+  throw new ActionError(`Several ${what}s are called "${ref}"; rename one first.`);
+}
+
+const BLANK_TAX_PROFILE = (state: string): TaxProfile => ({
+  filingStatus: "single",
+  state,
+  locality: null,
+  dependents: 0,
+  earners: [],
+  syncPlannedIncome: true,
+});
 const cents = (dollars: number) => Math.round(dollars * 100);
 
 export async function applyAction(app: FastifyInstance, request: FastifyRequest, a: AiAction): Promise<void> {
@@ -257,6 +278,139 @@ export async function applyAction(app: FastifyInstance, request: FastifyRequest,
     case "autocategorize":
       await call(app, request, "POST", "/transactions/autocategorize", {});
       return;
+
+    // ── tax & salary ──
+    case "set_tax_profile":
+    case "set_salary":
+    case "set_pretax":
+    case "remove_earner": {
+      const { profile } = await call<{ profile: TaxProfile | null }>(app, request, "GET", "/tax-profile");
+      const state = a.type === "set_tax_profile" && a.state ? a.state.toUpperCase() : profile?.state;
+      if (!state) throw new ActionError("Set the state first (set_tax_profile with a state).");
+      const next: TaxProfile = { ...(profile ?? BLANK_TAX_PROFILE(state)), earners: [...(profile?.earners ?? [])] };
+      if (a.type === "set_tax_profile") {
+        if (a.state) {
+          next.state = state;
+          if (next.locality && findLocality(next.locality)?.state !== state) next.locality = null;
+        }
+        if (a.filingStatus) next.filingStatus = a.filingStatus;
+        if (a.locality !== undefined) next.locality = a.locality;
+        if (a.customLocalRatePct !== undefined) next.customLocalRatePct = a.customLocalRatePct;
+        if (a.dependents !== undefined) next.dependents = a.dependents;
+        if (a.syncPlannedIncome !== undefined) next.syncPlannedIncome = a.syncPlannedIncome;
+      } else if (a.type === "set_salary") {
+        const i = next.earners.findIndex((e) => e.name.toLowerCase() === a.earner.trim().toLowerCase());
+        const base = i >= 0 ? next.earners[i]! : { name: a.earner.trim(), grossAnnualCents: 0, payFrequency: "biweekly" as const };
+        const updated = { ...base, grossAnnualCents: cents(a.grossAnnual), ...(a.payFrequency ? { payFrequency: a.payFrequency } : {}) };
+        if (i >= 0) next.earners[i] = updated;
+        else next.earners.push(updated);
+      } else {
+        const earner = resolveNamed(next.earners, a.earner, "earner");
+        const i = next.earners.indexOf(earner);
+        if (a.type === "remove_earner") next.earners.splice(i, 1);
+        else {
+          next.earners[i] = {
+            ...earner,
+            ...(a.retirementPct !== undefined ? { retirementPct: a.retirementPct, retirementCents: null } : {}),
+            ...(a.hsaAnnual !== undefined ? { hsaCents: cents(a.hsaAnnual) } : {}),
+            ...(a.healthPremiumsAnnual !== undefined ? { healthPremiumCents: cents(a.healthPremiumsAnnual) } : {}),
+            ...(a.otherPretaxAnnual !== undefined ? { otherPretaxCents: cents(a.otherPretaxAnnual) } : {}),
+          };
+        }
+      }
+      await call(app, request, "PUT", "/tax-profile", next);
+      return;
+    }
+
+    // ── bills ──
+    case "create_bill": {
+      const cat = a.category ? resolveCategory(await categories(), a.category) : null;
+      await call(app, request, "POST", "/bills", {
+        name: a.name,
+        amountCents: cents(a.amount),
+        dueDay: a.dueDay,
+        ...(a.cadence ? { cadence: a.cadence } : {}),
+        ...(a.autopay !== undefined ? { autopay: a.autopay } : {}),
+        ...(cat ? { categoryId: cat.id, color: cat.color } : {}),
+      });
+      return;
+    }
+    case "update_bill":
+    case "delete_bill": {
+      const { bills } = await call<{ bills: Array<{ id: string; name: string }> }>(app, request, "GET", "/bills");
+      const bill = resolveNamed(bills, a.bill, "bill");
+      if (a.type === "delete_bill") await call(app, request, "DELETE", `/bills/${bill.id}`);
+      else
+        await call(app, request, "PATCH", `/bills/${bill.id}`, {
+          ...(a.amount !== undefined ? { amountCents: cents(a.amount) } : {}),
+          ...(a.dueDay !== undefined ? { dueDay: a.dueDay } : {}),
+          ...(a.cadence ? { cadence: a.cadence } : {}),
+          ...(a.autopay !== undefined ? { autopay: a.autopay } : {}),
+        });
+      return;
+    }
+
+    // ── goals ──
+    case "create_goal":
+      await call(app, request, "POST", "/goals", {
+        name: a.name,
+        targetCents: cents(a.target),
+        monthlyCents: cents(a.monthly ?? 0),
+        savedCents: cents(a.saved ?? 0),
+        ...(a.targetDate ? { targetDate: a.targetDate } : {}),
+        color: "#3ecf8e",
+      });
+      return;
+    case "update_goal":
+    case "delete_goal": {
+      const { goals } = await call<{ goals: Array<{ id: string; name: string }> }>(app, request, "GET", "/goals");
+      const goal = resolveNamed(goals, a.goal, "goal");
+      if (a.type === "delete_goal") await call(app, request, "DELETE", `/goals/${goal.id}`);
+      else
+        await call(app, request, "PATCH", `/goals/${goal.id}`, {
+          ...(a.target !== undefined ? { targetCents: cents(a.target) } : {}),
+          ...(a.monthly !== undefined ? { monthlyCents: cents(a.monthly) } : {}),
+          ...(a.saved !== undefined ? { savedCents: cents(a.saved) } : {}),
+          ...(a.targetDate !== undefined ? { targetDate: a.targetDate } : {}),
+        });
+      return;
+    }
+
+    // ── giving ──
+    case "create_giving_fund":
+      await call(app, request, "POST", "/giving", {
+        name: a.name,
+        ...(a.kind ? { kind: a.kind } : {}),
+        monthlyCents: cents(a.monthly ?? 0),
+        ...(a.target ? { targetCents: cents(a.target) } : {}),
+        ...(a.recipient ? { recipient: a.recipient } : {}),
+        ...(a.occasionDate ? { occasionDate: a.occasionDate } : {}),
+      });
+      return;
+    case "update_giving_fund":
+    case "delete_giving_fund": {
+      const { funds } = await call<{ funds: Array<{ id: string; name: string }> }>(app, request, "GET", "/giving");
+      const fund = resolveNamed(funds, a.fund, "giving fund");
+      if (a.type === "delete_giving_fund") await call(app, request, "DELETE", `/giving/${fund.id}`);
+      else
+        await call(app, request, "PATCH", `/giving/${fund.id}`, {
+          ...(a.monthly !== undefined ? { monthlyCents: cents(a.monthly) } : {}),
+          ...(a.target !== undefined ? { targetCents: a.target ? cents(a.target) : null } : {}),
+          ...(a.occasionDate !== undefined ? { occasionDate: a.occasionDate } : {}),
+        });
+      return;
+    }
+
+    // ── debt ──
+    case "set_debt_plan": {
+      const plan = await call<Record<string, unknown>>(app, request, "GET", "/debt-plan");
+      await call(app, request, "PUT", "/debt-plan", {
+        ...plan,
+        ...(a.strategy ? { strategy: a.strategy } : {}),
+        ...(a.extraMonthly !== undefined ? { extraCents: cents(a.extraMonthly) } : {}),
+      });
+      return;
+    }
     case "set_theme":
     case "set_review_prefs":
       return; // unreachable — handled above
@@ -269,8 +423,46 @@ export async function applyAction(app: FastifyInstance, request: FastifyRequest,
  * earlier in the same reply counts) and returns why each one would fail, or
  * null. Mirrors what applyAction and the API enforce.
  */
-export function checkActions(categoriesNow: Category[], actions: AiAction[]): Array<string | null> {
-  const all: Category[] = categoriesNow.map((c) => ({ ...c }));
+/** Everything the rule check needs, read through the API as this user. */
+export async function loadCheckWorld(app: FastifyInstance, request: FastifyRequest): Promise<CheckWorld> {
+  const [{ categories }, { bills }, { goals }, { funds }, { profile }] = await Promise.all([
+    call<{ categories: Category[] }>(app, request, "GET", "/categories"),
+    call<{ bills: Array<{ name: string }> }>(app, request, "GET", "/bills"),
+    call<{ goals: Array<{ name: string }> }>(app, request, "GET", "/goals"),
+    call<{ funds: Array<{ name: string }> }>(app, request, "GET", "/giving"),
+    call<{ profile: TaxProfile | null }>(app, request, "GET", "/tax-profile"),
+  ]);
+  return {
+    categories,
+    bills: bills.map((b) => b.name),
+    goals: goals.map((g) => g.name),
+    funds: funds.map((f) => f.name),
+    taxState: profile?.state ?? null,
+    earners: profile?.earners.map((e) => e.name) ?? [],
+  };
+}
+
+export interface CheckWorld {
+  categories: Category[];
+  bills?: string[];
+  goals?: string[];
+  funds?: string[];
+  /** The saved tax profile's state and earner names, if there is one. */
+  taxState?: string | null;
+  earners?: string[];
+}
+
+export function checkActions(worldOrCategories: CheckWorld | Category[], actions: AiAction[]): Array<string | null> {
+  const world: CheckWorld = Array.isArray(worldOrCategories) ? { categories: worldOrCategories } : worldOrCategories;
+  const all: Category[] = world.categories.map((c) => ({ ...c }));
+  const lower = (xs: string[] | undefined) => new Set((xs ?? []).map((x) => x.trim().toLowerCase()));
+  const bills = lower(world.bills);
+  const goals = lower(world.goals);
+  const funds = lower(world.funds);
+  const earners = lower(world.earners);
+  let taxState = world.taxState ?? null;
+  const named = (set: Set<string>, ref: string, what: string) =>
+    set.has(ref.trim().toLowerCase()) ? null : `There's no ${what} called "${ref}".`;
   let fake = 0;
   const isNone = (ref: string) => ref.trim().toLowerCase() === UNCATEGORIZED.toLowerCase();
   const find = (ref: string) => resolveCategory(all, ref);
@@ -354,6 +546,64 @@ export function checkActions(categoriesNow: Category[], actions: AiAction[]): Ar
             return `Not directly ${parent ? `under "${parent.name}"` : "at the top level"}: ${missing.join(", ")}. Order only categories that share that parent.`;
           }
           return null;
+        }
+        case "set_tax_profile": {
+          const state = a.state?.toUpperCase() ?? taxState;
+          if (a.state && !(a.state.toUpperCase() in STATES_2026)) return `"${a.state}" isn't a US state code (use two letters, like CO).`;
+          if (!state) return "Include the state (two-letter code) the first time the tax profile is set up.";
+          if (a.locality) {
+            const loc = findLocality(a.locality);
+            if (!loc) return `There's no local tax "${a.locality}"; use a tax_places look-up for the ids, or customLocalRatePct.`;
+            if (loc.state !== state) return `${loc.name} is in ${loc.state}, not ${state}.`;
+          }
+          taxState = state;
+          return null;
+        }
+        case "set_salary":
+          if (!taxState) return "Set the tax profile's state first (set_tax_profile with state) in the same reply.";
+          earners.add(a.earner.trim().toLowerCase());
+          return null;
+        case "set_pretax":
+          return named(earners, a.earner, "earner");
+        case "remove_earner": {
+          const err = named(earners, a.earner, "earner");
+          if (!err) earners.delete(a.earner.trim().toLowerCase());
+          return err;
+        }
+        case "create_bill":
+          if (a.category) find(a.category);
+          if (bills.has(a.name.toLowerCase())) return `There's already a bill called "${a.name}" (use update_bill).`;
+          bills.add(a.name.toLowerCase());
+          return null;
+        case "update_bill":
+          return named(bills, a.bill, "bill");
+        case "delete_bill": {
+          const err = named(bills, a.bill, "bill");
+          if (!err) bills.delete(a.bill.toLowerCase());
+          return err;
+        }
+        case "create_goal":
+          if (a.target <= 0) return "A goal needs a target above zero.";
+          if (goals.has(a.name.toLowerCase())) return `There's already a goal called "${a.name}" (use update_goal).`;
+          goals.add(a.name.toLowerCase());
+          return null;
+        case "update_goal":
+          return named(goals, a.goal, "goal");
+        case "delete_goal": {
+          const err = named(goals, a.goal, "goal");
+          if (!err) goals.delete(a.goal.toLowerCase());
+          return err;
+        }
+        case "create_giving_fund":
+          if (funds.has(a.name.toLowerCase())) return `There's already a giving fund called "${a.name}" (use update_giving_fund).`;
+          funds.add(a.name.toLowerCase());
+          return null;
+        case "update_giving_fund":
+          return named(funds, a.fund, "giving fund");
+        case "delete_giving_fund": {
+          const err = named(funds, a.fund, "giving fund");
+          if (!err) funds.delete(a.fund.toLowerCase());
+          return err;
         }
         default:
           return null;

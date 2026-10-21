@@ -19,7 +19,8 @@ import { and, asc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { aiActions, aiConversations, aiMessages, aiSettings } from "../../db/schema.js";
 import { appendMemory, MEMORY_PROMPT_LIMIT, readMemory } from "../../lib/ai-memory.js";
-import { applyStoredAction, buildActionGuide, call, checkActions, recordActions, toRecord } from "./actions.js";
+import { applyStoredAction, buildActionGuide, checkActions, loadCheckWorld, recordActions, toRecord } from "./actions.js";
+import { agentNames, routeAgents } from "./agents.js";
 import { AppError, notFound } from "../../errors.js";
 import type { AppConfig } from "../../config.js";
 import { buildFinancialContext } from "./context.js";
@@ -332,6 +333,7 @@ export default async function aiRoutes(
 
     // Load-or-create the conversation and persist the user's message.
     let conversationId: string;
+    let previousUserMessage: string | undefined;
     if (body.conversationId) {
       const existing = await app.db.query.aiConversations.findFirst({
         where: and(
@@ -341,6 +343,12 @@ export default async function aiRoutes(
       });
       if (!existing) throw notFound("Conversation");
       conversationId = existing.id;
+      previousUserMessage = (
+        await app.db.query.aiMessages.findFirst({
+          where: and(eq(aiMessages.conversationId, existing.id), eq(aiMessages.role, "user")),
+          orderBy: (t, { desc: d }) => [d(t.createdAt)],
+        })
+      )?.content;
     } else {
       const [created] = await app.db
         .insert(aiConversations)
@@ -352,11 +360,14 @@ export default async function aiRoutes(
       .insert(aiMessages)
       .values({ conversationId, role: "user", content: body.message });
 
+    // Which specialist agents this message needs (agents.ts).
+    const agentIds = routeAgents(body.message, previousUserMessage);
+
     // Assemble the model's view: system context + recent history.
     const memory = readMemory(opts.config.dataDir, userId).slice(-MEMORY_PROMPT_LIMIT);
     const context = [
       await buildFinancialContext(app.db),
-      await buildActionGuide(app, request),
+      await buildActionGuide(app, request, agentIds),
       "",
       "REMEMBERED about this user (from earlier chats):",
       ...(memory.length ? memory.map((n) => `  - ${n.text}`) : ["  (nothing yet)"]),
@@ -392,6 +403,7 @@ export default async function aiRoutes(
     // Pump in the background — the reply stream is already on its way.
     void (async () => {
       let assistantText = "";
+      writeLine({ status: `${agentNames(agentIds)} ${agentIds.length > 1 ? "agents are" : "agent is"} on it…` });
       try {
         // Agent loop: a reply may ask for look-ups (<vault-query>); the
         // server answers them and the model continues, up to MAX_STEPS
@@ -421,7 +433,7 @@ export default async function aiRoutes(
           const { queries, invalid } = extractQueryBlocks(stepText);
           if ((!queries.length && !invalid.length) || step >= AGENT_MAX_STEPS) break;
           writeLine({ status: describeQueries(queries) });
-          const results = await answerQueries(app, queries, invalid, AGENT_MAX_STEPS - step - 1, seenQueries);
+          const results = await answerQueries(app, request, queries, invalid, AGENT_MAX_STEPS - step - 1, seenQueries);
           convo = [...convo, { role: "assistant", content: stepText }, { role: "user", content: results }];
           // Keep the visible parts of each step apart.
           if (stripAssistantBlocks(stepText)) {
@@ -435,7 +447,7 @@ export default async function aiRoutes(
         // Rule check: changes that would fail (or don't parse) go back to the
         // model once to fix; whatever still fails is dropped, so the user
         // only ever sees changes that can be applied.
-        const treeNow = (await call<{ categories: Category[] }>(app, request, "GET", "/categories")).categories;
+        const treeNow = await loadCheckWorld(app, request);
         const problems = checkActions(treeNow, blocks.actions);
         if (problems.some(Boolean) || blocks.invalid.length) {
           writeLine({ status: "Double-checking the changes…" });

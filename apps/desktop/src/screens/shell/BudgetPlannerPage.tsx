@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 import type { Navigate } from "./AppShell.js";
-import { buildBudgetSankey } from "./budgetSankey.js";
+import { buildBudgetSankey, withTaxBranch } from "./budgetSankey.js";
 import { SankeyCard } from "./SankeyCard.js";
 
 function currentMonth(): string {
@@ -42,6 +42,9 @@ export function BudgetPlannerPage({ onNavigate }: { onNavigate: Navigate }) {
   const { data: planData } = useData(() => client.budgetPlan(), [client]);
   const { data: budgetData, loading, reload } = useData(() => client.budgets(month), [client, month]);
   const { data: catData } = useData(() => client.categories(), [client]);
+  // Tax add-on: with a tax profile, the plan can start from gross pay.
+  const { data: taxData } = useData(() => client.taxProfile(), [client]);
+  const [fromGross, setFromGross] = useState(true);
 
   const categories = catData?.categories ?? [];
   const expenseCats = categories.filter((c) => c.kind === "expense");
@@ -88,7 +91,9 @@ export function BudgetPlannerPage({ onNavigate }: { onNavigate: Navigate }) {
   // Hierarchical budget Sankey, built from the same category tree as the main
   // cash-flow diagram so both are shaped by the Settings category editor.
   const budgetByCatAmount = new Map(budgets.map((b) => [b.categoryId, b.amountCents]));
-  const { nodes, links } = buildBudgetSankey(incomeCents, expenseCats, budgetByCatAmount);
+  const plan = buildBudgetSankey(incomeCents, expenseCats, budgetByCatAmount);
+  const taxEstimate = taxData?.estimate ?? null;
+  const { nodes, links } = taxEstimate && fromGross && incomeCents > 0 ? withTaxBranch(plan, taxEstimate) : plan;
   const hasFlow = incomeCents > 0 || allocated > 0;
 
   return (
@@ -117,7 +122,9 @@ export function BudgetPlannerPage({ onNavigate }: { onNavigate: Navigate }) {
       >
         <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 6 }}>
           <div>
-            <div className="eyebrow" style={{ marginBottom: 4 }}>Fixed monthly income</div>
+            <div className="eyebrow" style={{ marginBottom: 4 }}>
+              Fixed monthly income{taxData?.profile?.syncPlannedIncome && taxEstimate ? " · from Salary & taxes" : ""}
+            </div>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ color: "var(--content-tertiary)", fontSize: "var(--text-xl)" }}>$</span>
               <input
@@ -153,10 +160,18 @@ export function BudgetPlannerPage({ onNavigate }: { onNavigate: Navigate }) {
           links={links}
           month={month}
           onNavigate={onNavigate}
-          title="Budget plan"
+          title={taxEstimate && fromGross ? "Budget plan, from gross pay" : "Budget plan"}
           hint="Click a category to see this month's actual spending"
         />
-      ) : (
+      ) : null}
+      {hasFlow && taxEstimate ? (
+        <label className="radio" style={{ fontSize: "var(--text-sm)", marginTop: -8 }}>
+          <input type="checkbox" checked={fromGross} onChange={(e) => setFromGross(e.target.checked)} />
+          <span className="dot" style={{ borderRadius: "var(--radius-sm)" }} />
+          Start from gross pay (show taxes and pre-tax savings from Salary &amp; taxes)
+        </label>
+      ) : null}
+      {hasFlow ? null : (
         <Panel title="Budget plan">
           <p className="card-meta" style={{ padding: "12px 0" }}>
             {incomeCents <= 0

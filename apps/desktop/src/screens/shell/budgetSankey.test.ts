@@ -1,6 +1,7 @@
 import type { Category } from "@vault/shared";
 import { describe, expect, it } from "vitest";
-import { buildBudgetSankey } from "./budgetSankey.js";
+import { estimateTaxes } from "@vault/shared";
+import { buildBudgetSankey, withTaxBranch } from "./budgetSankey.js";
 
 /**
  * The budget Sankey must conserve money: every cent of planned income leaves
@@ -101,5 +102,29 @@ describe("buildBudgetSankey", () => {
     const { links, allocated } = buildBudgetSankey(0, [], new Map());
     expect(allocated).toBe(0);
     expect(sumLinksFrom(links, "hub")).toBe(0);
+  });
+});
+
+describe("withTaxBranch", () => {
+  const estimate = estimateTaxes({ filingStatus: "single", state: "CO", earners: [{ name: "A", grossAnnualCents: 10_000_000, retirementPct: 5 }] });
+  const takeHome = Math.round(estimate.takeHomeCents / 12);
+  const base = buildBudgetSankey(takeHome, [cat("g", "Groceries")], new Map([["g", 60_000]]));
+
+  it("starts from gross pay and branches taxes off beside the take-home hub", () => {
+    const out = withTaxBranch(base, estimate);
+    const gross = out.nodes.find((n) => n.id === "income")!;
+    expect(gross.label).toBe("Gross pay");
+    const leaves = out.nodes.filter((n) => n.id.startsWith("tax:"));
+    expect(leaves.map((n) => n.id).sort()).toEqual(["tax:federal", "tax:fica", "tax:pretax", "tax:state"]);
+    expect(leaves.every((n) => n.depth === 1)).toBe(true);
+    // Everything leaving gross adds back up to it.
+    const out1 = out.links.filter((l) => l.from === "income").reduce((s, l) => s + l.valueCents, 0);
+    expect(out1).toBe(gross.valueCents);
+    expect(Math.abs(gross.valueCents - Math.round(10_000_000 / 12))).toBeLessThanOrEqual(6);
+  });
+
+  it("leaves the diagram alone without an income node", () => {
+    const empty = { nodes: [], links: [] };
+    expect(withTaxBranch(empty, estimate)).toBe(empty);
   });
 });
