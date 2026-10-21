@@ -96,8 +96,12 @@ services:
       SURVEY_URL: ${SURVEY_URL:-}
       UPDATE_CHECK_ENABLED: ${UPDATE_CHECK_ENABLED:-true}
       UPDATE_OPERATOR_MANAGED: ${UPDATE_OPERATOR_MANAGED:-false}
+      # In-app "Update server" (Settings). Inert until the host runs
+      # installers/server/enable-app-updates.sh, which sets up the agent.
+      UPDATE_AGENT_DIR: /update
     volumes:
       - ${VAULT_DISK:-./data}/vault:/data
+      - ${VAULT_DISK:-./data}/update:/update
     ports:
       - "${VAULT_PORT:-8443}:8443"
 

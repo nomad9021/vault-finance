@@ -334,6 +334,14 @@ export class ApiClient {
   updateStatus() {
     return this.request(UpdateStatusResponse, "GET", "/updates/status");
   }
+  /** Owner: ask GitHub for the latest release now instead of waiting for the daily check. */
+  checkServerUpdate() {
+    return this.request(UpdateStatusResponse, "POST", "/updates/check");
+  }
+  /** Owner: have the host's update agent install the latest release. */
+  startServerUpdate() {
+    return this.request(UpdateStatusResponse, "POST", "/updates/apply");
+  }
   /** Public component health (database, storage) for the startup screen. */
   serverStatus() {
     return this.request(ServerStatusResponse, "GET", "/status", undefined, { auth: false });

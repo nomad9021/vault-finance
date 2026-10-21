@@ -4,6 +4,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { readMeta, writeMeta } from "../../lib/app-meta.js";
 import type { Db } from "../../plugins/db.js";
 import type { AppConfig } from "../../config.js";
+import { readSelfUpdate } from "./agent.js";
 
 const META_KEY = "update_check";
 /** Version we last emailed the owner about — don't re-notify for the same one. */
@@ -58,6 +59,8 @@ function toStatus(config: AppConfig, cached: CachedCheck | null): UpdateStatusRe
     notesUrl: cached?.notesUrl ?? null,
     operatorManaged: config.updates.operatorManaged,
     checkedAt: cached?.checkedAt ?? null,
+    // Operator-managed fleets roll updates out themselves.
+    selfUpdate: config.updates.operatorManaged ? null : readSelfUpdate(config.updates.agentDir),
   };
 }
 

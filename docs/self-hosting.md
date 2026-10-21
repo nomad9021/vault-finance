@@ -353,6 +353,27 @@ releases once a day and — when SMTP is set — emails the owner when a new
 version ships. Prefer building from source? Swap `image:` for the commented
 `build:` block and `docker compose up -d --build`.
 
+**Server, from the app** — run this once on the server (it asks for your
+sudo password):
+
+```bash
+bash installers/server/enable-app-updates.sh
+```
+
+After that, the owner sees **Settings → Server update** with **Check now**
+and **Update server**. Pressing Update runs the same `update-server.sh` as
+above, then the app waits for the server to come back on the new version.
+It also installs the `vault-update` command.
+
+How it stays safe: the server container gets no Docker access. It can only
+put a request file in a small shared folder (`data/update`, owned by you).
+A systemd unit on the host (`vault-update.path`) sees the file and runs
+`installers/server/update-agent.sh` as you. That script ignores what's in the
+request and always installs the latest release. Only the owner can send the
+request. The log of the last run is `data/update/last-update.log`. Turn it
+off with `enable-app-updates.sh --disable`. Single-family installs only;
+multi-family hosts keep using `familyctl.sh`.
+
 **Desktop apps** — built-in auto-updater. Server and
 clients share one semantic version line; if a client is older than the
 server's `minClientVersion`, the API answers `426` and the app shows an
