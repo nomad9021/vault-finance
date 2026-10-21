@@ -461,7 +461,9 @@ export default async function aiRoutes(
             },
           );
           const kept = blocks.actions.filter((_, i) => !problems[i]);
-          const fixes = extractAssistantBlocks(fixText).actions;
+          // Ignore fixes that just repeat a change that was already fine.
+          const keptJson = new Set(kept.map((x) => JSON.stringify(x)));
+          const fixes = extractAssistantBlocks(fixText).actions.filter((x) => !keptJson.has(JSON.stringify(x)));
           const fixProblems = checkActions(treeNow, [...kept, ...fixes]).slice(kept.length);
           const accepted = fixes.filter((_, i) => !fixProblems[i]);
           const dropped = blocks.actions.length - kept.length + blocks.invalid.length - accepted.length;
