@@ -112,6 +112,8 @@ export interface HostPlatform {
   tailscaleStatus?(): Promise<TailscaleStatus>;
   tailscaleUp?(): Promise<TailscaleActionResult>;
   tailscaleDown?(): Promise<TailscaleActionResult>;
+  /** Put the app window in (or take it out of) full screen — the review presenter. */
+  setFullscreen(on: boolean): Promise<void>;
   /** Open an https link in the default browser (Tauri only). */
   openExternal?(url: string): Promise<void>;
 }

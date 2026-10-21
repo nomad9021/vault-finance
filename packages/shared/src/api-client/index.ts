@@ -73,6 +73,11 @@ import {
   type ChatRequest,
   type UpdateAiSettingsRequest,
 } from "../schemas/ai.js";
+import {
+  AiActionRecord,
+  AiMemoryResponse,
+  type AiActionClientResult,
+} from "../schemas/ai-actions.js";
 import { CashflowSummaryResponse, SankeyResponse, TrendsResponse } from "../schemas/cashflow.js";
 import {
   AutocategorizeResponse,
@@ -115,7 +120,12 @@ import {
 import { SubscriptionListResponse } from "../schemas/subscriptions.js";
 import { InsightListResponse } from "../schemas/insights.js";
 import { DebtPlan, type UpdateDebtPlanRequest } from "../schemas/debts.js";
-import { MonthlyReport, YearlyReport } from "../schemas/reports.js";
+import {
+  MonthlyReport,
+  PeriodReview,
+  YearlyReport,
+  type ReviewPeriod,
+} from "../schemas/reports.js";
 
 /**
  * Transport abstraction: the browser passes global fetch; the Tauri desktop
@@ -644,16 +654,36 @@ export class ApiClient {
   deleteConversation(id: string) {
     return this.request(z.undefined(), "DELETE", `/ai/conversations/${id}`);
   }
+  /** Carry out a change the assistant proposed (server-side kinds). */
+  approveAiAction(id: string) {
+    return this.request(AiActionRecord, "POST", `/ai/actions/${id}/approve`, {});
+  }
+  rejectAiAction(id: string) {
+    return this.request(AiActionRecord, "POST", `/ai/actions/${id}/reject`, {});
+  }
+  /** Record the outcome of a change the app applied itself (theme, review prefs). */
+  reportAiAction(id: string, result: AiActionClientResult) {
+    return this.request(AiActionRecord, "POST", `/ai/actions/${id}/result`, result);
+  }
+  /** The assistant's long-term memory for the signed-in user (append-only). */
+  aiMemory() {
+    return this.request(AiMemoryResponse, "GET", "/ai/memory");
+  }
 
   /**
    * Streaming chat (ADR-0005). Parses NDJSON lines from raw chunks — a chunk
    * may contain several lines or a partial one, so a carry buffer reassembles
    * them. Calls onToken per token; resolves with the conversation id once the
-   * server sends its terminal line.
+   * server sends its terminal line. `events` receives the changes the
+   * assistant proposed and any notes it saved to memory.
    */
   async chat(
     body: ChatRequest,
     onToken: (token: string) => void,
+    events: {
+      onActions?: (actions: AiActionRecord[]) => void;
+      onRemembered?: (notes: string[]) => void;
+    } = {},
   ): Promise<{ conversationId: string }> {
     const streamImpl = this.opts.streamFetchImpl;
     if (!streamImpl) throw new Error("streamFetchImpl not configured");
@@ -681,6 +711,8 @@ export class ApiClient {
       if (!parsed.success) return;
       const data = parsed.data;
       if ("token" in data) onToken(data.token);
+      else if ("actions" in data) events.onActions?.(data.actions);
+      else if ("remembered" in data) events.onRemembered?.(data.remembered);
       else if ("done" in data) result = { conversationId: data.conversationId };
       else {
         streamError = new ApiRequestError(
@@ -832,6 +864,14 @@ export class ApiClient {
       YearlyReport,
       "GET",
       `/reports/yearly${year ? `?year=${year}` : ""}`,
+    );
+  }
+  /** Weekly or monthly finance review (the presenter's data). */
+  periodReview(period: ReviewPeriod, start?: string) {
+    return this.request(
+      PeriodReview,
+      "GET",
+      `/reports/review?period=${period}${start ? `&start=${start}` : ""}`,
     );
   }
   /** Raw CSV text — the caller saves it (download in browser, dialog in Tauri). */

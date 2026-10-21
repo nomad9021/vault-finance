@@ -25,6 +25,7 @@ import {
 import { THEMES, THEME_LABELS } from "@vault/design-tokens";
 import { Button, Card, Dialog, Field, Segmented, Select, Spinner, Tag } from "@vault/ui";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { REVIEW_SLIDE_LABELS, type ReviewPrefs } from "../../lib/reviewPrefs.js";
 import { runChecks, type UiCheck } from "../../lib/startupChecks.js";
 import { useCheckActions } from "../../lib/useCheckActions.js";
 import { useData } from "../../lib/useData.js";
@@ -41,10 +42,12 @@ export function SettingsPage() {
     <div className="page" style={{ maxWidth: 780 }}>
       <SystemStatusSection />
       <AppearanceSection />
+      <ReviewSection />
       <CategoryTreeSection />
       <CategorizationRulesSection />
       <BankSection />
       <AiSection />
+      <AiMemorySection />
       <BiometricSection />
       <TwoFactorSection />
       <UpdatesSection />
@@ -2092,6 +2095,202 @@ function AppearanceSection() {
         value={theme}
         onChange={(t) => void setTheme(t)}
       />
+    </Card>
+  );
+}
+
+/**
+ * What the assistant may change on its own, and what it has remembered. The
+ * memory is an append-only file on the server that's never deleted — not
+ * even with the chats — so this is read-only by design.
+ */
+function AiMemorySection() {
+  const client = useApp((s) => s.client);
+  const aiVisible = useApp((s) => s.aiVisible);
+  const autoApply = useApp((s) => s.aiAutoApply);
+  const setAutoApply = useApp((s) => s.setAiAutoApply);
+  const { data, loading } = useData(() => (aiVisible ? client.aiMemory() : Promise.resolve(null)), [client, aiVisible]);
+  if (!aiVisible) return null;
+  const notes = data?.notes ?? [];
+  return (
+    <Card kicker="AI assistant" title="Changes & memory">
+      <p className="card-body">
+        The assistant can reorganise categories, add auto-categorization rules, set budgets
+        and planned income, rename the household, and change the theme and finance review
+        settings. It can't touch security, members, bank links or AI settings.
+      </p>
+      <div className="field">
+        <label>When it wants to change something</label>
+        <Segmented
+          aria-label="When the assistant wants to change something"
+          options={[
+            { value: "ask", label: "Ask me first" },
+            { value: "auto", label: "Auto — just do it" },
+          ]}
+          value={autoApply ? "auto" : "ask"}
+          onChange={(v) => void setAutoApply(v === "auto")}
+        />
+      </div>
+      <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, marginTop: 6 }}>
+        What it remembers about you {notes.length > 0 && <Tag>{notes.length}</Tag>}
+      </div>
+      <p className="card-meta" style={{ marginTop: 0 }}>
+        Kept permanently in an encrypted file on your server (included in backups), even if
+        you delete every chat.
+      </p>
+      {loading && !data ? (
+        <Spinner label="Loading memory" />
+      ) : notes.length === 0 ? (
+        <p className="card-meta">Nothing yet — it saves lasting facts and preferences as you chat.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", maxHeight: 280, overflow: "auto" }}>
+          {[...notes].reverse().map((n, i) => (
+            <div
+              key={`${n.at}:${i}`}
+              style={{
+                display: "flex",
+                gap: 10,
+                padding: "7px 2px",
+                borderTop: "1px solid color-mix(in srgb, var(--color-text) 7%, transparent)",
+                fontSize: "var(--text-sm)",
+              }}
+            >
+              <span style={{ flex: 1 }}>{n.text}</span>
+              <span style={{ color: "var(--content-tertiary)", fontSize: "var(--text-xs)", whiteSpace: "nowrap" }}>
+                {new Date(n.at).toLocaleDateString()}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Finance reviews: which slides the weekly / monthly presenter shows, their
+ * order, and how it plays. Saved on this device, like the theme.
+ */
+function ReviewSection() {
+  const prefs = useApp((s) => s.reviewPrefs);
+  const setPrefs = useApp((s) => s.setReviewPrefs);
+  const update = (patch: Partial<ReviewPrefs>) => void setPrefs({ ...prefs, ...patch });
+  const move = (i: number, by: number) => {
+    const slides = [...prefs.slides];
+    const j = i + by;
+    if (j < 0 || j >= slides.length) return;
+    [slides[i], slides[j]] = [slides[j]!, slides[i]!];
+    update({ slides });
+  };
+  const toggle = (i: number) =>
+    update({ slides: prefs.slides.map((s, k) => (k === i ? { ...s, enabled: !s.enabled } : s)) });
+
+  return (
+    <Card kicker="Finance reviews" title="Weekly & monthly reviews">
+      <p className="card-body">
+        Present a review from Reports. Pick what it shows and in what order — slides with
+        nothing to show for a period (no budgets, no AI summary) are skipped.
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 18, alignItems: "flex-end" }}>
+        <div className="field">
+          <label>Default review</label>
+          <Segmented
+            aria-label="Default review"
+            options={[
+              { value: "week", label: "Weekly" },
+              { value: "month", label: "Monthly" },
+            ]}
+            value={prefs.defaultPeriod}
+            onChange={(defaultPeriod) => update({ defaultPeriod })}
+          />
+        </div>
+        <div className="field">
+          <label>Weeks start on</label>
+          <Segmented
+            aria-label="Weeks start on"
+            options={[
+              { value: "monday", label: "Monday" },
+              { value: "sunday", label: "Sunday" },
+            ]}
+            value={prefs.weekStartsOn}
+            onChange={(weekStartsOn) => update({ weekStartsOn })}
+          />
+        </div>
+        <Select
+          label="Auto-advance"
+          value={String(prefs.autoAdvanceSeconds)}
+          onChange={(e) => update({ autoAdvanceSeconds: Number(e.target.value) })}
+        >
+          <option value="0">Off — I'll click through</option>
+          <option value="8">Every 8 seconds</option>
+          <option value="15">Every 15 seconds</option>
+          <option value="30">Every 30 seconds</option>
+          <option value="60">Every minute</option>
+        </Select>
+      </div>
+      <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "var(--text-sm)" }}>
+        <input type="checkbox" checked={prefs.compare} onChange={(e) => update({ compare: e.target.checked })} />
+        Compare with the previous week / month
+      </label>
+      <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "var(--text-sm)" }}>
+        <input
+          type="checkbox"
+          checked={prefs.startFullscreen}
+          onChange={(e) => update({ startFullscreen: e.target.checked })}
+        />
+        "Present" opens in full screen
+      </label>
+
+      <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, marginTop: 6 }}>Slides</div>
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {prefs.slides.map((s, i) => {
+          const meta = REVIEW_SLIDE_LABELS[s.id];
+          return (
+            <div
+              key={s.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "7px 2px",
+                borderTop: "1px solid color-mix(in srgb, var(--color-text) 7%, transparent)",
+                opacity: s.enabled ? 1 : 0.55,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={s.enabled}
+                onChange={() => toggle(i)}
+                aria-label={`Show ${meta.title}`}
+              />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: "var(--text-sm)", fontWeight: 500 }}>{meta.title}</div>
+                <div style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>{meta.hint}</div>
+              </div>
+              <button
+                title="Move up"
+                disabled={i === 0}
+                onClick={() => move(i, -1)}
+                style={{ ...treeIconBtn, opacity: i === 0 ? 0.25 : 1, cursor: i === 0 ? "default" : "pointer" }}
+              >
+                ▲
+              </button>
+              <button
+                title="Move down"
+                disabled={i === prefs.slides.length - 1}
+                onClick={() => move(i, 1)}
+                style={{
+                  ...treeIconBtn,
+                  opacity: i === prefs.slides.length - 1 ? 0.25 : 1,
+                  cursor: i === prefs.slides.length - 1 ? "default" : "pointer",
+                }}
+              >
+                ▼
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </Card>
   );
 }

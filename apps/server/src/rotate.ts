@@ -5,6 +5,7 @@ import { eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { aiSettings, bankConnections, bankSettings, deviceKeys, deviceSessions, users } from "./db/schema.js";
 import type { Db } from "./plugins/db.js";
 import { configureSecretCryptoWithKey, decryptSecret, encryptSecret } from "./secret-crypto.js";
+import { loadAllMemory, saveAllMemory } from "./lib/ai-memory.js";
 
 /**
  * Rotation of the server's own secrets, for when one is (or may have been)
@@ -45,6 +46,7 @@ export async function rotateDataKey(
   if (!envKey && existsSync(nextPath)) newKey = Buffer.from(readFileSync(nextPath, "utf8").trim(), "base64");
 
   const plain = await readAllSecrets(db, [oldKey, newKey]);
+  const memory = loadAllMemory(dataDir, (v) => decryptWithAny(v, [oldKey, newKey]));
   if (!envKey) writeFileSync(nextPath, newKey.toString("base64"), { mode: 0o600 });
 
   configureSecretCryptoWithKey(newKey);
@@ -62,7 +64,9 @@ export async function rotateDataKey(
       await tx.update(aiSettings).set({ apiKey: encryptSecret(plain.aiKey) }).where(eq(aiSettings.id, true));
     }
   });
+  const memoryNotes = saveAllMemory(memory);
   const rotated =
+    memoryNotes +
     plain.users.length + plain.connections.length + (plain.plaidSecret !== null ? 1 : 0) + (plain.aiKey !== null ? 1 : 0);
 
   if (envKey) return { newKeyForEnv: newKey.toString("base64"), rotated };
@@ -71,19 +75,21 @@ export async function rotateDataKey(
 }
 
 /** Decrypt every secret column, trying each key in turn (old, then a pending new one). */
-async function readAllSecrets(db: Db, keys: Buffer[]) {
-  const decrypt = (v: string): string => {
-    let lastErr: unknown;
-    for (const k of keys) {
-      configureSecretCryptoWithKey(k);
-      try {
-        return decryptSecret(v);
-      } catch (err) {
-        lastErr = err;
-      }
+function decryptWithAny(v: string, keys: Buffer[]): string {
+  let lastErr: unknown;
+  for (const k of keys) {
+    configureSecretCryptoWithKey(k);
+    try {
+      return decryptSecret(v);
+    } catch (err) {
+      lastErr = err;
     }
-    throw new Error(`A stored secret can't be decrypted with the current data key (${String(lastErr)}). Nothing was changed.`);
-  };
+  }
+  throw new Error(`A stored secret can't be decrypted with the current data key (${String(lastErr)}). Nothing was changed.`);
+}
+
+async function readAllSecrets(db: Db, keys: Buffer[]) {
+  const decrypt = (v: string): string => decryptWithAny(v, keys);
   const userRows = await db.select({ id: users.id, v: users.totpSecret }).from(users).where(isNotNull(users.totpSecret));
   const connRows = await db
     .select({ id: bankConnections.id, v: bankConnections.accessToken })

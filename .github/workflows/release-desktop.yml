@@ -30,6 +30,22 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Release channel
+        id: channel
+        shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # An annotated tag whose message contains [prerelease] ships without
+          # becoming "latest": no auto-update for desktops, no :latest image.
+          # See docs/releasing.md → "Releasing without making it latest".
+          git fetch --force --depth=1 origin "refs/tags/$REF_NAME:refs/tags/$REF_NAME"
+          if git tag -l --format='%(contents)' "$REF_NAME" | grep -qF '[prerelease]'; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Tauri Linux prerequisites
         if: startsWith(matrix.platform, 'ubuntu')
         run: |
@@ -87,4 +103,7 @@ jobs:
             point it at your server, done. See the self-hosting guide for
             server setup.
           releaseDraft: true # human clicks publish after spot-checking artifacts
+          # A pre-release is never GitHub's "latest", so releases/latest (and
+          # the updater's latest.json) keep pointing at the previous version.
+          prerelease: ${{ steps.channel.outputs.prerelease == 'true' }}
           args: ${{ matrix.args }}

@@ -190,7 +190,7 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Reports",
         icon: "report",
         title: "Reports",
-        keywords: "export csv spending by category year",
+        keywords: "export csv spending by category year weekly monthly review present slideshow",
       },
       {
         id: "assistant",

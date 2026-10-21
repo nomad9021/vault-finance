@@ -1,4 +1,5 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { platform as osPlatform, hostname } from "@tauri-apps/plugin-os";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { LazyStore } from "@tauri-apps/plugin-store";
@@ -118,6 +119,12 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
     },
     async installUpdateAndRestart(onProgress?: (fraction: number) => void) {
       if (!pendingUpdate) throw new Error("no update pending — check first");
+      // Installs Tauri's updater can't replace (extracted AppImage) hand off
+      // to the launcher's updater, which quits us, installs, and reopens.
+      if (await invoke<boolean>("external_updater_available")) {
+        await invoke("run_external_updater");
+        return;
+      }
       let downloaded = 0;
       let total: number | undefined;
       await pendingUpdate.downloadAndInstall((event) => {
@@ -142,6 +149,9 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
     },
     async tailscaleDown() {
       return await invoke<TailscaleActionResult>("tailscale_down");
+    },
+    async setFullscreen(on) {
+      await getCurrentWindow().setFullscreen(on);
     },
     async openExternal(url) {
       await invoke("open_external", { url });

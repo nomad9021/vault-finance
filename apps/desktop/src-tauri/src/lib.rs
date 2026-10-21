@@ -39,6 +39,8 @@ pub fn run() {
             commands::tailscale_up,
             commands::tailscale_down,
             commands::open_external,
+            commands::external_updater_available,
+            commands::run_external_updater,
             biometric::biometric_status,
             biometric::biometric_authenticate,
             biometric::biometric_cancel,

@@ -512,3 +512,28 @@ export const aiMessages = pgTable(
     index("ai_messages_conversation_id_idx").on(t.conversationId, t.createdAt),
   ],
 );
+
+/** A change the assistant proposed — see modules/ai/actions.ts. */
+export const aiActions = pgTable(
+  "ai_actions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => aiConversations.id, { onDelete: "cascade" }),
+    messageId: uuid("message_id").references(() => aiMessages.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The AiAction JSON the model emitted (validated). */
+    action: text("action").notNull(),
+    summary: text("summary").notNull(),
+    status: text("status", { enum: ["pending", "applied", "rejected", "failed"] })
+      .notNull()
+      .default("pending"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+  },
+  (t) => [index("ai_actions_conversation_id_idx").on(t.conversationId, t.createdAt)],
+);

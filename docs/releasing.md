@@ -27,6 +27,29 @@ genuinely breaks older clients — it makes servers reject them with an
 Also bump `apiVersion` in `apps/server/src/config.ts` to the new version — the
 per-server daily update check compares it against the latest GitHub release.
 
+### Releasing without making it latest
+
+To ship a version people can install on purpose, without it auto-updating
+anyone, tag it **annotated** with `[prerelease]` in the message:
+
+```bash
+git tag -a v0.2.0 -m "v0.2.0 [prerelease]"
+git push && git push origin v0.2.0
+```
+
+Both workflows read the tag message:
+
+- **Desktop:** the draft is created as a **pre-release**. GitHub never treats
+  a pre-release as "latest", so `releases/latest/download/latest.json` (and the
+  per-server update check) stay on the previous release: nobody is offered it.
+- **Server:** only `:<version>` is pushed; `:latest` stays on the previous
+  release, so `update-server.sh` on a default install doesn't pick it up. To
+  run it on a server, set `VAULT_VERSION=0.2.0` in `docker/.env` and update.
+
+To promote it later, untick **Set as a pre-release** (and tick **Set as the
+latest release**) on the GitHub release, and run the release-server workflow
+manually for that version with **latest** checked.
+
 ## The server image
 
 The same tag push triggers [release-server.yml](../.github/workflows/release-server.yml),

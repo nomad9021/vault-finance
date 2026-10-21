@@ -150,7 +150,23 @@ see [ADR-0005](adr/0005-ai-streaming.md)). Every request after login carries
 | GET | `/api/v1/ai/conversations` | |
 | GET | `/api/v1/ai/conversations/:id` | Includes full message history. |
 | DELETE | `/api/v1/ai/conversations/:id` | |
-| POST | `/api/v1/ai/chat` | `{ conversationId?, message }` → **streaming NDJSON response**, one `{ token: string }` line per chunk, final line `{ done: true, conversationId }`. Backs: natural-language Q&A, "explain spending," "budget recommendations," "cash-flow summaries," "spending comparisons," "savings recommendations," "forecasting," "investment summaries" — all are prompt templates server-side against the same endpoint, not separate routes. |
+| POST | `/api/v1/ai/chat` | `{ conversationId?, message }` → **streaming NDJSON response**, one `{ token: string }` line per chunk, final line `{ done: true, conversationId }`. Backs: natural-language Q&A, "explain spending," "budget recommendations," "cash-flow summaries," "spending comparisons," "savings recommendations," "forecasting," "investment summaries" — all are prompt templates server-side against the same endpoint, not separate routes. `autoApply: true` (auto mode) applies proposed changes immediately. Before `done`, the stream may include `{ actions: AiActionRecord[] }` (changes the reply proposed) and `{ remembered: string[] }` (notes saved to memory). |
+| POST | `/api/v1/ai/actions/:id/approve` | Carry out a pending proposed change. Runs through the normal REST routes as the approving user, so owner-only changes still need the owner. 409 if already decided. |
+| POST | `/api/v1/ai/actions/:id/reject` | Decline a pending change. |
+| POST | `/api/v1/ai/actions/:id/result` | `{ status: "applied"|"failed"|"rejected", error? }` — the app reports the outcome of a change it applies itself (`set_theme`, `set_review_prefs`). |
+| GET | `/api/v1/ai/memory` | `{ notes: [{ at, text }] }` — the assistant's long-term memory for the caller. |
+
+### Assistant changes and memory
+
+The model proposes a change by writing `<vault-action>{json}</vault-action>` in its reply (schema: `AiAction` in `packages/shared/src/schemas/ai-actions.ts`) and saves a lasting fact with `<vault-remember>text</vault-remember>`. The server strips both from the stored message, validates actions with zod (malformed blocks are dropped), and records them in `ai_actions` (migration 0019). Allowed: the category tree, auto-categorization rules, budgets, planned income, household name, theme and finance-review preferences. Never: security settings, members, bank links, AI settings, transactions.
+
+Memory is one append-only file per user, `<VAULT_DATA_DIR>/ai-memory/<user id>.jsonl`, each note encrypted with the data key. It is never deleted — not by retention and not when chats are deleted — and is included in the server backup; `vault rotate-data-key` re-encrypts it. The newest 60 notes go into each chat's system prompt.
+
+## Reports
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/v1/reports/review` | `?period=week|month&start=YYYY-MM-DD` → `PeriodReview`: totals vs the previous period, categories (with prior-period spend), top merchants, largest purchases, zero-filled daily spending. Backs the weekly/monthly review presenter (Reports → Finance review). |
 
 ## Settings
 
