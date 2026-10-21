@@ -1,10 +1,9 @@
 mod biometric;
 mod commands;
+mod lockwatch;
 mod tailscale;
 mod tls;
 
-use tauri::menu::{Menu, MenuItem};
-use tauri::tray::TrayIconBuilder;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -46,39 +45,18 @@ pub fn run() {
             biometric::biometric_cancel,
         ])
         .setup(|app| {
-            // Tray: quick show/hide + quit. Closing the window hides to tray
-            // on Windows/Linux (macOS apps conventionally keep running with
-            // no windows; the Dock handles re-opening there).
-            let show = MenuItem::with_id(app, "show", "Show Vault Finance", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &quit])?;
-
-            TrayIconBuilder::with_id("main-tray")
-                .icon(app.default_window_icon().cloned().expect("bundled icon"))
-                .tooltip("Vault Finance")
-                .menu(&menu)
-                .show_menu_on_left_click(true)
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                    "quit" => app.exit(0),
-                    _ => {}
-                })
-                .build(app)?;
+            // Lock the app when the screen locks or the computer sleeps.
+            lockwatch::start(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
-            #[cfg(not(target_os = "macos"))]
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
-                api.prevent_close();
+            // Closing the main window quits: nothing keeps running in the
+            // background (no tray), and the next start is locked.
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                if window.label() == "main" {
+                    window.app_handle().exit(0);
+                }
             }
-            #[cfg(target_os = "macos")]
-            let _ = (window, event);
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

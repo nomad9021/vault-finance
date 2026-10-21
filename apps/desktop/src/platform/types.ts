@@ -112,6 +112,12 @@ export interface HostPlatform {
   tailscaleStatus?(): Promise<TailscaleStatus>;
   tailscaleUp?(): Promise<TailscaleActionResult>;
   tailscaleDown?(): Promise<TailscaleActionResult>;
+  /**
+   * Call `onLock` when the computer locks its screen or goes to sleep (Tauri:
+   * lockwatch.rs). Returns an unsubscribe function. Undefined where the host
+   * can't tell (browser dev); the app's own sleep and idle checks still apply.
+   */
+  onSystemLock?(onLock: () => void): () => void;
   /** Put the app window in (or take it out of) full screen — the review presenter. */
   setFullscreen(on: boolean): Promise<void>;
   /** Open an https link in the default browser (Tauri only). */

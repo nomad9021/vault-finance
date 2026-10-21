@@ -70,6 +70,8 @@ interface AppState {
   reviewPrefs: ReviewPrefs;
   /** Assistant auto mode: apply its proposed changes without asking (per device). */
   aiAutoApply: boolean;
+  /** Lock after this many idle minutes (0 = never). Per device. */
+  autoLockMinutes: number;
   /** Assistant AI level: Low (fast) … High (thinks first). Per device. */
   aiLevel: AiLevel;
   /** Whether AI is on AND configured — gates every AI surface (off by default). */
@@ -116,6 +118,9 @@ interface AppState {
   setTheme(theme: Theme): Promise<void>;
   setReviewPrefs(prefs: ReviewPrefs): Promise<void>;
   setAiAutoApply(on: boolean): Promise<void>;
+  /** Hide everything behind the unlock screen; the session is kept for a quick unlock. */
+  lock(): void;
+  setAutoLockMinutes(minutes: number): Promise<void>;
   setAiLevel(level: AiLevel): Promise<void>;
   changeServer(): Promise<void>;
   /** Back out of the connect screen, restoring the prior server. No-op (and no
@@ -142,6 +147,12 @@ const THEME_KEY = "theme";
 const REVIEW_PREFS_KEY = "review-prefs";
 const AI_AUTO_APPLY_KEY = "ai-auto-apply";
 const AI_LEVEL_KEY = "ai-level";
+const AUTO_LOCK_KEY = "auto-lock-minutes";
+export const AUTO_LOCK_DEFAULT = 5;
+export function parseAutoLock(raw: string | null): number {
+  const n = raw === null ? AUTO_LOCK_DEFAULT : Number(raw);
+  return Number.isFinite(n) && n >= 0 && n <= 240 ? n : AUTO_LOCK_DEFAULT;
+}
 /** Non-secret list of enrolled user ids, so the login screen needn't touch the keychain. */
 const biometricUsersKey = (address: string) => `biometric-users:${address}`;
 /** Keychain entry holding `{ id, key }` for one user's device key on one server. */
@@ -218,6 +229,7 @@ export const useApp = create<AppState>((set, get) => ({
   reviewPrefs: DEFAULT_REVIEW_PREFS,
   aiAutoApply: false,
   aiLevel: "medium",
+  autoLockMinutes: AUTO_LOCK_DEFAULT,
   aiVisible: false,
   householdName: null,
   lockedUser: null,
@@ -364,12 +376,9 @@ export const useApp = create<AppState>((set, get) => ({
       if (tokens) {
         try {
           const user = await client.me();
-          if (get().biometricUserIds.includes(user.id)) {
-            // Keep the session, but make the user prove it's them first.
-            set({ user: null, lockedUser: user, screen: { name: "login" } });
-            return;
-          }
-          get().signedIn(user);
+          // The app always opens locked: keep the session, but make the
+          // user prove it's them first (biometrics or their password).
+          set({ user: null, lockedUser: user, screen: { name: "login" } });
           return;
         } catch {
           persistTokens(null); // stale/revoked session — fall through to login
@@ -549,6 +558,17 @@ export const useApp = create<AppState>((set, get) => ({
     } catch {
       set({ aiVisible: false });
     }
+  },
+
+  lock() {
+    const { user, screen } = get();
+    if (!user || screen.name !== "shell") return;
+    set({ user: null, lockedUser: user, aiVisible: false, screen: { name: "login" } });
+  },
+
+  async setAutoLockMinutes(autoLockMinutes) {
+    set({ autoLockMinutes });
+    await get().platform.saveValue(AUTO_LOCK_KEY, String(autoLockMinutes));
   },
 
   async signOut() {
@@ -732,6 +752,7 @@ export async function bootstrap(): Promise<void> {
       reviewPrefs: parseReviewPrefs(await platform.loadValue(REVIEW_PREFS_KEY)),
       aiAutoApply: (await platform.loadValue(AI_AUTO_APPLY_KEY)) === "on",
       aiLevel: AiLevel.catch("medium").parse(await platform.loadValue(AI_LEVEL_KEY)),
+      autoLockMinutes: parseAutoLock(await platform.loadValue(AUTO_LOCK_KEY)),
     });
   } catch (err) {
     console.error("loading review preferences failed; using defaults", err);
