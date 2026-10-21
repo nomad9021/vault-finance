@@ -19,6 +19,9 @@ env:
 jobs:
   image:
     runs-on: ubuntu-latest
+    # Normally ~10 min. QEMU can crash mid-step for arm64 and hang instead of
+    # failing (seen on v0.1.7); fail fast so a re-run can be started.
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
