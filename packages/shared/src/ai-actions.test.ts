@@ -18,6 +18,15 @@ describe("assistant blocks", () => {
     expect(out.remember).toEqual(["Paid biweekly on Fridays"]);
   });
 
+  it("reads blocks small models mangle", () => {
+    const out = extractAssistantBlocks(
+      'Done.\n$vault-action{"type":"set_budget","category":"Groceries","amount":500}</vault-action>\n' +
+        '<vault-action>```json\n{"type":"create_rule","keyword":"shell","category":"Transport"}\n```</vault-action>',
+    );
+    expect(out.actions.map((a) => a.type)).toEqual(["set_budget", "create_rule"]);
+    expect(out.visible).toBe("Done.\n$");
+  });
+
   it("hides a block that is still streaming in", () => {
     expect(stripAssistantBlocks('Okay.\n<vault-action>{"type":"create_')).toBe("Okay.");
   });

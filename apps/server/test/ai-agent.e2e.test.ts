@@ -123,7 +123,7 @@ describe("finance agent", () => {
     expect(results.content).toContain("LOOK-UP RESULTS");
     expect(results.content).toMatch(/Blue Kettle 4411 \| 2× \| out \$13\.70 \| Uncategorized/);
     expect(results.content).toContain("Zephyr Gym Club");
-    expect(out[0]?.["status"]).toMatch(/agents are on it/);
+    expect(out[1]?.["status"]).toMatch(/agents are on it/);
     expect(out.filter((l) => "status" in l).map((l) => l["status"])).toContain("Checking your merchants…");
 
     // The guide teaches the look-ups and the new changes.
@@ -242,7 +242,7 @@ describe("specialist agents", () => {
     calls.length = 0;
     replies = ["Sure."];
     const out = await chat("What would my take-home be on a $95k salary?");
-    expect(out[0]).toEqual({ status: "Tax & salary agent is on it…" });
+    expect(out[1]).toEqual({ status: "Tax & salary agent is on it…" });
     const system = calls[0]![0]!.content;
     expect(system).toContain("--- Tax & salary agent ---");
     expect(system).toContain("TAX PROFILE:");
@@ -330,5 +330,36 @@ describe("never an empty reply", () => {
     expect(text).toContain("Here's what I'd change (1 change):");
     const convo = out.find((l) => "done" in l)!["conversationId"] as string;
     expect((await api("GET", `/ai/conversations/${convo}`)).messages.at(-1).content).toBe("Here's what I'd change (1 change):");
+  });
+});
+
+describe("completion check", () => {
+  it("asks for the change when the model only claims it", async () => {
+    calls.length = 0;
+    replies = [
+      "Done — Shell charges are now in Transport.",
+      '<vault-action>{"type":"create_rule","keyword":"shell","category":"Transport"}</vault-action>',
+    ];
+    const out = lines((await app.inject({ method: "POST", url: "/api/v1/ai/chat", headers: auth, payload: { message: "Always put Shell in Transport" } })).payload);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]!.at(-1)!.content).toContain("wrote no <vault-action> block");
+    const actions = out.find((l) => "actions" in l)!["actions"] as Array<{ action: { type: string } }>;
+    expect(actions.map((a) => a.action.type)).toEqual(["create_rule"]);
+  });
+
+  it("leaves plain answers alone", async () => {
+    calls.length = 0;
+    replies = ["You spent $565 at Kroger."];
+    await app.inject({ method: "POST", url: "/api/v1/ai/chat", headers: auth, payload: { message: "How much did I spend at Kroger?" } });
+    expect(calls).toHaveLength(1);
+  });
+});
+
+describe("stop", () => {
+  it("sends the conversation id first, so a stopped reply stays in its chat", async () => {
+    replies = ["Hello."];
+    const out = lines((await app.inject({ method: "POST", url: "/api/v1/ai/chat", headers: auth, payload: { message: "hi" } })).payload);
+    expect(out[0]).toMatchObject({ started: true });
+    expect(out[0]!["conversationId"]).toBe(out.find((l) => "done" in l)!["conversationId"]);
   });
 });

@@ -31,6 +31,21 @@ pub struct HttpRequestArgs {
     pub headers: HashMap<String, String>,
     pub body: Option<String>,
     pub pinned_fingerprint: Option<String>,
+    /** Set on streams the app may cancel (cancel_stream), e.g. an AI reply. */
+    #[serde(default)]
+    pub stream_id: Option<String>,
+}
+
+/// Streams that can be cancelled, by id. Cancelling drops the connection, so
+/// the server sees the client leave and stops its own work (the AI reply).
+static STREAMS: std::sync::LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Notify>>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+#[tauri::command]
+pub fn cancel_stream(stream_id: String) {
+    if let Some(n) = STREAMS.lock().unwrap_or_else(|e| e.into_inner()).get(&stream_id) {
+        n.notify_one();
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -132,13 +147,33 @@ pub async fn http_request_stream(
         req = req.body(body);
     }
 
-    let mut res = req.send().await?;
-    let status = res.status().as_u16();
-    while let Some(bytes) = res.chunk().await? {
-        let _ = on_chunk.send(StreamEvent {
-            chunk: Some(String::from_utf8_lossy(&bytes).into_owned()),
-        });
+    let cancel = Arc::new(tokio::sync::Notify::new());
+    if let Some(id) = &args.stream_id {
+        STREAMS.lock().unwrap_or_else(|e| e.into_inner()).insert(id.clone(), cancel.clone());
     }
+    let result = async {
+        let mut res = tokio::select! {
+            r = req.send() => r?,
+            _ = cancel.notified() => return Ok(0),
+        };
+        let status = res.status().as_u16();
+        loop {
+            let next = tokio::select! {
+                c = res.chunk() => c?,
+                _ = cancel.notified() => break,
+            };
+            let Some(bytes) = next else { break };
+            let _ = on_chunk.send(StreamEvent {
+                chunk: Some(String::from_utf8_lossy(&bytes).into_owned()),
+            });
+        }
+        Ok::<u16, CommandError>(status)
+    }
+    .await;
+    if let Some(id) = &args.stream_id {
+        STREAMS.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
+    }
+    let status = result?;
     Ok(HttpResponse {
         status,
         body: String::new(),

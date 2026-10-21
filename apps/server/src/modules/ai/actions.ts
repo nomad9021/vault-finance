@@ -645,7 +645,7 @@ export async function buildActionGuide(app: FastifyInstance, request: FastifyReq
     "transaction amounts/dates — say so if asked.",
     "Only propose a change when the user asks for it or clearly agrees to one.",
     "To propose a change, put ONE JSON object per block on its own line:",
-    '<vault-action>{"type":"create_category","name":"Pets","parent":"Household"}</vault-action>',
+    '<vault-action>{"type":"set_budget","category":"Groceries","amount":400}</vault-action>',
     "ALWAYS write at least one sentence to the user, saying what you're proposing in",
     "plain words; the app shows each change as a card the user approves (or it",
     "applies automatically in auto mode).",
@@ -662,10 +662,14 @@ export async function buildActionGuide(app: FastifyInstance, request: FastifyReq
     if (a.queries.length) lines.push("Look-ups:", ...a.queries);
     if (a.actions.length) lines.push("Changes:", ...a.actions);
     if (a.tips?.length) lines.push(...a.tips);
+    if (a.examples?.length) lines.push("Examples:", ...a.examples);
     lines.push("");
   }
   lines.push(
     "RULES (changes that break these are sent back to you to fix):",
+    "  - Make only the changes the user asked for; don't reorganize other things.",
+    "  - Never add up or estimate amounts yourself: transactions and category_totals",
+    "    look-ups give exact totals for any merchant, category or date range.",
     "  - Income and expense categories are separate trees: never nest one inside",
     "    the other; reorder_categories only orders siblings (same parent).",
     "  - Budgets are only for expense categories.",

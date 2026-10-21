@@ -16,8 +16,8 @@ export function createBrowserPlatform(): HostPlatform {
       return { status: res.status, text: () => res.text() };
     },
 
-    streamFetchImpl: async (url, init, onChunk) => {
-      const res = await fetch(url, init);
+    streamFetchImpl: async (url, init, onChunk, signal) => {
+      const res = await fetch(url, { ...init, ...(signal ? { signal: signal as AbortSignal } : {}) });
       if (!res.body) return { status: res.status };
       const reader = res.body.getReader();
       const decoder = new TextDecoder();

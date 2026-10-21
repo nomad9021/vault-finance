@@ -65,12 +65,14 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
       return { status: res.status, text: async () => res.body };
     },
 
-    streamFetchImpl: async (url, init, onChunk) => {
+    streamFetchImpl: async (url, init, onChunk, signal) => {
       const address = new URL(url).origin;
       const channel = new Channel<{ chunk?: string }>();
       channel.onmessage = (msg) => {
-        if (msg.chunk) onChunk(msg.chunk);
+        if (msg.chunk && !signal?.aborted) onChunk(msg.chunk);
       };
+      const streamId = signal ? crypto.randomUUID() : null;
+      signal?.addEventListener("abort", () => void invoke("cancel_stream", { streamId }), { once: true });
       const res = await invoke<{ status: number }>("http_request_stream", {
         args: {
           url,
@@ -78,6 +80,7 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
           headers: init.headers,
           body: init.body ?? null,
           pinnedFingerprint: await getPin(address),
+          streamId,
         },
         onChunk: channel,
       });

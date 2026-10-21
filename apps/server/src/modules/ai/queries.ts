@@ -27,10 +27,11 @@ function dollars(cents: number): string {
   return `${cents < 0 ? "-" : ""}$${abs}`;
 }
 
-function monthsAgo(months: number): string {
+/** Start of a rolling window ending today: the last N days, or N months back from today. */
+export function windowStart(q: { days?: number | undefined; months?: number | undefined }, defaultMonths = 3): string {
   const d = new Date();
-  d.setUTCDate(1);
-  d.setUTCMonth(d.getUTCMonth() - (months - 1));
+  if (q.days) d.setUTCDate(d.getUTCDate() - q.days);
+  else d.setUTCMonth(d.getUTCMonth() - (q.months ?? defaultMonths));
   return d.toISOString().slice(0, 10);
 }
 
@@ -94,26 +95,38 @@ export async function runQuery(app: FastifyInstance, request: FastifyRequest, q:
         if (q.category.trim().toLowerCase() === UNCATEGORIZED.toLowerCase()) filters.push(isNull(transactions.categoryId));
         else filters.push(eq(transactions.categoryId, resolveCategory(allCats, q.category).id));
       }
+      if (q.days) filters.push(gte(transactions.postedAt, windowStart(q)));
       if (q.from) filters.push(gte(transactions.postedAt, q.from));
       if (q.to) filters.push(lte(transactions.postedAt, q.to));
       const limit = q.limit ?? 50;
+      const where = filters.length ? and(...filters) : undefined;
       const rows = await app.db
         .select()
         .from(transactions)
-        .where(filters.length ? and(...filters) : undefined)
+        .where(where)
         .orderBy(desc(transactions.postedAt), desc(transactions.id))
         .limit(limit + 1);
+      // Totals over every match, not just the rows shown, so the model never adds up itself.
+      const [sum] = await app.db
+        .select({
+          count: sql<number>`count(*)::int`,
+          out: sql<string>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)`,
+          inn: sql<string>`coalesce(sum(${transactions.amountCents}) filter (where ${transactions.amountCents} > 0), 0)`,
+        })
+        .from(transactions)
+        .where(where);
       const lines = rows
         .slice(0, limit)
         .map((t) => `  ${t.postedAt} | ${t.merchantName.slice(0, 40)} | ${dollars(t.amountCents)} | ${pathOf(t.categoryId)}`);
       return [
+        `TOTAL for these filters: ${sum?.count ?? 0} transactions, spent ${dollars(Number(sum?.out ?? 0))}, received ${dollars(Number(sum?.inn ?? 0))} (use these totals; don't add up yourself).`,
         `TRANSACTIONS (date | merchant | amount | category)${rows.length > limit ? `, newest ${limit} shown` : ""}:`,
         ...(lines.length ? lines : ["  (none match)"]),
       ].join("\n");
     }
 
     case "merchants": {
-      const since = monthsAgo(q.months ?? 3);
+      const since = windowStart(q);
       const rows = await app.db
         .select({
           merchant: sql<string>`min(${transactions.merchantName})`,
@@ -140,8 +153,8 @@ export async function runQuery(app: FastifyInstance, request: FastifyRequest, q:
     }
 
     case "category_totals": {
-      const months = q.months ?? 3;
-      const since = monthsAgo(months);
+      const since = windowStart(q);
+      const months = q.days ? q.days / 30.44 : (q.months ?? 3);
       const rows = await app.db
         .select({
           categoryId: transactions.categoryId,
@@ -159,7 +172,7 @@ export async function runQuery(app: FastifyInstance, request: FastifyRequest, q:
           const out = Number(r.out), inn = Number(r.inn);
           return `  ${pathOf(r.categoryId)} | ${r.count} txns | spent ${dollars(out)} (${dollars(Math.round(out / months))}/mo)${inn ? ` | income ${dollars(inn)}` : ""}`;
         });
-      return [`CATEGORY TOTALS since ${since} (${months} month${months > 1 ? "s" : ""}):`, ...(lines.length ? lines : ["  (no transactions)"])].join("\n");
+      return [`CATEGORY TOTALS from ${since} to today${q.days ? ` (last ${q.days} days)` : ` (last ${months} month${months > 1 ? "s" : ""})`}:`, ...(lines.length ? lines : ["  (no transactions)"])].join("\n");
     }
 
     case "budgets": {

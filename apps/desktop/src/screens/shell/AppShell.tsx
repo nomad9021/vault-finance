@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLayoutMode } from "../../lib/useLayout.js";
 import { useApp } from "../../state/store.js";
 import { AccountsPage } from "./AccountsPage.js";
+import { AssistantBubble } from "./AssistantBubble.js";
 import { AssistantPage } from "./AssistantPage.js";
 import { BillsPage } from "./BillsPage.js";
 import { BudgetsPage } from "./BudgetsPage.js";
@@ -150,6 +151,7 @@ export function AppShell() {
         )}
       </main>
 
+      {aiVisible && page !== "assistant" && <AssistantBubble onOpenPage={() => navigate("assistant")} />}
       <CommandPalette
         open={paletteOpen}
         commands={commands}

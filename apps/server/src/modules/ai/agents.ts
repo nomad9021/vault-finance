@@ -23,6 +23,8 @@ export interface AgentDef {
   queries: string[];
   /** Agent-specific advice. */
   tips?: string[];
+  /** Worked examples: what a request should turn into. Small models follow these best. */
+  examples?: string[];
 }
 
 const STATE_NAMES =
@@ -46,13 +48,23 @@ export const AGENTS: AgentDef[] = [
       "  delete_category {category}   (only works if nothing uses it)",
       "  create_rule {keyword, category}   delete_rule {keyword}",
       '  recategorize {merchant: text in the merchant name, category, from?: category or "Uncategorized", since?: "YYYY-MM-DD"}',
+      "    (leave out from to move ALL of that merchant's transactions — what \"move all my X\" means)",
       "  reorder_categories {parent: name or null for top level, order: [sibling names, first = top]}",
       "  autocategorize {}   (applies the rules to uncategorized transactions)",
     ],
     queries: [
-      '  transactions {merchant?, category?: name or "Uncategorized", from?, to?: "YYYY-MM-DD", limit?: up to 100}',
-      "  merchants {months?: 1-24, uncategorizedOnly?: bool}   (who they pay, how often, which category)",
-      "  category_totals {months?: 1-24}   (spending and income per category)",
+      '  transactions {merchant?, category?: name or "Uncategorized", days?: last N days, from?, to?: "YYYY-MM-DD", limit?: up to 100}',
+      "    (starts with the exact TOTAL for everything that matches — use it for \"how much did I spend at X\")",
+      "  merchants {days? or months?: last N, uncategorizedOnly?: bool}   (who they pay, how often, which category)",
+      "  category_totals {days? or months?: last N}   (spending and income per category; months counts back from today)",
+    ],
+    examples: [
+      '  "Move all my Amazon purchases to Shopping" → <vault-action>{"type":"recategorize","merchant":"amazon","category":"Shopping"}</vault-action>',
+      '  "Always put Shell charges in Transport" → <vault-action>{"type":"create_rule","keyword":"shell","category":"Transport"}</vault-action>',
+      '    plus <vault-action>{"type":"recategorize","merchant":"shell","category":"Transport"}</vault-action> for the ones already there',
+      '  "Make Groceries green" → <vault-action>{"type":"recolor_category","category":"Groceries","color":"#2e9d5b"}</vault-action>',
+      '  "Put Coffee Shops under Dining Out" (two categories) → <vault-action>{"type":"move_category","category":"Coffee Shops","newParent":"Dining Out"}</vault-action>',
+      '  "Add a Kids category with School and Activities in it" → create_category Kids, then School and Activities with "parent":"Kids"',
     ],
     tips: [
       "To organize their finances: look up merchants and category totals first, then propose a tidy",
@@ -69,12 +81,13 @@ export const AGENTS: AgentDef[] = [
       "  set_budget {category, amount: monthly dollars}   remove_budget {category}",
       "  set_planned_income {amount: monthly dollars}   (skip if the tax profile keeps it in sync)",
     ],
-    queries: ["  budgets {}   (this month's budgets vs. spending)", "  category_totals {months?: 1-24}"],
+    queries: ["  budgets {}   (this month's budgets vs. spending)", "  category_totals {days? or months?: last N}"],
     tips: [
       "Base budgets on the last few months' category totals, rounded; leave room for savings.",
       "\"Budget Sankey like the actual one\" = set_budget for each spending category from its",
       "category_totals monthly average (and set_planned_income if there's no tax profile).",
     ],
+    examples: ['  "Set my grocery budget to $500" → <vault-action>{"type":"set_budget","category":"Groceries","amount":500}</vault-action>'],
   },
   {
     id: "tax",
@@ -118,7 +131,11 @@ export const AGENTS: AgentDef[] = [
       "  update_bill {bill: name, amount?, dueDay?, cadence?, autopay?}   delete_bill {bill}",
     ],
     queries: ["  bills {}   (saved bills)", "  subscriptions {}   (recurring charges found in transactions)"],
-    tips: ["Turn detected subscriptions and regular payments into bills so they show on the calendar and Sankey."],
+    examples: ['  "Add my rent as a bill: $1,450 due on the 1st" → <vault-action>{"type":"create_bill","name":"Rent","amount":1450,"dueDay":1}</vault-action>'],
+    tips: [
+      "Turn detected subscriptions and regular payments into bills so they show on the calendar and Sankey.",
+      "Name a bill the way the user does (\"Rent\", \"Car insurance\"), not by the merchant.",
+    ],
   },
   {
     id: "goals",
@@ -129,6 +146,7 @@ export const AGENTS: AgentDef[] = [
       "  update_goal {goal: name, target?, monthly?, saved?, targetDate?}   delete_goal {goal}",
     ],
     queries: ["  goals {}"],
+    examples: ['  "I want to save $6,000 for a vacation by next June" → <vault-action>{"type":"create_goal","name":"Vacation","target":6000,"targetDate":"<next June 30, YYYY-MM-DD>"}</vault-action>'],
   },
   {
     id: "giving",
@@ -155,6 +173,7 @@ export const AGENTS: AgentDef[] = [
     actions: [],
     queries: [
       "  cashflow {months?: 1-24}   (income vs. spending per month)",
+      '  transactions {merchant?, category?, days?: last N days}   (exact TOTAL first — use it for any "how much")',
       "  accounts {}   (balances, debts, net worth)",
       "  insights {}   (things that need attention)",
     ],

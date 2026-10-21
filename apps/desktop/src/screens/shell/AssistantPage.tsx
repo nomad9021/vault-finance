@@ -4,33 +4,18 @@ import {
   AI_LEVELS,
   AI_PROVIDER_LABELS,
   ApiRequestError,
-  stripAssistantBlocks,
-  type AiActionRecord,
   type AiHostStatus,
   type AiStatus,
   type ConversationListResponse,
 } from "@vault/shared";
-import { Banner, Button, Dialog, Segmented, Spinner, Tag } from "@vault/ui";
-import { useEffect, useRef, useState } from "react";
-import { applyClientAction } from "../../lib/aiClientActions.js";
+import { Banner, Button, Dialog, Segmented } from "@vault/ui";
+import { useEffect, useState } from "react";
 import { useData } from "../../lib/useData.js";
+import { useChat } from "../../state/chat.js";
 import { useApp } from "../../state/store.js";
 import { AiHostBar } from "./AiHostBar.js";
 import type { PageId } from "./AppShell.js";
-
-interface ChatMessage {
-  role: "user" | "assistant";
-  text: string;
-  pending?: boolean;
-  /** The model is reasoning before it answers (AI level High). */
-  thinking?: boolean;
-  /** What it's looking up right now (cleared once more text arrives). */
-  status?: string;
-  /** Changes this reply proposed. */
-  actions?: AiActionRecord[];
-  /** Notes it saved to the assistant's memory. */
-  remembered?: string[];
-}
+import { ChatComposer, ChatMessages } from "./ChatView.js";
 
 /** The design's "Try asking" chip rail — each maps to the AI feature list. */
 const CHIPS = [
@@ -71,145 +56,32 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
     [client],
   );
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const messages = useChat((s) => s.messages);
+  const busy = useChat((s) => s.busy);
+  const activeId = useChat((s) => s.conversationId);
+  const listVersion = useChat((s) => s.listVersion);
+  const startNewChat = useChat((s) => s.newChat);
+  const openConversation = useChat((s) => s.open);
+  const send = useChat((s) => s.send);
+  const forget = useChat((s) => s.forget);
+  const setError = useChat((s) => s.setError);
   const [deleting, setDeleting] = useState<{ id: string; title: string } | null>(null);
-  const conversationRef = useRef<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const startNewChat = () => {
-    if (busy) return;
-    conversationRef.current = null;
-    setActiveId(null);
-    setMessages([]);
-    setError(null);
-  };
-
-  const openConversation = async (id: string) => {
-    if (busy) return;
-    setError(null);
-    try {
-      const detail = await client.conversation(id);
-      conversationRef.current = id;
-      setActiveId(id);
-      setMessages(
-        detail.messages.map((m) => ({
-          role: m.role,
-          text: m.role === "assistant" ? stripAssistantBlocks(m.content) : m.content,
-          actions: m.actions ?? [],
-        })),
-      );
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : "Couldn't open that chat.");
-    }
-  };
+  // Saved chats reload whenever the shared conversation changes them.
+  useEffect(() => {
+    if (listVersion) void reloadConvos();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listVersion]);
 
   const confirmDelete = async () => {
     if (!deleting) return;
     try {
       await client.deleteConversation(deleting.id);
-      if (conversationRef.current === deleting.id) startNewChat();
-      void reloadConvos();
+      forget(deleting.id);
     } catch (err) {
       setError(err instanceof ApiRequestError ? err.message : "Couldn't delete that chat.");
     } finally {
       setDeleting(null);
-    }
-  };
-
-  /** Swap in an updated action record wherever it appears. */
-  const updateAction = (next: AiActionRecord) =>
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.actions?.some((a) => a.id === next.id)
-          ? { ...m, actions: m.actions.map((a) => (a.id === next.id ? next : a)) }
-          : m,
-      ),
-    );
-
-  const decide = async (record: AiActionRecord, approve: boolean) => {
-    try {
-      const next = !approve
-        ? await client.rejectAiAction(record.id)
-        : record.client
-          ? await applyClientAction(record)
-          : await client.approveAiAction(record.id);
-      updateAction(next);
-    } catch (err) {
-      setError(err instanceof ApiRequestError ? err.message : "Couldn't apply that change.");
-    }
-  };
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages]);
-
-  const send = async (text: string) => {
-    const message = text.trim();
-    if (!message || busy) return;
-    setBusy(true);
-    setError(null);
-    setInput("");
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", text: message },
-      { role: "assistant", text: "", pending: true },
-    ]);
-
-    const patchLast = (patch: (m: ChatMessage) => ChatMessage) =>
-      setMessages((prev) => {
-        const next = [...prev];
-        next[next.length - 1] = patch(next[next.length - 1]!);
-        return next;
-      });
-    const appendToken = (token: string) =>
-      patchLast((m) => {
-        const next = { ...m, text: m.text + token };
-        if (token.trim()) delete next.status; // new text: the look-up is done
-        return next;
-      });
-
-    const clientPending: AiActionRecord[] = [];
-    try {
-      const { conversationId } = await client.chat(
-        {
-          message,
-          autoApply,
-          level,
-          ...(conversationRef.current ? { conversationId: conversationRef.current } : {}),
-        },
-        appendToken,
-        {
-          onActions: (actions) => {
-            patchLast((m) => ({ ...m, actions }));
-            clientPending.push(...actions.filter((a) => a.client && a.status === "pending"));
-          },
-          onRemembered: (remembered) => patchLast((m) => ({ ...m, remembered })),
-          onThinking: () => patchLast((m) => (m.thinking ? m : { ...m, thinking: true })),
-          onStatus: (status) => patchLast((m) => ({ ...m, status })),
-        },
-      );
-      conversationRef.current = conversationId;
-      setActiveId(conversationId);
-      void reloadConvos();
-      // Auto mode: the app's own changes (theme, review settings) apply here.
-      if (autoApply) for (const a of clientPending) updateAction(await applyClientAction(a));
-    } catch (err) {
-      setMessages((prev) => prev.filter((m) => !(m.pending && stripAssistantBlocks(m.text) === "")));
-      if (err instanceof ApiRequestError && err.code === "AI_UNAVAILABLE") {
-        setError(err.message);
-        void reloadStatus();
-      } else if (err instanceof ApiRequestError) {
-        setError(err.message);
-      } else {
-        setError("The response was interrupted. Your question wasn't lost — try again.");
-      }
-    } finally {
-      setBusy(false);
-      setMessages((prev) => prev.map((m) => (m.pending ? { ...m, pending: false } : m)));
     }
   };
 
@@ -239,144 +111,16 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
           </Banner>
         )}
 
-        <div
-          ref={scrollRef}
-          style={{
-            flex: 1,
-            overflow: "auto",
-            padding: 24,
-            display: "flex",
-            flexDirection: "column",
-            gap: 16,
-            minHeight: 0,
-          }}
-        >
-          {messages.length === 0 && (
+        <ChatMessages
+          empty={
             <div className="text-muted" style={{ fontSize: "var(--text-base)", maxWidth: 480, lineHeight: 1.7 }}>
-              Ask anything about your money — spending, budgets, cash flow,
-              forecasts. It can also reorganise your categories, add rules and
-              budgets, and change review and theme settings — it asks first
-              unless you switch on Auto. Your chats are kept until you delete
-              them, and what it learns about you is remembered for next time.
+              Ask anything about your money — spending, budgets, cash flow, taxes, forecasts. It can also
+              reorganise your categories, set budgets, bills and goals, and change settings — it asks first
+              unless you switch on Auto. Press Ctrl+J on any page for the chat bubble.
             </div>
-          )}
-          {messages.map((m, i) =>
-            m.role === "user" ? (
-              <div
-                key={i}
-                style={{
-                  alignSelf: "flex-end",
-                  maxWidth: "72%",
-                  background: "var(--color-accent-800)",
-                  color: "var(--color-accent-100)",
-                  padding: "9px 14px",
-                  borderRadius: "16px 16px 4px 16px",
-                  fontSize: "var(--text-base)",
-                  lineHeight: 1.5,
-                }}
-              >
-                {m.text}
-              </div>
-            ) : (
-              <div
-                key={i}
-                style={{
-                  alignSelf: "flex-start",
-                  maxWidth: "82%",
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 7,
-                }}
-              >
-                <Tag variant="accent" style={{ alignSelf: "flex-start", fontSize: "var(--text-3xs)" }}>
-                  ✦ AI advisor
-                </Tag>
-                {m.pending && stripAssistantBlocks(m.text) === "" ? (
-                  m.status ? (
-                    <div
-                      style={{ fontSize: "var(--text-sm)", color: "var(--content-tertiary)", animation: "blink 1.6s infinite" }}
-                    >
-                      {m.status}
-                    </div>
-                  ) : m.thinking ? (
-                    <div
-                      style={{ fontSize: "var(--text-sm)", color: "var(--content-tertiary)", animation: "blink 1.6s infinite" }}
-                    >
-                      Thinking it through…
-                    </div>
-                  ) : (
-                    <div
-                      style={{
-                        fontSize: "var(--text-xl)",
-                        letterSpacing: 3,
-                        color: "var(--content-tertiary)",
-                        animation: "blink 1s infinite",
-                      }}
-                    >
-                      ···
-                    </div>
-                  )
-                ) : (
-                  <div style={{ fontSize: "var(--text-base)", lineHeight: 1.6, whiteSpace: "pre-line" }}>
-                    {stripAssistantBlocks(m.text)}
-                    {m.pending && m.status && (
-                      <div
-                        style={{ fontSize: "var(--text-sm)", color: "var(--content-tertiary)", animation: "blink 1.6s infinite", marginTop: 6 }}
-                      >
-                        {m.status}
-                      </div>
-                    )}
-                  </div>
-                )}
-                {m.actions?.map((a) => (
-                  <ActionCard key={a.id} action={a} onDecide={(approve) => void decide(a, approve)} />
-                ))}
-                {m.remembered?.map((note) => (
-                  <div key={note} style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>
-                    ✦ Saved to memory: {note}
-                  </div>
-                ))}
-              </div>
-            ),
-          )}
-          {error && (
-            <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
-              {error}
-            </div>
-          )}
-        </div>
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void send(input);
-          }}
-          style={{
-            flex: "none",
-            borderTop: "1px solid var(--color-divider)",
-            padding: "12px 24px",
-            display: "flex",
-            gap: 10,
-          }}
-        >
-          <input
-            className="input"
-            style={{ flex: 1, borderRadius: "var(--radius-md)" }}
-            placeholder="Ask about your money…"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            disabled={aiOffline}
-            aria-label="Ask about your money"
-          />
-          <Button
-            variant="primary"
-            type="submit"
-            style={{ whiteSpace: "nowrap" }}
-            disabled={busy || aiOffline || !input.trim()}
-          >
-            {busy ? <Spinner label="Thinking" /> : "Send"}
-          </Button>
-        </form>
+          }
+        />
+        <ChatComposer disabled={aiOffline} />
       </div>
 
       <div
@@ -526,61 +270,6 @@ function SideHeading({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
-    </div>
-  );
-}
-
-const STATUS_LABEL: Record<AiActionRecord["status"], string> = {
-  pending: "Waiting for you",
-  applied: "Done",
-  rejected: "Declined",
-  failed: "Didn't work",
-};
-
-/** One proposed change: what it is, and Approve / Decline while it's pending. */
-function ActionCard({ action, onDecide }: { action: AiActionRecord; onDecide: (approve: boolean) => void }) {
-  const [working, setWorking] = useState(false);
-  const tone =
-    action.status === "applied"
-      ? "var(--color-positive)"
-      : action.status === "failed"
-        ? "var(--color-negative)"
-        : "var(--content-tertiary)";
-  const decide = (approve: boolean) => {
-    setWorking(true);
-    onDecide(approve);
-  };
-  return (
-    <div
-      style={{
-        border: "1px solid var(--color-divider)",
-        borderRadius: "var(--radius-md)",
-        background: "var(--color-surface)",
-        padding: "10px 12px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
-        fontSize: "var(--text-sm)",
-      }}
-    >
-      <div style={{ display: "flex", gap: 8, alignItems: "baseline", justifyContent: "space-between" }}>
-        <span style={{ fontWeight: 600 }}>{action.summary}</span>
-        <span style={{ color: tone, fontWeight: 600, fontSize: "var(--text-xs)", whiteSpace: "nowrap" }}>
-          {action.status === "applied" ? "✓ " : action.status === "failed" ? "✕ " : ""}
-          {STATUS_LABEL[action.status]}
-        </span>
-      </div>
-      {action.error && <div style={{ color: "var(--color-negative)", fontSize: "var(--text-xs)" }}>{action.error}</div>}
-      {action.status === "pending" && (
-        <div style={{ display: "flex", gap: 8 }}>
-          <Button variant="primary" size="sm" disabled={working} onClick={() => decide(true)}>
-            Approve
-          </Button>
-          <Button variant="ghost" size="sm" disabled={working} onClick={() => decide(false)}>
-            Decline
-          </Button>
-        </div>
-      )}
     </div>
   );
 }

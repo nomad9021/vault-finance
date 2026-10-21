@@ -152,6 +152,12 @@ export type FetchLike = (
  * ends. Browser: fetch + ReadableStream reader. Tauri: Rust command pushing
  * chunks over an IPC channel (same pinned-TLS policy as FetchLike).
  */
+/** The part of AbortSignal the client uses (this package doesn't load DOM types). */
+export interface AbortSignalLike {
+  readonly aborted: boolean;
+  addEventListener(type: "abort", listener: () => void, options?: { once?: boolean }): void;
+}
+
 export type StreamFetchLike = (
   url: string,
   init: {
@@ -160,6 +166,8 @@ export type StreamFetchLike = (
     body?: string;
   },
   onChunk: (chunk: string) => void,
+  /** Aborting stops the stream and drops the connection (the server stops too). */
+  signal?: AbortSignalLike,
 ) => Promise<{ status: number }>;
 
 /** Server answered with a structured error body. */
@@ -701,8 +709,10 @@ export class ApiClient {
       onThinking?: () => void;
       /** What the assistant is looking up right now (agent steps). */
       onStatus?: (status: string) => void;
+      /** Stop button: abort to end the reply where it is. */
+      signal?: AbortSignalLike;
     } = {},
-  ): Promise<{ conversationId: string }> {
+  ): Promise<{ conversationId: string; stopped?: boolean }> {
     const streamImpl = this.opts.streamFetchImpl;
     if (!streamImpl) throw new Error("streamFetchImpl not configured");
 
@@ -715,6 +725,7 @@ export class ApiClient {
 
     let buffer = "";
     let result: { conversationId: string } | null = null;
+    let startedId: string | null = null;
     let streamError: ApiRequestError | null = null;
 
     const handleLine = (line: string) => {
@@ -728,7 +739,8 @@ export class ApiClient {
       const parsed = ChatStreamLine.safeParse(obj);
       if (!parsed.success) return;
       const data = parsed.data;
-      if ("token" in data) onToken(data.token);
+      if ("started" in data) startedId = data.conversationId;
+      else if ("token" in data) onToken(data.token);
       else if ("thinking" in data) events.onThinking?.();
       else if ("status" in data) events.onStatus?.(data.status);
       else if ("actions" in data) events.onActions?.(data.actions);
@@ -754,13 +766,19 @@ export class ApiClient {
           buffer = lines.pop() ?? ""; // keep the trailing partial line
           for (const line of lines) handleLine(line);
         },
+        events.signal,
       ));
     } catch (err) {
+      if (events.signal?.aborted && startedId) return { conversationId: startedId, stopped: true };
       this.noteConnection("offline");
       throw new ApiConnectionError(err);
     }
     this.noteConnection("online");
     if (buffer) handleLine(buffer);
+    if (events.signal?.aborted && !result) {
+      if (startedId) return { conversationId: startedId, stopped: true };
+      throw new ApiRequestError("INTERNAL", 499, "Stopped before the reply began.");
+    }
 
     if (streamError) throw streamError;
     if (status >= 400) {

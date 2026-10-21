@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useChat } from "../state/chat.js";
 
 /**
  * Tiny fetch-into-state hook: no cache, no dedupe — pages are small and the
- * server is on the LAN. `reload()` refetches after mutations.
+ * server is on the LAN. `reload()` refetches after mutations, and every
+ * page refetches when the assistant applies a change, so its edits show up
+ * on whatever page is open.
  */
 export function useData<T>(fetcher: () => Promise<T>, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null);
@@ -34,5 +37,14 @@ export function useData<T>(fetcher: () => Promise<T>, deps: unknown[] = []) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // The assistant changed something: refresh quietly in the background.
+  const dataVersion = useChat((s) => s.dataVersion);
+  const seen = useRef(dataVersion);
+  useEffect(() => {
+    if (dataVersion === seen.current) return;
+    seen.current = dataVersion;
+    void load();
+  }, [dataVersion, load]);
   return { data, error, loading, reload: load };
 }
