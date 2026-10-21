@@ -51,6 +51,7 @@ export function AppShell() {
   const connection = useApp((s) => s.connection);
   const aiVisible = useApp((s) => s.aiVisible);
   const mode = useLayoutMode();
+  const sidebarMini = useApp((s) => s.sidebarMini);
   // Lock on sleep, screen lock, idle time and Ctrl/Cmd+L while signed in.
   useAutoLock(true);
 
@@ -113,7 +114,8 @@ export function AppShell() {
         fontFamily: "var(--font-body)",
       }}
     >
-      {mode === "wide" && <Sidebar page={page} onNavigate={navigate} />}
+      {mode === "wide" && !sidebarMini && <Sidebar page={page} onNavigate={navigate} />}
+      {mode === "wide" && sidebarMini && <Rail page={page} onNavigate={navigate} expandable />}
       {mode === "medium" && <Rail page={page} onNavigate={navigate} />}
 
       <main className="app-main">
@@ -218,7 +220,7 @@ function PageBody({
     case "assistant":
       return <AssistantPage onNavigate={onNavigate} />;
     case "settings":
-      return <SettingsPage />;
+      return <SettingsPage {...(filter.tab ? { initialTab: filter.tab } : {})} />;
   }
 }
 

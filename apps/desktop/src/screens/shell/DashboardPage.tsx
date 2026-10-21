@@ -702,7 +702,7 @@ function GetStarted({
   onNavigate,
   hasAccounts,
 }: {
-  onNavigate: (page: PageId) => void;
+  onNavigate: Navigate;
   hasAccounts: boolean;
 }) {
   const aiVisible = useApp((s) => s.aiVisible);
@@ -744,8 +744,8 @@ function GetStarted({
             explanations and monthly summaries.
           </p>
           <div>
-            <Button variant="secondary" onClick={() => onNavigate("settings")}>
-              Open Settings
+            <Button variant="secondary" onClick={() => onNavigate("settings", { tab: "ai" })}>
+              Open AI settings
             </Button>
           </div>
         </Card>

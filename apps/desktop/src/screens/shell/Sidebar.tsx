@@ -13,6 +13,11 @@ export function Sidebar({ page, onNavigate }: { page: PageId; onNavigate: (p: Pa
   const user = useApp((s) => s.user);
   const aiVisible = useApp((s) => s.aiVisible);
   const householdName = useApp((s) => s.householdName);
+  const collapsed = useApp((s) => s.navCollapsed);
+  const setCollapsed = useApp((s) => s.setNavCollapsed);
+  const setMini = useApp((s) => s.setSidebarMini);
+  const toggle = (id: string) =>
+    void setCollapsed(collapsed.includes(id) ? collapsed.filter((g) => g !== id) : [...collapsed, id]);
 
   return (
     <aside
@@ -46,11 +51,23 @@ export function Sidebar({ page, onNavigate }: { page: PageId; onNavigate: (p: Pa
         aria-label="Main"
       >
         {NAV_GROUPS.map((group) => {
-          const pages = visiblePages(group, aiVisible);
-          if (pages.length === 0) return null;
+          const all = visiblePages(group, aiVisible);
+          if (all.length === 0) return null;
+          const folded = collapsed.includes(group.id);
+          // A folded group still shows the page you're on.
+          const pages = folded ? all.filter((p) => p.id === page) : all;
           return (
             <div className="nav-group" key={group.id}>
-              <div className="nav-group-label">{group.label}</div>
+              <button
+                className="nav-group-label"
+                onClick={() => toggle(group.id)}
+                aria-expanded={!folded}
+                title={folded ? `Show ${group.label}` : `Fold ${group.label}`}
+                style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "none", border: 0, cursor: "pointer", textAlign: "left", fontFamily: "inherit" }}
+              >
+                <span>{group.label}</span>
+                <Icon name={folded ? "chevronRight" : "chevronDown"} size={12} />
+              </button>
               {pages.map((p) => (
                 <button
                   key={p.id}
@@ -77,8 +94,21 @@ export function Sidebar({ page, onNavigate }: { page: PageId; onNavigate: (p: Pa
         }}
         className="t-2xs t-tertiary"
       >
-        <div className="truncate">{user?.displayName}</div>
-        <div>Self-hosted · v{APP_VERSION}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="truncate">{user?.displayName}</div>
+            <div>Self-hosted · v{APP_VERSION}</div>
+          </div>
+          <button
+            className="rail-item"
+            onClick={() => void setMini(true)}
+            aria-label="Shrink the sidebar to icons"
+            title="Shrink the sidebar to icons"
+            style={{ width: 30, height: 30 }}
+          >
+            <Icon name="chevronLeft" size={16} />
+          </button>
+        </div>
       </div>
     </aside>
   );
@@ -89,8 +119,9 @@ export function Sidebar({ page, onNavigate }: { page: PageId; onNavigate: (p: Pa
  * Group boundaries survive as separators so the grouping isn't lost with the
  * labels, and each icon keeps its name in a hover tooltip.
  */
-export function Rail({ page, onNavigate }: { page: PageId; onNavigate: (p: PageId) => void }) {
+export function Rail({ page, onNavigate, expandable = false }: { page: PageId; onNavigate: (p: PageId) => void; expandable?: boolean }) {
   const aiVisible = useApp((s) => s.aiVisible);
+  const setMini = useApp((s) => s.setSidebarMini);
 
   return (
     <aside
@@ -154,6 +185,11 @@ export function Rail({ page, onNavigate }: { page: PageId; onNavigate: (p: PageI
           );
         })}
       </nav>
+      {expandable && (
+        <button className="rail-item" data-label="Show the full sidebar" aria-label="Show the full sidebar" onClick={() => void setMini(false)}>
+          <Icon name="chevronRight" size={19} />
+        </button>
+      )}
     </aside>
   );
 }

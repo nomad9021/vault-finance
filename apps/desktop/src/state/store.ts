@@ -70,6 +70,11 @@ interface AppState {
   reviewPrefs: ReviewPrefs;
   /** Assistant auto mode: apply its proposed changes without asking (per device). */
   aiAutoApply: boolean;
+  /** Sidebar groups the user folded up, and whether the sidebar is shrunk to icons. Per device. */
+  navCollapsed: string[];
+  sidebarMini: boolean;
+  setNavCollapsed(groups: string[]): Promise<void>;
+  setSidebarMini(mini: boolean): Promise<void>;
   /** Lock after this many idle minutes (0 = never). Per device. */
   autoLockMinutes: number;
   /** Assistant AI level: Low (fast) … High (thinks first). Per device. */
@@ -148,7 +153,18 @@ const REVIEW_PREFS_KEY = "review-prefs";
 const AI_AUTO_APPLY_KEY = "ai-auto-apply";
 const AI_LEVEL_KEY = "ai-level";
 const AUTO_LOCK_KEY = "auto-lock-minutes";
+const NAV_COLLAPSED_KEY = "nav-collapsed";
+const SIDEBAR_MINI_KEY = "sidebar-mini";
 export const AUTO_LOCK_DEFAULT = 5;
+export function parseStringList(raw: string | null): string[] {
+  try {
+    const v = JSON.parse(raw ?? "[]") as unknown;
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
 export function parseAutoLock(raw: string | null): number {
   const n = raw === null ? AUTO_LOCK_DEFAULT : Number(raw);
   return Number.isFinite(n) && n >= 0 && n <= 240 ? n : AUTO_LOCK_DEFAULT;
@@ -230,6 +246,8 @@ export const useApp = create<AppState>((set, get) => ({
   aiAutoApply: false,
   aiLevel: "medium",
   autoLockMinutes: AUTO_LOCK_DEFAULT,
+  navCollapsed: [],
+  sidebarMini: false,
   aiVisible: false,
   householdName: null,
   lockedUser: null,
@@ -566,6 +584,16 @@ export const useApp = create<AppState>((set, get) => ({
     set({ user: null, lockedUser: user, aiVisible: false, screen: { name: "login" } });
   },
 
+  async setNavCollapsed(navCollapsed) {
+    set({ navCollapsed });
+    await get().platform.saveValue(NAV_COLLAPSED_KEY, JSON.stringify(navCollapsed));
+  },
+
+  async setSidebarMini(sidebarMini) {
+    set({ sidebarMini });
+    await get().platform.saveValue(SIDEBAR_MINI_KEY, sidebarMini ? "on" : "off");
+  },
+
   async setAutoLockMinutes(autoLockMinutes) {
     set({ autoLockMinutes });
     await get().platform.saveValue(AUTO_LOCK_KEY, String(autoLockMinutes));
@@ -753,6 +781,8 @@ export async function bootstrap(): Promise<void> {
       aiAutoApply: (await platform.loadValue(AI_AUTO_APPLY_KEY)) === "on",
       aiLevel: AiLevel.catch("medium").parse(await platform.loadValue(AI_LEVEL_KEY)),
       autoLockMinutes: parseAutoLock(await platform.loadValue(AUTO_LOCK_KEY)),
+      navCollapsed: parseStringList(await platform.loadValue(NAV_COLLAPSED_KEY)),
+      sidebarMini: (await platform.loadValue(SIDEBAR_MINI_KEY)) === "on",
     });
   } catch (err) {
     console.error("loading review preferences failed; using defaults", err);

@@ -14,7 +14,7 @@ import { useData } from "../../lib/useData.js";
 import { useChat } from "../../state/chat.js";
 import { useApp } from "../../state/store.js";
 import { AiHostBar } from "./AiHostBar.js";
-import type { PageId } from "./AppShell.js";
+import type { Navigate } from "./nav.js";
 import { ChatComposer, ChatMessages } from "./ChatView.js";
 
 /** The design's "Try asking" chip rail — each maps to the AI feature list. */
@@ -31,7 +31,7 @@ const CHIPS = [
   "Set up budgets based on last month",
 ];
 
-export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => void }) {
+export function AssistantPage({ onNavigate }: { onNavigate: Navigate }) {
   const client = useApp((s) => s.client);
   const { data: status, reload: reloadStatus } = useData<AiStatus>(
     () => client.aiStatus(),
@@ -98,7 +98,7 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
           <Banner
             tone="warning"
             action={
-              <Button variant="ghost" onClick={() => onNavigate("settings")}>
+              <Button variant="ghost" onClick={() => onNavigate("settings", { tab: "ai" })}>
                 Open AI settings
               </Button>
             }

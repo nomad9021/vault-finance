@@ -22,3 +22,13 @@ describe("auto-lock", () => {
     expect(parseAutoLock("banana")).toBe(5);
   });
 });
+
+describe("saved lists", () => {
+  it("reads folded sidebar groups safely", async () => {
+    const { parseStringList } = await import("../state/store.js");
+    expect(parseStringList(null)).toEqual([]);
+    expect(parseStringList('["plan","grow"]')).toEqual(["plan", "grow"]);
+    expect(parseStringList('["plan",3,null]')).toEqual(["plan"]);
+    expect(parseStringList("not json")).toEqual([]);
+  });
+});

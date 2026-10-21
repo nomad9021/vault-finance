@@ -26,7 +26,7 @@ import {
   type PlaidEnv,
 } from "@vault/shared";
 import { THEMES, THEME_LABELS } from "@vault/design-tokens";
-import { Button, Card, Dialog, Field, Segmented, Select, Spinner, Tag } from "@vault/ui";
+import { Button, Card, Dialog, Field, Segmented, Select, Spinner, Tabs, Tag } from "@vault/ui";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { REVIEW_SLIDE_LABELS, type ReviewPrefs } from "../../lib/reviewPrefs.js";
 import { runChecks, type UiCheck } from "../../lib/startupChecks.js";
@@ -37,32 +37,92 @@ import { StatusList } from "../StatusList.js";
 import { ApproveDialog, describeRequest } from "./DeviceApprovalPrompt.js";
 import { TailscaleControl } from "../TailscaleControl.js";
 
-export function SettingsPage() {
-  // Uses the shared `.page` wrapper (centered, max-width, consistent rhythm)
-  // like every other screen — a narrower cap keeps settings forms readable while
-  // staying centered instead of hugging the left edge.
+type SettingsTab = "general" | "money" | "ai" | "security" | "connection" | "members" | "admin";
+
+const SETTINGS_TABS: ReadonlyArray<{ value: SettingsTab; label: string; ownerOnly?: boolean }> = [
+  { value: "general", label: "General" },
+  { value: "money", label: "Money" },
+  { value: "ai", label: "AI" },
+  { value: "security", label: "Security" },
+  { value: "connection", label: "Connection" },
+  { value: "members", label: "Members", ownerOnly: true },
+  { value: "admin", label: "Server & admin", ownerOnly: true },
+];
+const SETTINGS_TAB_KEY = "settings-tab";
+
+/**
+ * Settings, in tabs. Invited members only see what's theirs to change; the
+ * server, updates, system checks, members and the admin console live in
+ * owner-only tabs. The last tab is remembered on this device.
+ */
+export function SettingsPage({ initialTab }: { initialTab?: string } = {}) {
+  const user = useApp((s) => s.user);
+  const platform = useApp((s) => s.platform);
+  const isOwner = user?.role === "owner";
+  const tabs = SETTINGS_TABS.filter((t) => isOwner || !t.ownerOnly);
+  const valid = (t: string | null | undefined): t is SettingsTab => !!t && tabs.some((x) => x.value === t);
+  const [tab, setTab] = useState<SettingsTab>(valid(initialTab) ? initialTab : "general");
+
+  useEffect(() => {
+    if (valid(initialTab)) return;
+    void platform.loadValue(SETTINGS_TAB_KEY).then((t) => {
+      if (valid(t)) setTab(t);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [platform, initialTab]);
+
+  const choose = (t: SettingsTab) => {
+    setTab(t);
+    void platform.saveValue(SETTINGS_TAB_KEY, t);
+  };
+
   return (
     <div className="page" style={{ maxWidth: 780 }}>
-      <SystemStatusSection />
-      <AppearanceSection />
-      <ReviewSection />
-      <CategoryTreeSection />
-      <CategorizationRulesSection />
-      <BankSection />
-      <AiSection />
-      <AiMemorySection />
-      <AutoLockSection />
-      <BiometricSection />
-      <TwoFactorSection />
-      <UpdatesSection />
-      <ServerUpdateSection />
-      <HouseholdSection />
-      <MembersSection />
-      <TrustedDevicesSection />
-      <SessionsSection />
-      <NetworkSection />
-      <ServerSection />
-      <AdminLaunchRow />
+      <Tabs items={tabs} value={tab} onChange={choose} aria-label="Settings sections" />
+      {tab === "general" && (
+        <>
+          <AppearanceSection />
+          <ReviewSection />
+          <HouseholdSection />
+          <UpdatesSection />
+        </>
+      )}
+      {tab === "money" && (
+        <>
+          <CategoryTreeSection />
+          <CategorizationRulesSection />
+          <BankSection />
+        </>
+      )}
+      {tab === "ai" && (
+        <>
+          <AiSection />
+          <AiMemorySection />
+        </>
+      )}
+      {tab === "security" && (
+        <>
+          <AutoLockSection />
+          <BiometricSection />
+          <TwoFactorSection />
+          <TrustedDevicesSection />
+          <SessionsSection />
+        </>
+      )}
+      {tab === "connection" && (
+        <>
+          <ServerSection />
+          <NetworkSection />
+        </>
+      )}
+      {tab === "members" && isOwner && <MembersSection />}
+      {tab === "admin" && isOwner && (
+        <>
+          <SystemStatusSection />
+          <ServerUpdateSection />
+          <AdminLaunchRow />
+        </>
+      )}
     </div>
   );
 }
