@@ -31,6 +31,8 @@ function toMember(row: typeof users.$inferSelect): Member {
   return {
     id: row.id,
     displayName: row.displayName,
+    avatarColor: row.avatarColor,
+    avatarImage: row.avatarImage ?? null,
     email: row.email,
     role: row.role,
     createdAt: row.createdAt.toISOString(),

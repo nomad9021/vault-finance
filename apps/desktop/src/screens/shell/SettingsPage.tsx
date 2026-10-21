@@ -26,7 +26,7 @@ import {
   type PlaidEnv,
 } from "@vault/shared";
 import { THEMES, THEME_LABELS } from "@vault/design-tokens";
-import { Button, Card, Dialog, Field, Segmented, Select, Spinner, Tabs, Tag } from "@vault/ui";
+import { Avatar, Button, Card, Dialog, Field, Segmented, Select, Spinner, Tabs, Tag } from "@vault/ui";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { REVIEW_SLIDE_LABELS, type ReviewPrefs } from "../../lib/reviewPrefs.js";
 import { runChecks, type UiCheck } from "../../lib/startupChecks.js";
@@ -81,6 +81,7 @@ export function SettingsPage({ initialTab }: { initialTab?: string } = {}) {
       <Tabs items={tabs} value={tab} onChange={choose} aria-label="Settings sections" />
       {tab === "general" && (
         <>
+          <ProfileSection />
           <AppearanceSection />
           <ReviewSection />
           <HouseholdSection />
@@ -124,6 +125,123 @@ export function SettingsPage({ initialTab }: { initialTab?: string } = {}) {
         </>
       )}
     </div>
+  );
+}
+
+const PROFILE_COLORS = ["#9184d9", "#6f8ef2", "#43cfc0", "#3ecf8e", "#d8b23c", "#f08a4b", "#ec6a9c", "#8a94a6"];
+
+/** Square-crop and shrink a picture to 256×256 JPEG in the app, so uploads stay small. */
+async function toAvatarDataUrl(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);
+  const side = Math.min(bitmap.width, bitmap.height);
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 256;
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 256, 256);
+  bitmap.close();
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+/** Your name, colour and profile picture — shown in the header, on the login screen and to your household. */
+function ProfileSection() {
+  const client = useApp((s) => s.client);
+  const user = useApp((s) => s.user);
+  const [name, setName] = useState(user?.displayName ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  useEffect(() => setName(user?.displayName ?? ""), [user?.displayName]);
+  if (!user) return null;
+
+  const update = async (body: Parameters<typeof client.updateMe>[0]) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await client.updateMe(body);
+      useApp.setState({ user: next });
+    } catch (err) {
+      setError(err instanceof ApiRequestError ? err.message : "Couldn't save your profile.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const pick = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      await update({ avatarImage: await toAvatarDataUrl(file) });
+    } catch {
+      setError("That file couldn't be read as a picture.");
+    }
+  };
+
+  return (
+    <Card kicker="You" title="Your profile">
+      <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+        <Avatar name={user.displayName} color={user.avatarColor} image={user.avatarImage ?? null} size={72} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button variant="secondary" icon="upload" onClick={() => fileRef.current?.click()} disabled={busy}>
+              {user.avatarImage ? "Change photo" : "Add a photo"}
+            </Button>
+            {user.avatarImage && (
+              <Button variant="ghost" onClick={() => void update({ avatarImage: null })} disabled={busy}>
+                Remove photo
+              </Button>
+            )}
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              hidden
+              onChange={(e) => {
+                void pick(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 6 }} role="radiogroup" aria-label="Profile colour">
+            {PROFILE_COLORS.map((c) => (
+              <button
+                key={c}
+                role="radio"
+                aria-checked={user.avatarColor === c}
+                aria-label={`Colour ${c}`}
+                onClick={() => void update({ avatarColor: c })}
+                disabled={busy}
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: "50%",
+                  background: c,
+                  cursor: "pointer",
+                  border: user.avatarColor === c ? "2px solid var(--color-text)" : "2px solid transparent",
+                  boxShadow: "0 0 0 1px var(--color-divider)",
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+      <form
+        style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (name.trim() && name.trim() !== user.displayName) void update({ displayName: name.trim() });
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <Field label="Display name" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
+        </div>
+        <Button type="submit" variant="secondary" disabled={busy || !name.trim() || name.trim() === user.displayName}>
+          Save name
+        </Button>
+      </form>
+      {error && (
+        <p role="alert" style={{ color: "var(--color-negative)", fontSize: "var(--text-sm)" }}>
+          {error}
+        </p>
+      )}
+    </Card>
   );
 }
 
@@ -535,7 +653,12 @@ function MembersSection() {
           <tbody>
             {data.members.map((m) => (
               <tr key={m.id}>
-                <td>{m.displayName}</td>
+                <td>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                    <Avatar name={m.displayName} color={m.avatarColor ?? "#9184d9"} image={m.avatarImage ?? null} size={26} />
+                    {m.displayName}
+                  </span>
+                </td>
                 <td>{m.email}</td>
                 <td style={{ textTransform: "capitalize" }}>{m.role}</td>
                 <td style={{ textAlign: "right" }}>

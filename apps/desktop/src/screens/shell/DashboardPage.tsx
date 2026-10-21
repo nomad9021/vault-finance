@@ -3,6 +3,7 @@ import {
   type Goal,
   type SankeyResponse,
   type Transaction,
+  type UserPreferences,
 } from "@vault/shared";
 import {
   Button,
@@ -18,7 +19,8 @@ import {
   Segmented,
   Skeleton,
 } from "@vault/ui";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { moveWidget, placeWidget, resolveLayout, SPANS, type ResolvedWidget, type Span } from "../../lib/dashboardLayout.js";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 import { buildBudgetSankey, withGrossBranch, withTaxBranch } from "./budgetSankey.js";
@@ -135,6 +137,18 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
   const { data: billData } = useData(() => client.bills(), [client]);
   const { data: investData } = useData(() => client.investments(), [client]);
   const { data: planData } = useData(() => client.budgetPlan(), [client]);
+  // The person's own arrangement, saved to their account (follows them to every device).
+  const { data: savedPrefs } = useData(() => client.preferences().catch(() => ({})), [client]);
+  const [prefs, setPrefs] = useState<UserPreferences | null>(null);
+  useEffect(() => {
+    if (savedPrefs) setPrefs(savedPrefs as UserPreferences);
+  }, [savedPrefs]);
+  const [customizing, setCustomizing] = useState(false);
+  const saveLayout = (next: ResolvedWidget[] | null) => {
+    const dashboard = next ? next.map(({ id, hidden, span }) => ({ id, hidden, span })) : [];
+    setPrefs((p) => ({ ...(p ?? {}), dashboard }));
+    void client.savePreferences({ dashboard }).catch(() => {});
+  };
   // Tax add-on: with a tax profile, both diagrams can start from gross pay.
   const { data: taxData } = useData(() => client.taxProfile(), [client]);
   const taxEstimate = taxData?.estimate ?? null;
@@ -206,48 +220,36 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
     ? sankeyView
     : (availableViews[0]?.value ?? "actual");
 
-  return (
-    <div className="page">
-      {/* Hero metrics */}
-      <div className="grid">
-        <div className="col-3">
-          <MetricCard
+  // Every card and section is a widget the person can move, hide or resize
+  // (Customize); their layout is saved to their account on the server.
+  const widgetNodes: Record<string, { label: string; span: Span; node: ReactNode }> = {
+    "metric-networth": { label: "Net worth (number)", span: 3, node: <MetricCard
             label="Net worth"
             icon="bank"
             value={formatCentsWhole(netWorth)}
             hint="Across all accounts"
             onClick={() => onNavigate("accounts")}
-          />
-        </div>
-        <div className="col-3">
-          <MetricCard
+          /> },
+    "metric-income": { label: "Income this month (number)", span: 3, node: <MetricCard
             label={`Income · ${monthLong(month)}`}
             icon="income"
             value={formatCentsWhole(income)}
             onClick={() => onNavigate("income")}
-          />
-        </div>
-        <div className="col-3">
-          <MetricCard
+          /> },
+    "metric-spending": { label: "Spending this month (number)", span: 3, node: <MetricCard
             label={`Spending · ${monthLong(month)}`}
             icon="card"
             value={formatCentsWhole(spending)}
             onClick={() => onNavigate("reports")}
-          />
-        </div>
-        <div className="col-3">
-          <MetricCard
+          /> },
+    "metric-savings": { label: "Savings rate (number)", span: 3, node: <MetricCard
             label="Savings rate"
             icon="target"
             value={savingsRate !== null ? `${savingsRate}%` : "—"}
             deltaTone={savingsRate !== null && savingsRate >= 0 ? "up" : "down"}
             hint="of income kept"
-          />
-        </div>
-      </div>
-
-      {/* Flagship cash-flow Sankey — actual, planned, or both side by side */}
-      {loading && !sankeyData ? (
+          /> },
+    sankey: { label: "Cash-flow Sankey", span: 12, node: (loading && !sankeyData ? (
         <Panel>
           <Skeleton height={360} />
         </Panel>
@@ -342,74 +344,151 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
         </div>
       ) : (
         <GetStarted onNavigate={onNavigate} hasAccounts={accounts.length > 0} />
-      )}
-
-      {/* Net worth · income · spending — past months + forward projection */}
-      <div className="grid">
-        <div className="col-4">
-          <TrendCard
+      )) },
+    "trend-networth": { label: "Net worth trend", span: 4, node: <TrendCard
             label="Net worth"
             points={points}
             pick={(p) => p.netWorthCents}
             color="var(--viz-2)"
             goodWhenUp
             onViewAll={() => onNavigate("accounts")}
-          />
-        </div>
-        <div className="col-4">
-          <TrendCard
+          /> },
+    "trend-income": { label: "Income trend", span: 4, node: <TrendCard
             label="Income"
             points={points}
             pick={(p) => p.incomeCents}
             color="var(--viz-3)"
             goodWhenUp
             onViewAll={() => onNavigate("income")}
-          />
-        </div>
-        <div className="col-4">
-          <TrendCard
+          /> },
+    "trend-spending": { label: "Spending trend", span: 4, node: <TrendCard
             label="Spending"
             points={points}
             pick={(p) => p.spendingCents}
             color="var(--viz-1)"
             goodWhenUp={false}
             onViewAll={() => onNavigate("reports")}
-          />
-        </div>
-      </div>
-
-      {/* Budgets · bills · investments */}
-      <div className="grid">
-        <div className="col-4">
-          <BudgetOverview
+          /> },
+    budgets: { label: "Budgets", span: 4, node: <BudgetOverview
             data={budgetData}
             month={month}
             categoryById={categoryById}
             onViewAll={() => onNavigate("budgets")}
-          />
-        </div>
-        <div className="col-4">
-          <UpcomingBills bills={billData?.bills ?? []} onViewAll={() => onNavigate("bills")} />
-        </div>
-        <div className="col-4">
-          <InvestmentsCard data={investData} onViewAll={() => onNavigate("investments")} />
-        </div>
-      </div>
-
-      {/* Recent activity · goals */}
-      <div className="grid">
-        <div className="col-8">
-          <RecentActivity
+          /> },
+    bills: { label: "Upcoming bills", span: 4, node: <UpcomingBills bills={billData?.bills ?? []} onViewAll={() => onNavigate("bills")} /> },
+    investments: { label: "Investments", span: 4, node: <InvestmentsCard data={investData} onViewAll={() => onNavigate("investments")} /> },
+    recent: { label: "Recent activity", span: 8, node: <RecentActivity
             transactions={recent}
             accountName={(id) => accountById.get(id)?.name ?? "—"}
             onViewAll={() => onNavigate("transactions")}
-          />
-        </div>
-        <div className="col-4">
-          <TopGoals goals={goals} onViewAll={() => onNavigate("goals")} />
-        </div>
+          /> },
+    goals: { label: "Goals", span: 4, node: <TopGoals goals={goals} onViewAll={() => onNavigate("goals")} /> },
+  };
+  const layout = resolveLayout(
+    Object.entries(widgetNodes).map(([id, w]) => ({ id, span: w.span })),
+    prefs?.dashboard,
+  );
+
+  return (
+    <div className="page">
+      <div className="row-between wrap" style={{ marginBottom: -8 }}>
+        <span />
+        <Button variant={customizing ? "primary" : "ghost"} size="sm" icon="edit" onClick={() => setCustomizing((c) => !c)}>
+          {customizing ? "Done" : "Customize"}
+        </Button>
+      </div>
+      {customizing && (
+        <CustomizeDashboard
+          layout={layout}
+          labels={Object.fromEntries(Object.entries(widgetNodes).map(([id, w]) => [id, w.label]))}
+          onChange={saveLayout}
+          onReset={() => saveLayout(null)}
+        />
+      )}
+      <div className="grid">
+        {layout
+          .filter((w) => !w.hidden)
+          .map((w) => (
+            <div key={w.id} className={`col-${w.span}`}>
+              {widgetNodes[w.id]!.node}
+            </div>
+          ))}
       </div>
     </div>
+  );
+}
+
+/** Arrange the dashboard: drag or nudge widgets, show/hide them, pick their width. */
+function CustomizeDashboard({
+  layout,
+  labels,
+  onChange,
+  onReset,
+}: {
+  layout: ResolvedWidget[];
+  labels: Record<string, string>;
+  onChange: (next: ResolvedWidget[]) => void;
+  onReset: () => void;
+}) {
+  const [dragging, setDragging] = useState<string | null>(null);
+  const set = (id: string, patch: Partial<ResolvedWidget>) => onChange(layout.map((w) => (w.id === id ? { ...w, ...patch } : w)));
+  return (
+    <Panel
+      title="Customize your dashboard"
+      subtitle="Drag to reorder, or use the arrows. Saved to your account."
+      actions={
+        <Button variant="ghost" size="sm" onClick={onReset}>
+          Reset to default
+        </Button>
+      }
+    >
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {layout.map((w, i) => (
+          <div
+            key={w.id}
+            draggable
+            onDragStart={() => setDragging(w.id)}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={() => {
+              if (dragging) onChange(placeWidget(layout, dragging, w.id));
+              setDragging(null);
+            }}
+            onDragEnd={() => setDragging(null)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+              padding: "6px 4px",
+              borderTop: i ? "1px solid var(--color-divider)" : undefined,
+              opacity: dragging === w.id ? 0.5 : w.hidden ? 0.6 : 1,
+              cursor: "grab",
+            }}
+          >
+            <span aria-hidden="true" style={{ color: "var(--content-tertiary)", letterSpacing: -2 }}>⋮⋮</span>
+            <label className="radio" style={{ flex: 1, fontSize: "var(--text-sm)" }}>
+              <input type="checkbox" checked={!w.hidden} onChange={(e) => set(w.id, { hidden: !e.target.checked })} />
+              <span className="dot" style={{ borderRadius: "var(--radius-sm)" }} />
+              {labels[w.id] ?? w.id}
+            </label>
+            <select
+              className="input"
+              aria-label={`Width of ${labels[w.id] ?? w.id}`}
+              value={w.span}
+              onChange={(e) => set(w.id, { span: Number(e.target.value) as Span })}
+              style={{ width: 120, padding: "4px 8px" }}
+            >
+              {SPANS.map((sp) => (
+                <option key={sp.value} value={sp.value}>
+                  {sp.label}
+                </option>
+              ))}
+            </select>
+            <Button variant="ghost" size="sm" icon="arrowUp" aria-label="Move up" disabled={i === 0} onClick={() => onChange(moveWidget(layout, w.id, -1))} />
+            <Button variant="ghost" size="sm" icon="arrowDown" aria-label="Move down" disabled={i === layout.length - 1} onClick={() => onChange(moveWidget(layout, w.id, 1))} />
+          </div>
+        ))}
+      </div>
+    </Panel>
   );
 }
 

@@ -68,6 +68,7 @@ export const PublicProfile = z.object({
   id: z.string().uuid(),
   displayName: z.string(),
   avatarColor: z.string(),
+  avatarImage: z.string().nullish(),
 });
 export type PublicProfile = z.infer<typeof PublicProfile>;
 

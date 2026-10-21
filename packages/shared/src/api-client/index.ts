@@ -22,7 +22,7 @@ import {
 } from "../schemas/auth.js";
 import { Household } from "../schemas/household.js";
 import { SetupStatusResponse, type SetupCompleteRequest } from "../schemas/setup.js";
-import { User } from "../schemas/user.js";
+import { User, UserPreferences, type UpdateMeRequest } from "../schemas/user.js";
 import { VersionResponse } from "../schemas/version.js";
 import { Bucket, BucketListResponse, type CreateBucketRequest, type MoveBucketMoneyRequest, type UpdateBucketRequest } from "../schemas/buckets.js";
 import { TaxEstimateSchema, TaxPlacesResponse, TaxProfileResponse, type TaxProfileInput } from "../schemas/taxes.js";
@@ -464,6 +464,16 @@ export class ApiClient {
   }
   me() {
     return this.request(User, "GET", "/me");
+  }
+  /** Your own name, colour and picture (avatarImage: null removes it). */
+  updateMe(body: UpdateMeRequest) {
+    return this.request(User, "PATCH", "/me", body);
+  }
+  preferences() {
+    return this.request(UserPreferences, "GET", "/me/preferences");
+  }
+  savePreferences(body: UserPreferences) {
+    return this.request(UserPreferences, "PUT", "/me/preferences", body);
   }
   sessions() {
     return this.request(SessionListResponse, "GET", "/auth/sessions");

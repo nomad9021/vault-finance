@@ -32,6 +32,10 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   displayName: text("display_name").notNull(),
   avatarColor: text("avatar_color").notNull(),
+  /** Profile picture as a small data: URL (the app crops it to 256×256). */
+  avatarImage: text("avatar_image"),
+  /** Per-person preferences that follow them across devices (dashboard layout…). */
+  preferences: jsonb("preferences").$type<Record<string, unknown>>().notNull().default({}),
   role: text("role", { enum: ["owner", "member"] }).notNull(),
   /** Base32 TOTP secret. Set during 2FA setup; kept even while pending enable. */
   totpSecret: text("totp_secret"),

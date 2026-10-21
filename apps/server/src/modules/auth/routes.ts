@@ -7,6 +7,8 @@ import {
   RefreshRequest,
   TotpDisableRequest,
   TotpEnableRequest,
+  UpdateMeRequest,
+  UserPreferences,
   type CreateDeviceKeyResponse,
   type DeviceKeyListResponse,
   type LoginResponse,
@@ -18,7 +20,9 @@ import {
 } from "@vault/shared";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
-import { notFound, rateLimited } from "../../errors.js";
+import { eq } from "drizzle-orm";
+import { users } from "../../db/schema.js";
+import { AppError, notFound, rateLimited } from "../../errors.js";
 import { META_KEYS, readMeta } from "../../lib/app-meta.js";
 import * as authService from "./service.js";
 import { toApiUser } from "./service.js";
@@ -225,4 +229,53 @@ export default async function authRoutes(app: FastifyInstance) {
     if (!user) throw notFound("User");
     return toApiUser(user);
   });
+
+  // Your own name, colour and profile picture. (Passwords change through the
+  // password routes, which ask for the current one.)
+  app.patch("/me", { preHandler: [app.requireAuth] }, async (request) => {
+    const body = UpdateMeRequest.parse(request.body);
+    if (body.newPassword || body.currentPassword) {
+      throw new AppError("VALIDATION_ERROR", 400, "Change your password in Settings → Security.");
+    }
+    if (body.avatarImage && !looksLikeImage(body.avatarImage)) {
+      throw new AppError("VALIDATION_ERROR", 400, "That file isn't a JPEG, PNG or WebP picture.");
+    }
+    const [row] = await app.db
+      .update(users)
+      .set({
+        ...(body.displayName !== undefined ? { displayName: body.displayName.trim() } : {}),
+        ...(body.avatarColor !== undefined ? { avatarColor: body.avatarColor } : {}),
+        ...(body.avatarImage !== undefined ? { avatarImage: body.avatarImage } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, request.auth!.userId))
+      .returning();
+    if (!row) throw notFound("User");
+    return toApiUser(row);
+  });
+
+  app.get("/me/preferences", { preHandler: [app.requireAuth] }, async (request) => {
+    const user = await app.db.query.users.findFirst({ where: (t, { eq: e }) => e(t.id, request.auth!.userId) });
+    if (!user) throw notFound("User");
+    return UserPreferences.catch({}).parse(user.preferences ?? {});
+  });
+
+  app.put("/me/preferences", { preHandler: [app.requireAuth] }, async (request) => {
+    const body = UserPreferences.parse(request.body);
+    const user = await app.db.query.users.findFirst({ where: (t, { eq: e }) => e(t.id, request.auth!.userId) });
+    if (!user) throw notFound("User");
+    const merged = { ...(user.preferences ?? {}), ...body };
+    await app.db.update(users).set({ preferences: merged, updatedAt: new Date() }).where(eq(users.id, user.id));
+    return UserPreferences.parse(merged);
+  });
+}
+
+/** The decoded bytes start like a real JPEG, PNG or WebP file. */
+export function looksLikeImage(dataUrl: string): boolean {
+  const b64 = dataUrl.slice(dataUrl.indexOf(",") + 1, dataUrl.indexOf(",") + 1 + 24);
+  const head = Buffer.from(b64, "base64");
+  const jpeg = head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+  const png = head.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  const webp = head.subarray(0, 4).toString("latin1") === "RIFF" && head.subarray(8, 12).toString("latin1") === "WEBP";
+  return jpeg || png || webp;
 }

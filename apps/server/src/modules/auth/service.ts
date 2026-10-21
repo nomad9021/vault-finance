@@ -45,6 +45,7 @@ export function toApiUser(row: typeof users.$inferSelect): User {
     email: row.email,
     displayName: row.displayName,
     avatarColor: row.avatarColor,
+    avatarImage: row.avatarImage ?? null,
     role: row.role,
     createdAt: row.createdAt.toISOString(),
   };
@@ -59,9 +60,9 @@ export interface LoginResult {
 /** Login-screen profile list — no auth, so no emails (ADR-0003 note in api-design.md). */
 export async function listProfiles(
   db: Db,
-): Promise<Array<{ id: string; displayName: string; avatarColor: string }>> {
+): Promise<Array<{ id: string; displayName: string; avatarColor: string; avatarImage: string | null }>> {
   const rows = await db.query.users.findMany({
-    columns: { id: true, displayName: true, avatarColor: true },
+    columns: { id: true, displayName: true, avatarColor: true, avatarImage: true },
     orderBy: (t, { asc }) => [asc(t.createdAt)],
   });
   return rows;
