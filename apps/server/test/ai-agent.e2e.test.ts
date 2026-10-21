@@ -184,3 +184,51 @@ describe("finance agent", () => {
     expect(action!.error).toMatch(/No transactions matched/);
   });
 });
+
+describe("rule check", () => {
+  it("orders a mixed income + expense list by splitting it, instead of failing", async () => {
+    replies = [
+      '<vault-action>{"type":"reorder_categories","parent":null,"order":["Salary","Groceries","Dining Out","Gifts","Interest","Transport"]}</vault-action>',
+    ];
+    const out = lines(
+      (await app.inject({ method: "POST", url: "/api/v1/ai/chat", headers: auth, payload: { message: "order", autoApply: true } })).payload,
+    );
+    const [action] = out.find((l) => "actions" in l)!["actions"] as Array<{ status: string; error: string | null }>;
+    expect(action).toMatchObject({ status: "applied", error: null });
+    const cats = (await api("GET", "/categories")).categories as Array<{ name: string; kind: string; parentCategoryId: string | null }>;
+    const top = (kind: string) => cats.filter((c) => c.kind === kind && c.parentCategoryId === null).map((c) => c.name);
+    expect(top("income").slice(0, 3)).toEqual(["Salary", "Gifts", "Interest"]);
+    expect(top("expense").slice(0, 3)).toEqual(["Groceries", "Dining Out", "Transport"]);
+  });
+
+  it("sends broken changes back to the model, keeps its fixes and drops what's still wrong", async () => {
+    calls.length = 0;
+    replies = [
+      "Here's the plan.\n" +
+        '<vault-action>{"type":"set_budget","category":"Groceries","amount":600}</vault-action>\n' +
+        '<vault-action>{"type":"set_budget","category":"Salary","amount":100}</vault-action>\n' +
+        '<vault-action>{"type":"create_rule","keyword":"kettle","category":"Coffee Shops"}</vault-action>\n' +
+        '<vault-action>{"type":"move_category","category":"Gifts","newParent":"Shopping"}</vault-action>',
+      "Fixed the rule; Salary can't have a budget.\n" +
+        '<vault-action>{"type":"create_rule","keyword":"kettle","category":"Dining Out"}</vault-action>\n' +
+        '<vault-action>{"type":"move_category","category":"Gifts","newParent":"Shopping"}</vault-action>',
+    ];
+    const out = lines((await app.inject({ method: "POST", url: "/api/v1/ai/chat", headers: auth, payload: { message: "plan" } })).payload);
+
+    expect(calls).toHaveLength(2);
+    const report = calls[1]!.at(-1)!.content;
+    expect(report).toContain("RULE CHECK");
+    expect(report).toContain("budgets are for spending categories");
+    expect(report).toContain('no category called "Coffee Shops"');
+    expect(report).toMatch(/income category and "Shopping" is expense/);
+    expect(report).not.toContain('"Groceries"');
+    expect(out.some((l) => l["status"] === "Double-checking the changes…")).toBe(true);
+
+    const actions = out.find((l) => "actions" in l)!["actions"] as Array<{ action: Record<string, unknown>; status: string }>;
+    expect(actions.map((a) => a.action)).toEqual([
+      { type: "set_budget", category: "Groceries", amount: 600 },
+      { type: "create_rule", keyword: "kettle", category: "Dining Out" },
+    ]);
+    expect(actions.every((a) => a.status === "pending")).toBe(true);
+  });
+});

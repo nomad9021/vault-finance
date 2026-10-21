@@ -12,13 +12,14 @@ import {
   type AiTestResponse,
   type ChatStreamLine,
   type AiActionRecord,
+  type Category,
   type ConversationDetail,
 } from "@vault/shared";
 import { and, asc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { aiActions, aiConversations, aiMessages, aiSettings } from "../../db/schema.js";
 import { appendMemory, MEMORY_PROMPT_LIMIT, readMemory } from "../../lib/ai-memory.js";
-import { applyStoredAction, buildActionGuide, recordActions, toRecord } from "./actions.js";
+import { applyStoredAction, buildActionGuide, call, checkActions, recordActions, toRecord } from "./actions.js";
 import { AppError, notFound } from "../../errors.js";
 import type { AppConfig } from "../../config.js";
 import { buildFinancialContext } from "./context.js";
@@ -398,6 +399,7 @@ export default async function aiRoutes(
         let thinking = false;
         let convo = messages;
         const seenQueries = new Set<string>();
+        let lastStep = "";
         for (let step = 1; ; step++) {
           let stepText = "";
           await provider.streamChat(
@@ -415,6 +417,7 @@ export default async function aiRoutes(
               writeLine({ thinking: true });
             },
           );
+          lastStep = stepText;
           const { queries, invalid } = extractQueryBlocks(stepText);
           if ((!queries.length && !invalid.length) || step >= AGENT_MAX_STEPS) break;
           writeLine({ status: describeQueries(queries) });
@@ -427,8 +430,44 @@ export default async function aiRoutes(
           }
           thinking = false;
         }
-        const blocks = extractAssistantBlocks(assistantText);
-        if (blocks.invalid.length) request.log.info({ count: blocks.invalid.length }, "ignored malformed AI change blocks");
+        let blocks = extractAssistantBlocks(assistantText);
+
+        // Rule check: changes that would fail (or don't parse) go back to the
+        // model once to fix; whatever still fails is dropped, so the user
+        // only ever sees changes that can be applied.
+        const treeNow = (await call<{ categories: Category[] }>(app, request, "GET", "/categories")).categories;
+        const problems = checkActions(treeNow, blocks.actions);
+        if (problems.some(Boolean) || blocks.invalid.length) {
+          writeLine({ status: "Double-checking the changes…" });
+          const report = [
+            "=== RULE CHECK ===",
+            "Some of your proposed changes can't be applied as written:",
+            ...blocks.actions.flatMap((act, i) => (problems[i] ? [`- ${JSON.stringify(act)} → ${problems[i]}`] : [])),
+            ...blocks.invalid.slice(0, 5).map((raw) => `- ${raw.slice(0, 200)} → not valid JSON or not a known change type/fields`),
+            "Reply with corrected <vault-action> blocks for ONLY these (leave one out if it can't be done) and one short sentence on what you fixed. The other changes are fine; don't repeat them.",
+          ].join("\n");
+          let fixText = "";
+          await provider.streamChat(
+            aiConfig,
+            [...convo, { role: "assistant", content: lastStep }, { role: "user", content: report }],
+            (token) => {
+              if (!fixText && token.trim()) {
+                assistantText += "\n\n";
+                writeLine({ token: "\n\n" });
+              }
+              fixText += token;
+              assistantText += token;
+              writeLine({ token });
+            },
+          );
+          const kept = blocks.actions.filter((_, i) => !problems[i]);
+          const fixes = extractAssistantBlocks(fixText).actions;
+          const fixProblems = checkActions(treeNow, [...kept, ...fixes]).slice(kept.length);
+          const accepted = fixes.filter((_, i) => !fixProblems[i]);
+          const dropped = blocks.actions.length - kept.length + blocks.invalid.length - accepted.length;
+          if (dropped > 0) request.log.info({ dropped }, "AI changes dropped by the rule check");
+          blocks = { ...extractAssistantBlocks(assistantText), actions: [...kept, ...accepted], invalid: [] };
+        }
         const [saved] = await app.db
           .insert(aiMessages)
           .values({ conversationId, role: "assistant", content: blocks.visible || assistantText })

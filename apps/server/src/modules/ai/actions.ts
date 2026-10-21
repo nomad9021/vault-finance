@@ -245,8 +245,13 @@ export async function applyAction(app: FastifyInstance, request: FastifyRequest,
       const all = await categories();
       const parent = a.parent ? resolveCategory(all, a.parent) : null;
       const siblings = all.filter((c) => (c.parentCategoryId ?? null) === (parent?.id ?? null));
-      const ids = a.order.map((name) => resolveCategory(siblings, name).id);
-      await call(app, request, "POST", "/categories/reorder", { orderedIds: ids });
+      // Income and expense categories are separate lists; a mixed order is
+      // applied to each list on its own (models often mix them).
+      const listed = a.order.map((name) => resolveCategory(siblings, name));
+      for (const kind of ["income", "expense"] as const) {
+        const ids = listed.filter((c) => c.kind === kind).map((c) => c.id);
+        if (ids.length) await call(app, request, "POST", "/categories/reorder", { orderedIds: ids });
+      }
       return;
     }
     case "autocategorize":
@@ -256,6 +261,107 @@ export async function applyAction(app: FastifyInstance, request: FastifyRequest,
     case "set_review_prefs":
       return; // unreachable — handled above
   }
+}
+
+/**
+ * Rule check for proposed changes, run before the user sees them: replays
+ * them in order against a copy of the category tree (so a category created
+ * earlier in the same reply counts) and returns why each one would fail, or
+ * null. Mirrors what applyAction and the API enforce.
+ */
+export function checkActions(categoriesNow: Category[], actions: AiAction[]): Array<string | null> {
+  const all: Category[] = categoriesNow.map((c) => ({ ...c }));
+  let fake = 0;
+  const isNone = (ref: string) => ref.trim().toLowerCase() === UNCATEGORIZED.toLowerCase();
+  const find = (ref: string) => resolveCategory(all, ref);
+  const siblingsOf = (parentId: string | null) => all.filter((c) => (c.parentCategoryId ?? null) === parentId);
+
+  return actions.map((a) => {
+    try {
+      switch (a.type) {
+        case "create_category": {
+          const parent = a.parent ? find(a.parent) : null;
+          if (parent && a.kind && a.kind !== parent.kind) {
+            return `"${a.name}" is ${a.kind} but "${parent.name}" is an ${parent.kind} category; put it under an ${a.kind} category or leave kind out.`;
+          }
+          if (siblingsOf(parent?.id ?? null).some((c) => c.name.toLowerCase() === a.name.toLowerCase())) {
+            return `There's already a "${a.name}"${parent ? ` under "${parent.name}"` : " at the top level"}.`;
+          }
+          all.push({
+            ...(parent ?? all[0]!),
+            id: `00000000-0000-4000-8000-${String(++fake).padStart(12, "0")}`,
+            name: a.name,
+            parentCategoryId: parent?.id ?? null,
+            kind: a.kind ?? parent?.kind ?? "expense",
+            isSystem: false,
+          });
+          return null;
+        }
+        case "rename_category": {
+          const cat = find(a.category);
+          if (siblingsOf(cat.parentCategoryId ?? null).some((c) => c.id !== cat.id && c.name.toLowerCase() === a.newName.toLowerCase())) {
+            return `"${cat.name}" can't be renamed to "${a.newName}": a sibling already has that name.`;
+          }
+          cat.name = a.newName;
+          return null;
+        }
+        case "move_category": {
+          const cat = find(a.category);
+          const parent = a.newParent ? find(a.newParent) : null;
+          if (parent && (parent.id === cat.id || isDescendant(all, parent.id, cat.id))) {
+            return `"${cat.name}" can't go inside itself or one of its own branches.`;
+          }
+          if (parent && parent.kind !== cat.kind) {
+            return `"${cat.name}" is an ${cat.kind} category and "${parent.name}" is ${parent.kind}; they can't be nested.`;
+          }
+          cat.parentCategoryId = parent?.id ?? null;
+          return null;
+        }
+        case "recolor_category":
+        case "create_rule":
+        case "remove_budget":
+          find(a.category);
+          return null;
+        case "delete_category": {
+          const cat = find(a.category);
+          if (cat.isSystem) return `"${cat.name}" is built in and can't be deleted (rename or move it instead).`;
+          if (all.some((c) => c.parentCategoryId === cat.id)) return `"${cat.name}" still has categories inside it; move them out first.`;
+          all.splice(all.indexOf(cat), 1);
+          return null;
+        }
+        case "set_budget": {
+          const cat = find(a.category);
+          if (cat.kind !== "expense") return `"${cat.name}" is an income category; budgets are for spending categories.`;
+          if (a.amount <= 0) return "A budget needs an amount above zero (use remove_budget to drop one).";
+          return null;
+        }
+        case "recategorize":
+          if (!isNone(a.category)) find(a.category);
+          if (a.from && !isNone(a.from)) find(a.from);
+          return null;
+        case "reorder_categories": {
+          const parent = a.parent ? find(a.parent) : null;
+          const siblings = siblingsOf(parent?.id ?? null);
+          const missing = a.order.filter((name) => {
+            try {
+              resolveCategory(siblings, name);
+              return false;
+            } catch {
+              return true;
+            }
+          });
+          if (missing.length) {
+            return `Not directly ${parent ? `under "${parent.name}"` : "at the top level"}: ${missing.join(", ")}. Order only categories that share that parent.`;
+          }
+          return null;
+        }
+        default:
+          return null;
+      }
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+  });
 }
 
 function isDescendant(all: Category[], id: string, ancestorId: string): boolean {
@@ -327,6 +433,14 @@ export async function buildActionGuide(app: FastifyInstance, request: FastifyReq
     "    showSlides?: [ids], hideSlides?: [ids]}",
     "    slide ids: overview, categories, daily, merchants, largest, budgets, bills, goals, ai",
     'Name categories exactly as below; if two share a name use "Parent > Child".',
+    "RULES (changes that break these are sent back to you to fix):",
+    "  - Income and expense categories are separate trees: never nest one inside",
+    "    the other; reorder_categories only orders siblings (same parent).",
+    "  - Budgets are only for expense categories.",
+    "  - Built-in categories can't be deleted; a category with sub-categories",
+    "    can't be deleted until they're moved out.",
+    "  - Only use category names from the tree below or ones you create earlier",
+    "    in the same reply.",
     "Briefly say what you're proposing in plain words too; the app shows each",
     "change as a card the user approves (or it applies automatically in auto mode).",
     "",
