@@ -18,7 +18,9 @@ set -euo pipefail
 # below may rewrite this file mid-run (unattended via update-agent.sh).
 {
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+# Follow symlinks: /usr/local/bin/vault-update points here, and the repo is
+# found relative to the real file, not the link.
+SCRIPT_DIR="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" &>/dev/null && pwd)"
 REPO_DIR="$(cd -- "$SCRIPT_DIR/../.." &>/dev/null && pwd)"
 COMPOSE_FILE="$REPO_DIR/docker/docker-compose.yml"
 MULTI_DIR="$REPO_DIR/docker/multi"
