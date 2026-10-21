@@ -1,8 +1,10 @@
 import {
   CreateTransactionRequest,
+  RecategorizeRequest,
   TransactionListQuery,
   UpdateTransactionRequest,
   type ImportResponse,
+  type RecategorizeResponse,
   type Transaction as ApiTransaction,
 } from "@vault/shared";
 import { and, desc, eq, gte, isNull, lte, lt, or, sql, type SQL } from "drizzle-orm";
@@ -202,6 +204,27 @@ export default async function transactionRoutes(app: FastifyInstance) {
       return updated!;
     });
     return toApi(row);
+  });
+
+  // Bulk category change by merchant — what the assistant uses to tidy up
+  // history. Only the category changes; amounts and balances are untouched.
+  app.post("/transactions/recategorize", async (request): Promise<RecategorizeResponse> => {
+    const body = RecategorizeRequest.parse(request.body);
+    if (body.categoryId) {
+      const cat = await app.db.query.categories.findFirst({ where: eq(categories.id, body.categoryId) });
+      if (!cat) throw notFound("Category");
+    }
+    const pattern = `%${body.merchant.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+    const filters: SQL[] = [sql`${transactions.merchantName} ilike ${pattern}`];
+    if (body.fromCategoryId === "none") filters.push(isNull(transactions.categoryId));
+    else if (body.fromCategoryId) filters.push(eq(transactions.categoryId, body.fromCategoryId));
+    if (body.since) filters.push(gte(transactions.postedAt, body.since));
+    const rows = await app.db
+      .update(transactions)
+      .set({ categoryId: body.categoryId, updatedAt: new Date() })
+      .where(and(...filters))
+      .returning({ id: transactions.id });
+    return { updated: rows.length };
   });
 
   app.delete<{ Params: { id: string } }>("/transactions/:id", async (request, reply) => {

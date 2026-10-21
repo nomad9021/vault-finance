@@ -685,6 +685,8 @@ export class ApiClient {
       onRemembered?: (notes: string[]) => void;
       /** The model started reasoning before its answer (AI level High). */
       onThinking?: () => void;
+      /** What the assistant is looking up right now (agent steps). */
+      onStatus?: (status: string) => void;
     } = {},
   ): Promise<{ conversationId: string }> {
     const streamImpl = this.opts.streamFetchImpl;
@@ -714,6 +716,7 @@ export class ApiClient {
       const data = parsed.data;
       if ("token" in data) onToken(data.token);
       else if ("thinking" in data) events.onThinking?.();
+      else if ("status" in data) events.onStatus?.(data.status);
       else if ("actions" in data) events.onActions?.(data.actions);
       else if ("remembered" in data) events.onRemembered?.(data.remembered);
       else if ("done" in data) result = { conversationId: data.conversationId };

@@ -64,6 +64,11 @@ export async function buildFinancialContext(db: Db): Promise<string> {
     .orderBy(desc(transactions.postedAt), desc(transactions.id))
     .limit(15);
 
+  const [uncat] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(transactions)
+    .where(isNull(transactions.categoryId));
+
   const lines: string[] = [];
 
   lines.push(`Today is ${today}.`);
@@ -109,6 +114,9 @@ export async function buildFinancialContext(db: Db): Promise<string> {
       );
     }
   }
+
+  lines.push("");
+  lines.push(`Uncategorized transactions (all time): ${uncat?.count ?? 0}.`);
 
   if (recent.length > 0) {
     lines.push("");

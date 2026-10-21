@@ -24,6 +24,8 @@ interface ChatMessage {
   pending?: boolean;
   /** The model is reasoning before it answers (AI level High). */
   thinking?: boolean;
+  /** What it's looking up right now (cleared once more text arrives). */
+  status?: string;
   /** Changes this reply proposed. */
   actions?: AiActionRecord[];
   /** Notes it saved to the assistant's memory. */
@@ -32,6 +34,7 @@ interface ChatMessage {
 
 /** The design's "Try asking" chip rail — each maps to the AI feature list. */
 const CHIPS = [
+  "Organize my finances and set up my Sankey",
   "Explain my spending habits this month",
   "How am I doing against my budgets?",
   "Summarize my cash flow",
@@ -162,7 +165,12 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
         next[next.length - 1] = patch(next[next.length - 1]!);
         return next;
       });
-    const appendToken = (token: string) => patchLast((m) => ({ ...m, text: m.text + token }));
+    const appendToken = (token: string) =>
+      patchLast((m) => {
+        const next = { ...m, text: m.text + token };
+        if (token.trim()) delete next.status; // new text: the look-up is done
+        return next;
+      });
 
     const clientPending: AiActionRecord[] = [];
     try {
@@ -181,6 +189,7 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
           },
           onRemembered: (remembered) => patchLast((m) => ({ ...m, remembered })),
           onThinking: () => patchLast((m) => (m.thinking ? m : { ...m, thinking: true })),
+          onStatus: (status) => patchLast((m) => ({ ...m, status })),
         },
       );
       conversationRef.current = conversationId;
@@ -189,7 +198,7 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
       // Auto mode: the app's own changes (theme, review settings) apply here.
       if (autoApply) for (const a of clientPending) updateAction(await applyClientAction(a));
     } catch (err) {
-      setMessages((prev) => prev.filter((m) => !(m.pending && m.text === "")));
+      setMessages((prev) => prev.filter((m) => !(m.pending && stripAssistantBlocks(m.text) === "")));
       if (err instanceof ApiRequestError && err.code === "AI_UNAVAILABLE") {
         setError(err.message);
         void reloadStatus();
@@ -282,8 +291,14 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
                 <Tag variant="accent" style={{ alignSelf: "flex-start", fontSize: "var(--text-3xs)" }}>
                   ✦ AI advisor
                 </Tag>
-                {m.pending && m.text === "" ? (
-                  m.thinking ? (
+                {m.pending && stripAssistantBlocks(m.text) === "" ? (
+                  m.status ? (
+                    <div
+                      style={{ fontSize: "var(--text-sm)", color: "var(--content-tertiary)", animation: "blink 1.6s infinite" }}
+                    >
+                      {m.status}
+                    </div>
+                  ) : m.thinking ? (
                     <div
                       style={{ fontSize: "var(--text-sm)", color: "var(--content-tertiary)", animation: "blink 1.6s infinite" }}
                     >
@@ -304,6 +319,13 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
                 ) : (
                   <div style={{ fontSize: "var(--text-base)", lineHeight: 1.6, whiteSpace: "pre-line" }}>
                     {stripAssistantBlocks(m.text)}
+                    {m.pending && m.status && (
+                      <div
+                        style={{ fontSize: "var(--text-sm)", color: "var(--content-tertiary)", animation: "blink 1.6s infinite", marginTop: 6 }}
+                      >
+                        {m.status}
+                      </div>
+                    )}
                   </div>
                 )}
                 {m.actions?.map((a) => (

@@ -1,6 +1,7 @@
 import {
   CLIENT_ACTION_TYPES,
   describeAiAction,
+  UNCATEGORIZED,
   type AiAction,
   type AiActionRecord,
   type Category,
@@ -78,7 +79,7 @@ export async function applyStoredAction(
 
 class ActionError extends Error {}
 
-async function call<T = unknown>(
+export async function call<T = unknown>(
   app: FastifyInstance,
   request: FastifyRequest,
   method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
@@ -226,6 +227,31 @@ export async function applyAction(app: FastifyInstance, request: FastifyRequest,
     case "rename_household":
       await call(app, request, "PATCH", "/household", { name: a.name });
       return;
+    case "recategorize": {
+      const all = await categories();
+      const isNone = (ref: string) => ref.trim().toLowerCase() === UNCATEGORIZED.toLowerCase();
+      const target = isNone(a.category) ? null : resolveCategory(all, a.category);
+      const from = a.from ? (isNone(a.from) ? "none" : resolveCategory(all, a.from).id) : undefined;
+      const { updated } = await call<{ updated: number }>(app, request, "POST", "/transactions/recategorize", {
+        merchant: a.merchant,
+        categoryId: target?.id ?? null,
+        ...(from ? { fromCategoryId: from } : {}),
+        ...(a.since ? { since: a.since } : {}),
+      });
+      if (updated === 0) throw new ActionError(`No transactions matched "${a.merchant}"${a.from ? ` in "${a.from}"` : ""}.`);
+      return;
+    }
+    case "reorder_categories": {
+      const all = await categories();
+      const parent = a.parent ? resolveCategory(all, a.parent) : null;
+      const siblings = all.filter((c) => (c.parentCategoryId ?? null) === (parent?.id ?? null));
+      const ids = a.order.map((name) => resolveCategory(siblings, name).id);
+      await call(app, request, "POST", "/categories/reorder", { orderedIds: ids });
+      return;
+    }
+    case "autocategorize":
+      await call(app, request, "POST", "/transactions/autocategorize", {});
+      return;
     case "set_theme":
     case "set_review_prefs":
       return; // unreachable — handled above
@@ -272,10 +298,13 @@ export async function buildActionGuide(app: FastifyInstance, request: FastifyReq
   return [
     "",
     "=== CHANGING THINGS ===",
-    "You can propose changes to the category tree, auto-categorization rules,",
-    "budgets, planned income, the household name, the app theme, and the",
-    "weekly/monthly finance review settings. You can NOT change security",
-    "settings, members, bank links, AI settings, or transactions — say so if asked.",
+    "You can propose changes to the category tree (including its order),",
+    "which category transactions are in, auto-categorization rules, budgets,",
+    "planned income, the household name, the app theme, and the weekly/monthly",
+    "finance review settings. The cash-flow and budget Sankey diagrams are drawn",
+    "from the category tree, its order, budgets and planned income, so changing",
+    "those is how you set the Sankeys up. You can NOT change security settings,",
+    "members, bank links, AI settings, or transaction amounts/dates — say so if asked.",
     "Only propose a change when the user asks for it or clearly agrees to one.",
     "To propose a change, put ONE JSON object per block on its own line:",
     '<vault-action>{"type":"create_category","name":"Pets","parent":"Household"}</vault-action>',
@@ -289,6 +318,9 @@ export async function buildActionGuide(app: FastifyInstance, request: FastifyReq
     "  set_budget {category, amount: monthly dollars}   remove_budget {category}",
     "  set_planned_income {amount: monthly dollars}",
     "  rename_household {name}",
+    '  recategorize {merchant: text in the merchant name, category, from?: category or "Uncategorized", since?: "YYYY-MM-DD"}',
+    "  reorder_categories {parent: name or null for top level, order: [sibling names, first = top]}",
+    "  autocategorize {}   (applies the rules to uncategorized transactions)",
     '  set_theme {theme: "automatic"|"light"|"dark"|"oled"|"contrast"}',
     '  set_review_prefs {defaultPeriod?: "week"|"month", weekStartsOn?: "monday"|"sunday",',
     "    compare?: bool, autoAdvanceSeconds?: number, startFullscreen?: bool,",
@@ -297,6 +329,19 @@ export async function buildActionGuide(app: FastifyInstance, request: FastifyReq
     'Name categories exactly as below; if two share a name use "Parent > Child".',
     "Briefly say what you're proposing in plain words too; the app shows each",
     "change as a card the user approves (or it applies automatically in auto mode).",
+    "",
+    "=== LOOKING THINGS UP ===",
+    "The snapshot is short. To see more before answering or proposing changes,",
+    "put look-ups on their own lines and STOP writing; the results come back to",
+    "you and you continue (a few rounds per message):",
+    '<vault-query>{"type":"merchants","months":3,"uncategorizedOnly":true}</vault-query>',
+    "Types:",
+    '  transactions {merchant?, category?: name or "Uncategorized", from?, to?: "YYYY-MM-DD", limit?: up to 100}',
+    "  merchants {months?: 1-24, uncategorizedOnly?: bool}   (who you pay, how often, which category)",
+    "  category_totals {months?: 1-24}   (spending and income per category)",
+    "To organize their finances: look up merchants and category totals first,",
+    "then propose a tidy tree, recategorize/rules for the messy merchants, and",
+    "budgets — in one reply, so the user can approve it all at once.",
     "",
     "=== MEMORY ===",
     "To remember a lasting fact or preference about the user for future chats",
