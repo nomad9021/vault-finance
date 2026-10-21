@@ -304,7 +304,7 @@ export default async function aiRoutes(
         "The AI assistant isn't fully configured yet. Add your provider details in Settings.",
       );
     }
-    const aiConfig = configForFeature(settings, "chat");
+    const aiConfig = configForFeature(settings, "chat", body.level);
     const provider = getProvider(aiConfig.provider);
     const isCloud = CLOUD_PROVIDERS.has(aiConfig.provider);
 
@@ -387,10 +387,21 @@ export default async function aiRoutes(
     void (async () => {
       let assistantText = "";
       try {
-        await provider.streamChat(aiConfig, messages, (token) => {
-          assistantText += token;
-          writeLine({ token });
-        });
+        let thinking = false;
+        await provider.streamChat(
+          aiConfig,
+          messages,
+          (token) => {
+            assistantText += token;
+            writeLine({ token });
+          },
+          undefined,
+          () => {
+            if (thinking || assistantText) return;
+            thinking = true;
+            writeLine({ thinking: true });
+          },
+        );
         const blocks = extractAssistantBlocks(assistantText);
         if (blocks.invalid.length) request.log.info({ count: blocks.invalid.length }, "ignored malformed AI change blocks");
         const [saved] = await app.db

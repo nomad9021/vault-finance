@@ -1,4 +1,7 @@
 import {
+  AI_LEVEL_HINTS,
+  AI_LEVEL_LABELS,
+  AI_LEVELS,
   AI_PROVIDER_LABELS,
   ApiRequestError,
   stripAssistantBlocks,
@@ -19,6 +22,8 @@ interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   pending?: boolean;
+  /** The model is reasoning before it answers (AI level High). */
+  thinking?: boolean;
   /** Changes this reply proposed. */
   actions?: AiActionRecord[];
   /** Notes it saved to the assistant's memory. */
@@ -56,6 +61,8 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
 
   const autoApply = useApp((s) => s.aiAutoApply);
   const setAutoApply = useApp((s) => s.setAiAutoApply);
+  const level = useApp((s) => s.aiLevel);
+  const setLevel = useApp((s) => s.setAiLevel);
   const { data: convoList, reload: reloadConvos } = useData<ConversationListResponse>(
     () => client.conversations(),
     [client],
@@ -163,6 +170,7 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
         {
           message,
           autoApply,
+          level,
           ...(conversationRef.current ? { conversationId: conversationRef.current } : {}),
         },
         appendToken,
@@ -172,6 +180,7 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
             clientPending.push(...actions.filter((a) => a.client && a.status === "pending"));
           },
           onRemembered: (remembered) => patchLast((m) => ({ ...m, remembered })),
+          onThinking: () => patchLast((m) => (m.thinking ? m : { ...m, thinking: true })),
         },
       );
       conversationRef.current = conversationId;
@@ -274,16 +283,24 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
                   ✦ AI advisor
                 </Tag>
                 {m.pending && m.text === "" ? (
-                  <div
-                    style={{
-                      fontSize: "var(--text-xl)",
-                      letterSpacing: 3,
-                      color: "var(--content-tertiary)",
-                      animation: "blink 1s infinite",
-                    }}
-                  >
-                    ···
-                  </div>
+                  m.thinking ? (
+                    <div
+                      style={{ fontSize: "var(--text-sm)", color: "var(--content-tertiary)", animation: "blink 1.6s infinite" }}
+                    >
+                      Thinking it through…
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        fontSize: "var(--text-xl)",
+                        letterSpacing: 3,
+                        color: "var(--content-tertiary)",
+                        animation: "blink 1s infinite",
+                      }}
+                    >
+                      ···
+                    </div>
+                  )
                 ) : (
                   <div style={{ fontSize: "var(--text-base)", lineHeight: 1.6, whiteSpace: "pre-line" }}>
                     {stripAssistantBlocks(m.text)}
@@ -349,6 +366,17 @@ export function AssistantPage({ onNavigate }: { onNavigate: (page: PageId) => vo
           overflow: "auto",
         }}
       >
+        <SideHeading>AI level</SideHeading>
+        <Segmented
+          aria-label="AI level"
+          options={AI_LEVELS.map((l) => ({ value: l, label: AI_LEVEL_LABELS[l] }))}
+          value={level}
+          onChange={(v) => void setLevel(v)}
+        />
+        <p className="card-meta" style={{ margin: "6px 0 18px" }}>
+          {AI_LEVEL_HINTS[level]}
+        </p>
+
         <SideHeading>Changes</SideHeading>
         <Segmented
           aria-label="When the assistant wants to change something"

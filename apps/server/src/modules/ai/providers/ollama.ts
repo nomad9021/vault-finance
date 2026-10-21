@@ -25,7 +25,7 @@ export const ollamaProvider: ProviderClient = {
     return (body.models ?? []).map((m) => m.name ?? "").filter(Boolean);
   },
 
-  async streamChat(config, messages, onToken, signal): Promise<void> {
+  async streamChat(config, messages, onToken, signal, onThinking): Promise<void> {
     const res = await fetch(`${config.baseUrl.replace(/\/$/, "")}/api/chat`, {
       method: "POST",
       headers: headers(config, true),
@@ -49,11 +49,12 @@ export const ollamaProvider: ProviderClient = {
       for (const line of lines) {
         if (!line.trim()) continue;
         const parsed = JSON.parse(line) as {
-          message?: { content?: string };
+          message?: { content?: string; thinking?: string };
           done?: boolean;
           error?: string;
         };
         if (parsed.error) throw new Error(`ollama: ${parsed.error}`);
+        if (parsed.message?.thinking) onThinking?.();
         const content = parsed.message?.content;
         if (content) await onToken(content);
         if (parsed.done) return;

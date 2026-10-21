@@ -28,12 +28,17 @@ export interface ProviderClient {
    */
   listModels(config: AiConfig): Promise<string[]>;
 
-  /** Stream a chat completion, calling onToken per text fragment. */
+  /**
+   * Stream a chat completion, calling onToken per text fragment. onThinking
+   * fires (possibly more than once) while a reasoning model thinks before it
+   * answers; the reasoning itself is never passed on.
+   */
   streamChat(
     config: AiConfig,
     messages: ChatMessage[],
     onToken: (token: string) => void | Promise<void>,
     signal?: AbortSignal,
+    onThinking?: () => void,
   ): Promise<void>;
 
   /** One-shot completion — used for cached monthly-report commentary. */
