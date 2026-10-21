@@ -636,6 +636,8 @@ export async function buildActionGuide(app: FastifyInstance, request: FastifyReq
   const lines: string[] = [
     "",
     "=== CHANGING THINGS ===",
+    "You have no function or tool calls: <vault-action> and <vault-query> are plain",
+    "text tags you write in your reply.",
     `Specialist agents active for this message: ${agents.map((a) => a.name).join(", ")}.`,
     ...(others.length ? [`(Also available if the user asks: ${others.join(", ")}.)`] : []),
     "You can NOT change security settings, members, bank links, AI settings, or",
