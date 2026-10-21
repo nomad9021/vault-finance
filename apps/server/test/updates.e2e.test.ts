@@ -23,7 +23,9 @@ describe("update checking", () => {
   let auth: { authorization: string };
   let manifest: Server;
   let manifestUrl: string;
-  let latestTag = "v0.1.9"; // same as apiVersion → no update
+  // The running version, so this test doesn't break on every release.
+  const current = loadConfig({ DATABASE_URL: "postgres://x" } as NodeJS.ProcessEnv).apiVersion;
+  let latestTag = `v${current}`; // same as apiVersion → no update
   const sent: MailMessage[] = [];
 
   beforeAll(async () => {
@@ -96,8 +98,8 @@ describe("update checking", () => {
     const res = await app.inject({ method: "GET", url: "/api/v1/updates/status", headers: auth });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body.currentVersion).toBe("0.1.9");
-    expect(body.latestVersion).toBe("0.1.9");
+    expect(body.currentVersion).toBe(current);
+    expect(body.latestVersion).toBe(current);
     expect(body.updateAvailable).toBe(false);
   });
 
