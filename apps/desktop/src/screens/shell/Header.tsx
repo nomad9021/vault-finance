@@ -19,6 +19,7 @@ export function Header({
   const user = useApp((s) => s.user);
   const aiVisible = useApp((s) => s.aiVisible);
   const signOut = useApp((s) => s.signOut);
+  const lock = useApp((s) => s.lock);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -91,6 +92,10 @@ export function Header({
               >
                 <Icon name="settings" size={16} />
                 Settings
+              </button>
+              <button className="menu-item" onClick={() => lock()} title="Ctrl+L">
+                <Icon name="lock" size={16} />
+                Lock now
               </button>
               <div className="menu-sep" />
               <button className="menu-item menu-item-danger" onClick={() => void signOut()}>

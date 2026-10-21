@@ -1,6 +1,7 @@
 import { Banner, Button, CommandPalette, ErrorBoundary, type Command } from "@vault/ui";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLayoutMode } from "../../lib/useLayout.js";
+import { useAutoLock } from "../../lib/autoLock.js";
 import { useApp } from "../../state/store.js";
 import { AccountsPage } from "./AccountsPage.js";
 import { AssistantPage } from "./AssistantPage.js";
@@ -49,6 +50,8 @@ export function AppShell() {
   const connection = useApp((s) => s.connection);
   const aiVisible = useApp((s) => s.aiVisible);
   const mode = useLayoutMode();
+  // Lock on sleep, screen lock, idle time and Ctrl/Cmd+L while signed in.
+  useAutoLock(true);
 
   const [page, setPage] = useState<PageId>("dashboard");
   const [paletteOpen, setPaletteOpen] = useState(false);

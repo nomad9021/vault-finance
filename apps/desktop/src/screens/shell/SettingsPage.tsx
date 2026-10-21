@@ -51,6 +51,7 @@ export function SettingsPage() {
       <BankSection />
       <AiSection />
       <AiMemorySection />
+      <AutoLockSection />
       <BiometricSection />
       <TwoFactorSection />
       <UpdatesSection />
@@ -2321,6 +2322,34 @@ function ReviewSection() {
  * on stores a server-issued device key in the OS keychain; the app then locks
  * on launch and only releases the key after the OS confirms it's you.
  */
+/** When this device locks itself (per device; unlocking uses biometrics or the password). */
+function AutoLockSection() {
+  const minutes = useApp((s) => s.autoLockMinutes);
+  const setMinutes = useApp((s) => s.setAutoLockMinutes);
+  const lock = useApp((s) => s.lock);
+  return (
+    <Card kicker="Security" title="Auto-lock">
+      <p className="card-body">
+        Vault Finance locks every time it opens, when this computer sleeps or its screen locks, and after
+        you've been away for the time below. Closing the window quits the app completely.
+      </p>
+      <Select label="Lock after I've been idle for" value={String(minutes)} onChange={(e) => void setMinutes(Number(e.target.value))}>
+        {[1, 2, 5, 10, 15, 30, 60].map((m) => (
+          <option key={m} value={m}>
+            {m} minute{m > 1 ? "s" : ""}
+          </option>
+        ))}
+        <option value="0">Never (still locks on sleep, screen lock and restart)</option>
+      </Select>
+      <div>
+        <Button variant="secondary" icon="lock" onClick={() => lock()}>
+          Lock now (Ctrl+L)
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
 function BiometricSection() {
   const client = useApp((s) => s.client);
   const user = useApp((s) => s.user);

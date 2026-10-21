@@ -1,3 +1,4 @@
+import { useKeepUnlocked } from "../../lib/autoLock.js";
 import {
   formatCentsWhole,
   type Bill,
@@ -34,6 +35,8 @@ export function ReviewPresenter({
   fullscreen: boolean;
   onClose: () => void;
 }) {
+  // Presenting counts as activity (slides can auto-advance untouched).
+  useKeepUnlocked();
   const client = useApp((s) => s.client);
   const platform = useApp((s) => s.platform);
   const prefs = useApp((s) => s.reviewPrefs);
