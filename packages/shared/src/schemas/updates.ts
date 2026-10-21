@@ -30,7 +30,7 @@ export const UpdateStatusResponse = z.object({
   checkedAt: z.string().datetime().nullable(),
   /**
    * In-app updating: null when this server's host has no update agent set up
-   * (or is operator-managed). Absent on servers older than 0.1.8.
+   * (or is operator-managed). Absent on servers older than 0.1.9.
    */
   selfUpdate: SelfUpdateStatus.nullable().optional(),
 });

@@ -1,6 +1,6 @@
 [package]
 name = "vault-desktop"
-version = "0.1.8"
+version = "0.1.9"
 description = "Vault Finance — self-hosted personal finance"
 authors = ["Vault Finance contributors"]
 edition = "2021"
