@@ -11,6 +11,10 @@ on:
       tag:
         description: "Version to publish (e.g. 0.2.0)"
         required: true
+      latest:
+        description: "Also move the :latest tag (servers on the default VAULT_VERSION update to it)"
+        type: boolean
+        default: true
 
 env:
   REGISTRY: ghcr.io
@@ -42,6 +46,23 @@ jobs:
           esac
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      - name: Release channel
+        id: channel
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_LATEST: ${{ inputs.latest }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # Annotated tag message containing [prerelease] → publish the
+          # versioned image only, leaving :latest on the previous release.
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            [ "$INPUT_LATEST" = "true" ] && pre=false || pre=true
+          else
+            git fetch --force --depth=1 origin "refs/tags/$REF_NAME:refs/tags/$REF_NAME"
+            if git tag -l --format='%(contents)' "$REF_NAME" | grep -qF '[prerelease]'; then pre=true; else pre=false; fi
+          fi
+          echo "prerelease=$pre" >> "$GITHUB_OUTPUT"
+
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v4
 
@@ -61,7 +82,7 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ steps.v.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest
+            ${{ steps.channel.outputs.prerelease != 'true' && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE) || '' }}
           cache-from: type=gha,scope=server
           cache-to: type=gha,mode=max,scope=server
 
@@ -74,12 +95,16 @@ jobs:
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository_owner }}/vault-finance-control:${{ steps.v.outputs.version }}
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/vault-finance-control:latest
+            ${{ steps.channel.outputs.prerelease != 'true' && format('{0}/{1}/vault-finance-control:latest', env.REGISTRY, github.repository_owner) || '' }}
           cache-from: type=gha,scope=control
           cache-to: type=gha,mode=max,scope=control
 
       - name: Summary
         run: |
           echo "Published \`${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ steps.v.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.channel.outputs.prerelease }}" = "true" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Pre-release: \`:latest\` was NOT moved. To run it, set VAULT_VERSION=${{ steps.v.outputs.version }} in docker/.env." >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Servers update with: \`vault-update\` (or \`familyctl.sh update --all\`)." >> "$GITHUB_STEP_SUMMARY"
