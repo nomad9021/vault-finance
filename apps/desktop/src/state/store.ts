@@ -1,6 +1,7 @@
 import {
   ApiClient,
   ApiRequestError,
+  AiLevel,
   DeviceApprovalChallenge,
   DeviceIdentity,
   type ConnectionStatus,
@@ -69,6 +70,8 @@ interface AppState {
   reviewPrefs: ReviewPrefs;
   /** Assistant auto mode: apply its proposed changes without asking (per device). */
   aiAutoApply: boolean;
+  /** Assistant AI level: Low (fast) … High (thinks first). Per device. */
+  aiLevel: AiLevel;
   /** Whether AI is on AND configured — gates every AI surface (off by default). */
   aiVisible: boolean;
   /** The household's own name ("The Carters"); null until the owner sets one. */
@@ -113,6 +116,7 @@ interface AppState {
   setTheme(theme: Theme): Promise<void>;
   setReviewPrefs(prefs: ReviewPrefs): Promise<void>;
   setAiAutoApply(on: boolean): Promise<void>;
+  setAiLevel(level: AiLevel): Promise<void>;
   changeServer(): Promise<void>;
   /** Back out of the connect screen, restoring the prior server. No-op (and no
    *  button shown) when there's no prior server to return to. */
@@ -137,6 +141,7 @@ const ADDRESS_KEY = "server-address";
 const THEME_KEY = "theme";
 const REVIEW_PREFS_KEY = "review-prefs";
 const AI_AUTO_APPLY_KEY = "ai-auto-apply";
+const AI_LEVEL_KEY = "ai-level";
 /** Non-secret list of enrolled user ids, so the login screen needn't touch the keychain. */
 const biometricUsersKey = (address: string) => `biometric-users:${address}`;
 /** Keychain entry holding `{ id, key }` for one user's device key on one server. */
@@ -212,6 +217,7 @@ export const useApp = create<AppState>((set, get) => ({
   theme: "light",
   reviewPrefs: DEFAULT_REVIEW_PREFS,
   aiAutoApply: false,
+  aiLevel: "medium",
   aiVisible: false,
   householdName: null,
   lockedUser: null,
@@ -566,6 +572,11 @@ export const useApp = create<AppState>((set, get) => ({
     await get().platform.saveValue(AI_AUTO_APPLY_KEY, aiAutoApply ? "on" : "off");
   },
 
+  async setAiLevel(aiLevel) {
+    set({ aiLevel });
+    await get().platform.saveValue(AI_LEVEL_KEY, aiLevel);
+  },
+
   /** Settings → connect to a different server. Keeps the pin; drops the session. */
   async changeServer() {
     // Non-destructive: keep the current server/session so the user can cancel
@@ -720,6 +731,7 @@ export async function bootstrap(): Promise<void> {
     useApp.setState({
       reviewPrefs: parseReviewPrefs(await platform.loadValue(REVIEW_PREFS_KEY)),
       aiAutoApply: (await platform.loadValue(AI_AUTO_APPLY_KEY)) === "on",
+      aiLevel: AiLevel.catch("medium").parse(await platform.loadValue(AI_LEVEL_KEY)),
     });
   } catch (err) {
     console.error("loading review preferences failed; using defaults", err);

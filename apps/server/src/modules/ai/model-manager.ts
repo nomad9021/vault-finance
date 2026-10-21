@@ -1,4 +1,11 @@
-import { AI_FEATURE_PRIORITY, AI_FEATURE_QUALITY, type AiFeature, type AiQuality } from "@vault/shared";
+import {
+  AI_FEATURE_PRIORITY,
+  AI_FEATURE_QUALITY,
+  AI_LEVEL_QUALITY,
+  type AiFeature,
+  type AiLevel,
+  type AiQuality,
+} from "@vault/shared";
 import type { AiConfig } from "./providers/index.js";
 import type { ResolvedAiSettings } from "./settings.js";
 
@@ -31,9 +38,11 @@ export function configForQuality(settings: ResolvedAiSettings, quality: AiQualit
 }
 
 /**
- * Provider config for an AI feature: its quality tier's model, plus the queue
- * priority a local AI server's gateway should give it.
+ * Provider config for an AI feature: its quality tier's model (or the tier
+ * for the AI level the user picked), plus the queue priority a local AI
+ * server's gateway should give it.
  */
-export function configForFeature(settings: ResolvedAiSettings, feature: AiFeature): AiConfig {
-  return { ...configForQuality(settings, AI_FEATURE_QUALITY[feature]), priority: AI_FEATURE_PRIORITY[feature] };
+export function configForFeature(settings: ResolvedAiSettings, feature: AiFeature, level?: AiLevel): AiConfig {
+  const quality = level ? AI_LEVEL_QUALITY[level] : AI_FEATURE_QUALITY[feature];
+  return { ...configForQuality(settings, quality), priority: AI_FEATURE_PRIORITY[feature] };
 }

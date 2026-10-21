@@ -56,7 +56,7 @@ export type AiQuality = z.infer<typeof AiQuality>;
 export const AI_QUALITY_LEVELS = AiQuality.options;
 export const AI_QUALITY_LABELS: Record<AiQuality, string> = {
   low: "Low",
-  normal: "Normal",
+  normal: "Medium",
   high: "High",
   ultra: "Ultra",
 };
@@ -64,8 +64,29 @@ export const AI_QUALITY_LABELS: Record<AiQuality, string> = {
 export const AI_FEATURE_QUALITY = {
   categorize: "normal",
   reports: "high",
-  chat: "high",
+  // The user's AI level overrides this per message; Medium is the default.
+  chat: "normal",
 } as const satisfies Record<string, AiQuality>;
+
+/**
+ * The AI level a person picks for the assistant: faster answers or more
+ * careful ones. Each level asks for a quality tier, so the owner decides in
+ * Settings → AI which model runs it.
+ */
+export const AiLevel = z.enum(["low", "medium", "high"]);
+export type AiLevel = z.infer<typeof AiLevel>;
+export const AI_LEVELS = AiLevel.options;
+export const AI_LEVEL_LABELS: Record<AiLevel, string> = { low: "Low", medium: "Medium", high: "High" };
+export const AI_LEVEL_HINTS: Record<AiLevel, string> = {
+  low: "Quickest replies, for simple questions.",
+  medium: "Good answers at a good speed.",
+  high: "Thinks it through first. Slower, best for planning and tricky questions.",
+};
+export const AI_LEVEL_QUALITY = {
+  low: "low",
+  medium: "normal",
+  high: "high",
+} as const satisfies Record<AiLevel, AiQuality>;
 
 /**
  * Queue priority each AI feature asks for, sent as `X-Priority` to a local AI
@@ -254,6 +275,8 @@ export const ChatRequest = z.object({
    * preferences) come back pending either way; the app applies them.
    */
   autoApply: z.boolean().optional(),
+  /** The AI level picked in the assistant; omitted = the chat default (Medium). */
+  level: AiLevel.optional(),
 });
 export type ChatRequest = z.infer<typeof ChatRequest>;
 
@@ -264,9 +287,11 @@ export type ChatRequest = z.infer<typeof ChatRequest>;
  *   { error: { code, message } }       — terminal failure mid-stream
  *   { actions: [...] }                 — proposed (or auto-applied) changes, before done
  *   { remembered: [...] }              — notes added to the assistant's memory
+ *   { thinking: true }                 — the model is reasoning before it answers
  */
 export const ChatStreamLine = z.union([
   z.object({ token: z.string() }),
+  z.object({ thinking: z.literal(true) }),
   z.object({ actions: z.array(AiActionRecord) }),
   z.object({ remembered: z.array(z.string()) }),
   z.object({ done: z.literal(true), conversationId: z.string().uuid() }),

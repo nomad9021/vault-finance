@@ -1,5 +1,8 @@
 import {
   AI_BASE_URL_EXAMPLES,
+  AI_LEVEL_HINTS,
+  AI_LEVEL_LABELS,
+  AI_LEVELS,
   AI_MODEL_SUGGESTIONS,
   AI_PROVIDER_LABELS,
   AI_QUALITY_LABELS,
@@ -1495,7 +1498,8 @@ function AiSection() {
                   </div>
                   <p className="card-meta" style={{ marginTop: 2 }}>
                     Assign an installed model to each quality tier — the app requests a tier and you
-                    decide which model runs it.
+                    decide which model runs it. The assistant's AI level picker uses Low, Medium and
+                    High; categorizing uses Medium and monthly report summaries use High.
                   </p>
                   <div
                     style={{
@@ -2109,6 +2113,8 @@ function AiMemorySection() {
   const aiVisible = useApp((s) => s.aiVisible);
   const autoApply = useApp((s) => s.aiAutoApply);
   const setAutoApply = useApp((s) => s.setAiAutoApply);
+  const level = useApp((s) => s.aiLevel);
+  const setLevel = useApp((s) => s.setAiLevel);
   const { data, loading } = useData(() => (aiVisible ? client.aiMemory() : Promise.resolve(null)), [client, aiVisible]);
   if (!aiVisible) return null;
   const notes = data?.notes ?? [];
@@ -2119,6 +2125,16 @@ function AiMemorySection() {
         and planned income, rename the household, and change the theme and finance review
         settings. It can't touch security, members, bank links or AI settings.
       </p>
+      <div className="field">
+        <label>AI level on this device</label>
+        <Segmented
+          aria-label="AI level"
+          options={AI_LEVELS.map((l) => ({ value: l, label: AI_LEVEL_LABELS[l] }))}
+          value={level}
+          onChange={(v) => void setLevel(v)}
+        />
+        <p className="card-meta" style={{ margin: "4px 0 0" }}>{AI_LEVEL_HINTS[level]}</p>
+      </div>
       <div className="field">
         <label>When it wants to change something</label>
         <Segmented

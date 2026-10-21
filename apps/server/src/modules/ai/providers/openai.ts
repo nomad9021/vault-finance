@@ -45,13 +45,16 @@ function makeProvider(make: (config: AiConfig) => OpenAI): ProviderClient {
       return page.data.map((m) => m.id).sort().slice(0, 100);
     },
 
-    async streamChat(config, messages, onToken, signal): Promise<void> {
+    async streamChat(config, messages, onToken, signal, onThinking): Promise<void> {
       const stream = await make(config).chat.completions.create(
         { model: config.model, messages, stream: true },
         signal ? { signal } : {},
       );
       for await (const chunk of stream) {
-        const token = chunk.choices[0]?.delta?.content;
+        const delta = chunk.choices[0]?.delta as { content?: string | null; reasoning?: string; reasoning_content?: string } | undefined;
+        // Ollama sends "reasoning", vLLM/llama.cpp "reasoning_content" — not part of the OpenAI types.
+        if (delta?.reasoning || delta?.reasoning_content) onThinking?.();
+        const token = delta?.content;
         if (token) await onToken(token);
       }
     },

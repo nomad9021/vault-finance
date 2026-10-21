@@ -31,7 +31,7 @@ describe("AI server power and priority", () => {
   let vm = "stopped";
   let startCalls = 0;
   let gatewayUp = false;
-  const chatCalls: Array<{ priority?: string; auth?: string }> = [];
+  const chatCalls: Array<{ priority?: string; auth?: string; model?: string }> = [];
 
   const get = (url: string, a = app) => a.inject({ method: "GET", url, headers: owner });
   const post = (url: string, payload?: unknown, a = app) =>
@@ -74,13 +74,23 @@ describe("AI server power and priority", () => {
         return res.end(JSON.stringify({ object: "list", data: [{ id: "llama3.2:3b", object: "model", created: 0, owned_by: "x" }] }));
       }
       if (req.url === "/v1/chat/completions") {
-        chatCalls.push({
-          priority: req.headers["x-priority"] as string | undefined,
-          auth: req.headers.authorization,
+        let raw = "";
+        req.on("data", (c: Buffer) => (raw += c));
+        req.on("end", () => {
+          const model = (JSON.parse(raw) as { model: string }).model;
+          chatCalls.push({
+            priority: req.headers["x-priority"] as string | undefined,
+            auth: req.headers.authorization,
+            model,
+          });
+          res.setHeader("content-type", "text/event-stream");
+          const chunk = (delta: object) =>
+            `data: ${JSON.stringify({ id: "1", object: "chat.completion.chunk", created: 0, model, choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`;
+          // The "deep" model reasons first, the way Ollama streams it.
+          const thinking = model === "deep" ? chunk({ reasoning: "Let me add that up." }) + chunk({ reasoning: " Done." }) : "";
+          res.end(`${thinking}${chunk({ content: "Hi" })}data: [DONE]\n\n`);
         });
-        res.setHeader("content-type", "text/event-stream");
-        const chunk = { id: "1", object: "chat.completion.chunk", created: 0, model: "m", choices: [{ index: 0, delta: { content: "Hi" }, finish_reason: null }] };
-        return res.end(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`);
+        return;
       }
       res.statusCode = 404;
       res.end("{}");
@@ -175,7 +185,32 @@ describe("AI server power and priority", () => {
     const res = await post("/api/v1/ai/chat", { message: "How am I doing?" });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('"token":"Hi"');
-    expect(chatCalls.at(-1)).toEqual({ priority: "interactive", auth: "Bearer gateway-key-0123456789" });
+    expect(chatCalls.at(-1)).toMatchObject({ priority: "interactive", auth: "Bearer gateway-key-0123456789" });
+  });
+
+  it("runs the model for the AI level the user picked, and says when it's thinking", async () => {
+    const saved = await post("/api/v1/ai/settings", {
+      enabled: true,
+      provider: "local_openai",
+      model: "general",
+      baseUrl: `${gatewayBase}/v1`,
+      qualityModels: { low: "fast", normal: "general", high: "deep" },
+    });
+    expect(saved.statusCode).toBe(200);
+
+    const lines = (body: string) => body.trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>);
+    for (const [level, model] of [["low", "fast"], ["medium", "general"], ["high", "deep"], [undefined, "general"]] as const) {
+      const res = await post("/api/v1/ai/chat", { message: "How am I doing?", ...(level ? { level } : {}) });
+      expect(res.statusCode).toBe(200);
+      expect(chatCalls.at(-1)?.model).toBe(model);
+      const out = lines(res.body);
+      // One thinking line, before the answer, and the reasoning itself is never sent on.
+      expect(out.filter((l) => l.thinking)).toHaveLength(model === "deep" ? 1 : 0);
+      expect(out.findIndex((l) => l.thinking)).toBeLessThan(model === "deep" ? out.findIndex((l) => l.token) : 0);
+      expect(res.body).not.toContain("Let me add");
+    }
+
+    expect((await post("/api/v1/ai/chat", { message: "Hi", level: "ultra" })).statusCode).toBe(400);
   });
 
   it("refuses to talk to a Proxmox whose certificate doesn't match the pin", async () => {
