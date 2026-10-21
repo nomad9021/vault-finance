@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 
 export interface DialogProps {
   open: boolean;
@@ -21,7 +22,11 @@ export function Dialog({ open, title, children, actions, onClose }: DialogProps)
   }, [open, onClose]);
 
   if (!open) return null;
-  return (
+  // Rendered on <body>, not where it's declared: an ancestor with a transform
+  // (every .page keeps its fadeUp animation's end state) becomes the
+  // containing block for position: fixed in WebKit, which sized the backdrop
+  // to the whole page and centred the dialog off-screen on long pages.
+  return createPortal(
     <div
       className="dialog-backdrop"
       onClick={(e) => {
@@ -33,6 +38,7 @@ export function Dialog({ open, title, children, actions, onClose }: DialogProps)
         <div className="dialog-body">{children}</div>
         {actions && <div className="dialog-actions">{actions}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
