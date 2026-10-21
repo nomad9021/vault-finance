@@ -10,6 +10,8 @@ import { loadConfig } from "../src/config.js";
 import { readSelfUpdate } from "../src/modules/updates/agent.js";
 
 describe("in-app server update", () => {
+  // The running version, whatever release this branch is on.
+  const CURRENT = loadConfig({ DATABASE_URL: "postgres://x@localhost/x" } as NodeJS.ProcessEnv).apiVersion;
   const PG_PORT = 55463;
   let pg: EmbeddedPostgres;
   let app: FastifyInstance;
@@ -20,7 +22,7 @@ describe("in-app server update", () => {
   let member: { authorization: string };
   let manifest: Server;
   let manifestUrl: string;
-  let latestTag = "v0.1.7"; // same as apiVersion → no update
+  let latestTag = `v${CURRENT}`; // same as apiVersion → no update
 
   const post = (url: string, headers: { authorization: string }) =>
     app.inject({ method: "POST", url: `/api/v1${url}`, headers });
@@ -117,7 +119,7 @@ describe("in-app server update", () => {
   });
 
   it("refuses when the server is already current", async () => {
-    latestTag = "v0.1.7";
+    latestTag = `v${CURRENT}`;
     const checked = (await post("/updates/check", owner)).json();
     expect(checked.updateAvailable).toBe(false);
     expect(checked.selfUpdate.state).toBe("idle");
@@ -134,7 +136,7 @@ describe("in-app server update", () => {
     expect(res.json().selfUpdate.targetVersion).toBe("0.9.0");
 
     const req = JSON.parse(readFileSync(path.join(agentDir, "request.json"), "utf8"));
-    expect(req).toMatchObject({ targetVersion: "0.9.0", fromVersion: "0.1.7" });
+    expect(req).toMatchObject({ targetVersion: "0.9.0", fromVersion: CURRENT });
 
     // A second press while one is pending is refused.
     const again = await post("/updates/apply", owner);
