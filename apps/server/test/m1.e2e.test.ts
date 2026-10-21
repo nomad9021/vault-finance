@@ -91,7 +91,8 @@ describe("meta", () => {
     const res = await app.inject({
       method: "GET",
       url: "/api/v1/version",
-      headers: { "x-client-version": "0.1.5" },
+      // The running version, so raising minClientVersion never breaks this.
+      headers: { "x-client-version": loadConfig({ DATABASE_URL: "postgres://x" } as NodeJS.ProcessEnv).apiVersion },
     });
     expect(res.statusCode).toBe(200);
   });

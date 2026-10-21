@@ -22,7 +22,7 @@ import {
 } from "../platform/index.js";
 import { describeProbeFailure, runChecks, type UiCheck } from "../lib/startupChecks.js";
 
-export const APP_VERSION = "0.1.10";
+export const APP_VERSION = "0.1.11";
 
 export type Screen =
   | { name: "boot" }
