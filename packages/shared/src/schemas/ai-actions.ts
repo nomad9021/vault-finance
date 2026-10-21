@@ -304,7 +304,13 @@ const REMEMBER_RE = /<vault-remember>([\s\S]*?)<\/vault-remember>/g;
 const QUERY_RE = /<?vault-query>?([\s\S]*?)<\/vault-query>/g;
 
 /** A block's JSON without the code fences some models wrap it in. */
-const blockJson = (raw: string) => raw.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+const blockJson = (raw: string) =>
+  raw
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/, "")
+    // Curly quotes (some models' typography) aren't JSON.
+    .replace(/[\u201C\u201D\u201E\u201F\u2033]/g, '"');
 
 /**
  * Look-ups the assistant asks the server for mid-answer (the agent loop):

@@ -25,6 +25,9 @@ describe("assistant blocks", () => {
     );
     expect(out.actions.map((a) => a.type)).toEqual(["set_budget", "create_rule"]);
     expect(out.visible).toBe("Done.\n$");
+    expect(extractAssistantBlocks('<vault-action>{\u201Ctype\u201D:\u201Crename_category\u201D,\u201Ccategory\u201D:\u201CDining Out\u201D,\u201CnewName\u201D:\u201CRestaurants\u201D}</vault-action>').actions).toEqual([
+      { type: "rename_category", category: "Dining Out", newName: "Restaurants" },
+    ]);
   });
 
   it("hides a block that is still streaming in", () => {
