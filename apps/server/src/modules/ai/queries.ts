@@ -134,9 +134,17 @@ export async function answerQueries(
   queries: AiQuery[],
   invalid: string[],
   stepsLeft: number,
+  /** Look-ups already answered earlier in this message (JSON), so repeats get a nudge instead. */
+  seen: Set<string> = new Set(),
 ): Promise<string> {
   const parts: string[] = [];
   for (const q of queries.slice(0, 4)) {
+    const key = JSON.stringify(q);
+    if (seen.has(key)) {
+      parts.push(`You already have the results for ${key} above — use them.`);
+      continue;
+    }
+    seen.add(key);
     try {
       parts.push(await runQuery(app, q));
     } catch (err) {
@@ -147,8 +155,8 @@ export async function answerQueries(
   for (const raw of invalid.slice(0, 3)) parts.push(`Couldn't read this look-up (check the type and fields): ${raw.slice(0, 200)}`);
   parts.push(
     stepsLeft > 0
-      ? `Continue your answer to the user now. You can look things up ${stepsLeft} more time${stepsLeft > 1 ? "s" : ""}.`
-      : "Finish your answer to the user now, without more look-ups.",
+      ? `Continue your answer to the user now. If you have what you need, propose the changes (<vault-action> blocks) instead of looking up more. You can look things up ${stepsLeft} more time${stepsLeft > 1 ? "s" : ""}.`
+      : "Finish your answer to the user now, without more look-ups: propose the changes (<vault-action> blocks) that the request needs.",
   );
   return ["=== LOOK-UP RESULTS (from the household's data) ===", ...parts].join("\n\n");
 }

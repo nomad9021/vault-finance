@@ -397,6 +397,7 @@ export default async function aiRoutes(
         // rounds. Plain text both ways, so it works with every model.
         let thinking = false;
         let convo = messages;
+        const seenQueries = new Set<string>();
         for (let step = 1; ; step++) {
           let stepText = "";
           await provider.streamChat(
@@ -417,7 +418,7 @@ export default async function aiRoutes(
           const { queries, invalid } = extractQueryBlocks(stepText);
           if ((!queries.length && !invalid.length) || step >= AGENT_MAX_STEPS) break;
           writeLine({ status: describeQueries(queries) });
-          const results = await answerQueries(app, queries, invalid, AGENT_MAX_STEPS - step - 1);
+          const results = await answerQueries(app, queries, invalid, AGENT_MAX_STEPS - step - 1, seenQueries);
           convo = [...convo, { role: "assistant", content: stepText }, { role: "user", content: results }];
           // Keep the visible parts of each step apart.
           if (stripAssistantBlocks(stepText)) {

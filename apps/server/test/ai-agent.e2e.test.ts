@@ -161,6 +161,9 @@ describe("finance agent", () => {
     expect(calls).toHaveLength(4);
     expect(calls[3]!.at(-1)!.content).toContain("without more look-ups");
     expect(calls[1]!.at(-1)!.content).toContain("CATEGORY TOTALS");
+    // Repeats get pointed back at the results they already have.
+    expect(calls[2]!.at(-1)!.content).toContain("You already have the results");
+    expect(calls[2]!.at(-1)!.content).not.toContain("CATEGORY TOTALS");
   });
 
   it("tells the model when a look-up is malformed instead of failing", async () => {
