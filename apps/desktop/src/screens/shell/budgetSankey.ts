@@ -112,8 +112,47 @@ export function withTaxBranch(
   );
   const links = [...sankey.links];
   for (const [g, c] of monthly) {
-    nodes.push({ id: `tax:${g}`, label: TAX_BRANCH[g].label, valueCents: c, color: TAX_BRANCH[g].color, depth: 1, kind: "category", categoryId: null });
+    nodes.push({ id: `tax:${g}`, label: TAX_BRANCH[g].label, valueCents: c, color: TAX_BRANCH[g].color, depth: 1, kind: "category", categoryId: null, section: "taxes" });
     links.push({ from: "income", to: `tax:${g}`, valueCents: c });
   }
+  return { nodes, links };
+}
+
+/**
+ * The tax add-on for the actual cash-flow Sankey (real deposits and
+ * spending): every column moves one to the right and an estimated "Gross
+ * pay" column goes first, feeding the month's taxes and pre-tax savings
+ * (from the tax profile) and the income that actually arrived. Gross is
+ * income + those monthly estimates, so the diagram balances.
+ */
+export function withGrossBranch(
+  sankey: { nodes: SankeyNode[]; links: SankeyLink[] },
+  estimate: TaxEstimate,
+): { nodes: SankeyNode[]; links: SankeyLink[] } {
+  const groups = new Map<TaxGroup, number>();
+  for (const l of estimate.lines) groups.set(l.group, (groups.get(l.group) ?? 0) + Math.max(0, l.amountCents));
+  const monthly = [...groups].map(([g, c]) => [g, Math.round(c / 12)] as const).filter(([, c]) => c > 0);
+  const incomes = sankey.nodes.filter((n) => n.depth === 0 && n.valueCents > 0);
+  if (!incomes.length || !monthly.length) return sankey;
+  const gross = incomes.reduce((s, n) => s + n.valueCents, 0) + monthly.reduce((s, [, c]) => s + c, 0);
+  const nodes: SankeyNode[] = [
+    { id: "gross", label: "Gross pay (est.)", valueCents: gross, color: "#6f8ef2", depth: 0, kind: "income", categoryId: null, section: "taxes" },
+    ...monthly.map(([g, c]) => ({
+      id: `tax:${g}`,
+      label: TAX_BRANCH[g].label,
+      valueCents: c,
+      color: TAX_BRANCH[g].color,
+      depth: 1,
+      kind: "category" as const,
+      categoryId: null,
+      section: "taxes" as const,
+    })),
+    ...sankey.nodes.map((n) => ({ ...n, depth: n.depth + 1 })),
+  ];
+  const links: SankeyLink[] = [
+    ...monthly.map(([g, c]) => ({ from: "gross", to: `tax:${g}`, valueCents: c })),
+    ...incomes.map((n) => ({ from: "gross", to: n.id, valueCents: n.valueCents })),
+    ...sankey.links,
+  ];
   return { nodes, links };
 }

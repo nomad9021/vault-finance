@@ -126,6 +126,19 @@ export const AiAction = z.discriminatedUnion("type", [
     targetDate: Day.nullable().optional(),
   }),
   z.object({ type: z.literal("delete_goal"), goal: Name }),
+  // Savings buckets (split an account's balance into named parts)
+  z.object({
+    type: z.literal("create_bucket"),
+    account: Name,
+    name: Name,
+    amount: Dollars.optional(),
+    target: Dollars.optional(),
+    goal: Name.optional(),
+  }),
+  z.object({ type: z.literal("update_bucket"), bucket: Name, amount: Dollars.optional(), target: Dollars.nullable().optional(), newName: Name.optional() }),
+  /** from/to are bucket names, or "Unassigned". */
+  z.object({ type: z.literal("move_bucket_money"), from: Name, to: Name, amount: Dollars }),
+  z.object({ type: z.literal("delete_bucket"), bucket: Name }),
 
   // ── Giving agent ──
   z.object({
@@ -272,6 +285,14 @@ export function describeAiAction(a: AiAction): string {
       return `Update savings goal "${a.goal}"`;
     case "delete_goal":
       return `Delete savings goal "${a.goal}"`;
+    case "create_bucket":
+      return `Add bucket "${a.name}" in ${a.account}${a.amount ? ` with $${a.amount.toLocaleString("en-US")}` : ""}${a.target ? `, target $${a.target.toLocaleString("en-US")}` : ""}`;
+    case "update_bucket":
+      return `Update bucket "${a.bucket}"`;
+    case "move_bucket_money":
+      return `Move $${a.amount.toLocaleString("en-US")} from ${a.from} to ${a.to}`;
+    case "delete_bucket":
+      return `Delete bucket "${a.bucket}"`;
     case "create_giving_fund":
       return `Add ${a.kind === "gift" ? "gift" : "giving"} fund "${a.name}"${a.monthly ? `, $${a.monthly.toLocaleString("en-US")}/month` : ""}`;
     case "update_giving_fund":
@@ -353,6 +374,7 @@ export const AiQuery = z.discriminatedUnion("type", [
   z.object({ type: z.literal("bills") }),
   z.object({ type: z.literal("subscriptions") }),
   z.object({ type: z.literal("goals") }),
+  z.object({ type: z.literal("buckets") }),
   z.object({ type: z.literal("giving") }),
   z.object({ type: z.literal("debts") }),
   z.object({ type: z.literal("cashflow"), months: z.number().int().min(1).max(24).optional() }),

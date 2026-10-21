@@ -4,7 +4,8 @@ import {
   type Account,
   type Goal,
 } from "@vault/shared";
-import { Button, DateField, Dialog, EmptyState, Field, ProgressBar, Select, Spinner, Tag } from "@vault/ui";
+import { Button, DateField, Dialog, EmptyState, Field, ProgressBar, Select, Spinner, Tabs, Tag } from "@vault/ui";
+import { BucketsView } from "./BucketsView.js";
 import { useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
@@ -21,7 +22,23 @@ function monthLabel(month: string): string {
   });
 }
 
-export function GoalsPage({ onNavigate }: { onNavigate: Navigate }) {
+const GOAL_TABS = [
+  { value: "goals" as const, label: "Goals" },
+  { value: "buckets" as const, label: "Buckets" },
+];
+
+/** Savings goals, and savings buckets (splitting an account's balance) one tab over. */
+export function GoalsPage({ onNavigate, initialTab }: { onNavigate: Navigate; initialTab?: string }) {
+  const [tab, setTab] = useState<"goals" | "buckets">(initialTab === "buckets" ? "buckets" : "goals");
+  return (
+    <div className="page">
+      <Tabs items={GOAL_TABS} value={tab} onChange={setTab} aria-label="Savings views" />
+      {tab === "goals" ? <GoalsList onNavigate={onNavigate} /> : <BucketsView />}
+    </div>
+  );
+}
+
+function GoalsList({ onNavigate }: { onNavigate: Navigate }) {
   const client = useApp((s) => s.client);
   const { data, loading, reload } = useData(() => client.goals(), [client]);
   const { data: accountData } = useData(() => client.accounts(true), [client]);
@@ -33,7 +50,7 @@ export function GoalsPage({ onNavigate }: { onNavigate: Navigate }) {
   const accountById = new Map(accounts.map((a) => [a.id, a]));
 
   return (
-    <div className="page">
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-6)" }}>
       <div className="page-head">
         <div className="page-sub">
           {goals.length > 0 && `${goals.length} goal${goals.length === 1 ? "" : "s"}`}

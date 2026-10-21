@@ -377,6 +377,48 @@ export async function applyAction(app: FastifyInstance, request: FastifyRequest,
       return;
     }
 
+    // ── savings buckets ──
+    case "create_bucket":
+    case "update_bucket":
+    case "move_bucket_money":
+    case "delete_bucket": {
+      type B = { id: string; name: string; allocatedCents: number; accountId: string };
+      const { accounts } = await call<{ accounts: Array<{ accountId: string; accountName: string; unassignedCents: number; buckets: B[] }> }>(app, request, "GET", "/buckets");
+      const all = accounts.flatMap((acct) => acct.buckets);
+      if (a.type === "create_bucket") {
+        const acct = resolveNamed(accounts.map((x) => ({ ...x, name: x.accountName })), a.account, "account");
+        const amount = cents(a.amount ?? 0);
+        if (amount > acct.unassignedCents) throw new ActionError(`Only $${(acct.unassignedCents / 100).toFixed(2)} is unassigned in ${acct.accountName}.`);
+        const goal = a.goal
+          ? resolveNamed((await call<{ goals: Array<{ id: string; name: string }> }>(app, request, "GET", "/goals")).goals, a.goal, "goal")
+          : null;
+        await call(app, request, "POST", "/buckets", {
+          accountId: acct.accountId,
+          name: a.name,
+          allocatedCents: amount,
+          ...(a.target ? { targetCents: cents(a.target) } : {}),
+          ...(goal ? { goalId: goal.id } : {}),
+        });
+        return;
+      }
+      if (a.type === "move_bucket_money") {
+        const isNone = (ref: string) => /^unassigned$/i.test(ref.trim());
+        const from = isNone(a.from) ? null : resolveNamed(all, a.from, "bucket");
+        const to = isNone(a.to) ? null : resolveNamed(all, a.to, "bucket");
+        await call(app, request, "POST", "/buckets/move", { fromBucketId: from?.id ?? null, toBucketId: to?.id ?? null, amountCents: cents(a.amount) });
+        return;
+      }
+      const bucket = resolveNamed(all, a.bucket, "bucket");
+      if (a.type === "delete_bucket") await call(app, request, "DELETE", `/buckets/${bucket.id}`);
+      else
+        await call(app, request, "PATCH", `/buckets/${bucket.id}`, {
+          ...(a.amount !== undefined ? { allocatedCents: cents(a.amount) } : {}),
+          ...(a.target !== undefined ? { targetCents: a.target === null ? null : cents(a.target) } : {}),
+          ...(a.newName ? { name: a.newName } : {}),
+        });
+      return;
+    }
+
     // ── giving ──
     case "create_giving_fund":
       await call(app, request, "POST", "/giving", {
@@ -426,18 +468,21 @@ export async function applyAction(app: FastifyInstance, request: FastifyRequest,
  */
 /** Everything the rule check needs, read through the API as this user. */
 export async function loadCheckWorld(app: FastifyInstance, request: FastifyRequest): Promise<CheckWorld> {
-  const [{ categories }, { bills }, { goals }, { funds }, { profile }] = await Promise.all([
+  const [{ categories }, { bills }, { goals }, { funds }, { profile }, { accounts: bucketAccounts }] = await Promise.all([
     call<{ categories: Category[] }>(app, request, "GET", "/categories"),
     call<{ bills: Array<{ name: string }> }>(app, request, "GET", "/bills"),
     call<{ goals: Array<{ name: string }> }>(app, request, "GET", "/goals"),
     call<{ funds: Array<{ name: string }> }>(app, request, "GET", "/giving"),
     call<{ profile: TaxProfile | null }>(app, request, "GET", "/tax-profile"),
+    call<{ accounts: Array<{ accountName: string; buckets: Array<{ name: string }> }> }>(app, request, "GET", "/buckets"),
   ]);
   return {
     categories,
     bills: bills.map((b) => b.name),
     goals: goals.map((g) => g.name),
     funds: funds.map((f) => f.name),
+    buckets: bucketAccounts.flatMap((x) => x.buckets.map((b) => b.name)),
+    bucketAccounts: bucketAccounts.map((x) => x.accountName),
     taxState: profile?.state ?? null,
     earners: profile?.earners.map((e) => e.name) ?? [],
   };
@@ -448,6 +493,9 @@ export interface CheckWorld {
   bills?: string[];
   goals?: string[];
   funds?: string[];
+  /** Savings bucket names and the accounts that can hold buckets. */
+  buckets?: string[];
+  bucketAccounts?: string[];
   /** The saved tax profile's state and earner names, if there is one. */
   taxState?: string | null;
   earners?: string[];
@@ -461,6 +509,8 @@ export function checkActions(worldOrCategories: CheckWorld | Category[], actions
   const goals = lower(world.goals);
   const funds = lower(world.funds);
   const earners = lower(world.earners);
+  const bucketNames = lower(world.buckets);
+  const bucketAccounts = lower(world.bucketAccounts);
   let taxState = world.taxState ?? null;
   const named = (set: Set<string>, ref: string, what: string) =>
     set.has(ref.trim().toLowerCase()) ? null : `There's no ${what} called "${ref}".`;
@@ -595,6 +645,28 @@ export function checkActions(worldOrCategories: CheckWorld | Category[], actions
           if (!err) goals.delete(a.goal.toLowerCase());
           return err;
         }
+        case "create_bucket": {
+          const acctErr = named(bucketAccounts, a.account, "savings or checking account");
+          if (acctErr) return acctErr;
+          if (a.goal && !goals.has(a.goal.trim().toLowerCase())) return `There's no goal called "${a.goal}".`;
+          if (bucketNames.has(a.name.toLowerCase())) return `There's already a bucket called "${a.name}" (use update_bucket).`;
+          bucketNames.add(a.name.toLowerCase());
+          return null;
+        }
+        case "update_bucket":
+          return named(bucketNames, a.bucket, "bucket");
+        case "delete_bucket": {
+          const err = named(bucketNames, a.bucket, "bucket");
+          if (!err) bucketNames.delete(a.bucket.toLowerCase());
+          return err;
+        }
+        case "move_bucket_money":
+          for (const ref of [a.from, a.to]) {
+            if (/^unassigned$/i.test(ref.trim())) continue;
+            const err = named(bucketNames, ref, "bucket");
+            if (err) return err;
+          }
+          return a.from.trim().toLowerCase() === a.to.trim().toLowerCase() ? "Move between two different buckets." : null;
         case "create_giving_fund":
           if (funds.has(a.name.toLowerCase())) return `There's already a giving fund called "${a.name}" (use update_giving_fund).`;
           funds.add(a.name.toLowerCase());

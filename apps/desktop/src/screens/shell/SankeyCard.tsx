@@ -38,6 +38,7 @@ const SECTION_TARGET: Record<
   savings: { page: "goals", label: "Savings goals" },
   giving: { page: "giving", label: "Giving" },
   saved: { page: "cashflow", label: "Cash flow" },
+  taxes: { page: "taxes", label: "Salary & taxes" },
 };
 
 /**
@@ -163,7 +164,8 @@ function FocusPanel({
     node.section === "bills" ||
     node.section === "debt" ||
     node.section === "savings" ||
-    node.section === "giving";
+    node.section === "giving" ||
+    node.section === "taxes";
   const isAggregate =
     node.kind === "hub" || node.kind === "saved" || (isPlannedHeader && !node.entityId);
 

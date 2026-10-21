@@ -15,6 +15,7 @@ export * from "./schemas/transactions.js";
 export * from "./schemas/budgets.js";
 export * from "./schemas/ai.js";
 export * from "./schemas/taxes.js";
+export * from "./schemas/buckets.js";
 export * from "./tax/index.js";
 export * from "./schemas/ai-actions.js";
 export * from "./schemas/cashflow.js";

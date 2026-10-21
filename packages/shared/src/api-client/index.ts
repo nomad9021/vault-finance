@@ -24,6 +24,7 @@ import { Household } from "../schemas/household.js";
 import { SetupStatusResponse, type SetupCompleteRequest } from "../schemas/setup.js";
 import { User } from "../schemas/user.js";
 import { VersionResponse } from "../schemas/version.js";
+import { Bucket, BucketListResponse, type CreateBucketRequest, type MoveBucketMoneyRequest, type UpdateBucketRequest } from "../schemas/buckets.js";
 import { TaxEstimateSchema, TaxPlacesResponse, TaxProfileResponse, type TaxProfileInput } from "../schemas/taxes.js";
 import { ServerStatusResponse, StatusDetailsResponse } from "../schemas/status.js";
 import { UpdateStatusResponse } from "../schemas/updates.js";
@@ -826,6 +827,21 @@ export class ApiClient {
   // ── Goals ──
   goals() {
     return this.request(GoalListResponse, "GET", "/goals");
+  }
+  buckets() {
+    return this.request(BucketListResponse, "GET", "/buckets");
+  }
+  createBucket(body: CreateBucketRequest) {
+    return this.request(Bucket, "POST", "/buckets", body);
+  }
+  updateBucket(id: string, body: UpdateBucketRequest) {
+    return this.request(Bucket, "PATCH", `/buckets/${id}`, body);
+  }
+  deleteBucket(id: string) {
+    return this.request(z.undefined(), "DELETE", `/buckets/${id}`);
+  }
+  moveBucketMoney(body: MoveBucketMoneyRequest) {
+    return this.request(z.object({ ok: z.boolean() }), "POST", "/buckets/move", body);
   }
   createGoal(body: CreateGoalRequest) {
     return this.request(Goal, "POST", "/goals", body);
