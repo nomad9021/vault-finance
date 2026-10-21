@@ -1,7 +1,7 @@
 import type { Category } from "@vault/shared";
 import { describe, expect, it } from "vitest";
 import { estimateTaxes } from "@vault/shared";
-import { buildBudgetSankey, withTaxBranch } from "./budgetSankey.js";
+import { buildBudgetSankey, withGrossBranch, withTaxBranch } from "./budgetSankey.js";
 
 /**
  * The budget Sankey must conserve money: every cent of planned income leaves
@@ -126,5 +126,39 @@ describe("withTaxBranch", () => {
   it("leaves the diagram alone without an income node", () => {
     const empty = { nodes: [], links: [] };
     expect(withTaxBranch(empty, estimate)).toBe(empty);
+  });
+});
+
+describe("withGrossBranch", () => {
+  const estimate = estimateTaxes({ filingStatus: "single", state: "MI", locality: "grand_rapids", earners: [{ name: "Me", grossAnnualCents: 6_000_000 }] });
+  // A tiny actual diagram: one deposit account → hub → one category.
+  const actual = {
+    nodes: [
+      { id: "income:acct", label: "Checking", valueCents: 400_000, color: "#3ecf8e", depth: 0, kind: "income" as const, categoryId: null },
+      { id: "hub", label: "Total income", valueCents: 400_000, color: "#9397ab", depth: 1, kind: "hub" as const, categoryId: null },
+      { id: "cat:g", label: "Groceries", valueCents: 400_000, color: "#ff0", depth: 2, kind: "category" as const, categoryId: "g" },
+    ],
+    links: [
+      { from: "income:acct", to: "hub", valueCents: 400_000 },
+      { from: "hub", to: "cat:g", valueCents: 400_000 },
+    ],
+  };
+
+  it("puts gross pay first, with taxes beside the real income, and shifts the rest right", () => {
+    const out = withGrossBranch(actual, estimate);
+    const gross = out.nodes.find((n) => n.id === "gross")!;
+    expect(gross).toMatchObject({ depth: 0, section: "taxes" });
+    expect(out.nodes.find((n) => n.id === "income:acct")!.depth).toBe(1);
+    expect(out.nodes.find((n) => n.id === "cat:g")!.depth).toBe(3);
+    const taxes = out.nodes.filter((n) => n.id.startsWith("tax:"));
+    expect(taxes.map((n) => n.id).sort()).toEqual(["tax:federal", "tax:fica", "tax:local", "tax:state"]);
+    const fromGross = out.links.filter((l) => l.from === "gross").reduce((s, l) => s + l.valueCents, 0);
+    expect(fromGross).toBe(gross.valueCents);
+    expect(gross.valueCents - 400_000).toBe(taxes.reduce((s, n) => s + n.valueCents, 0));
+  });
+
+  it("does nothing without income", () => {
+    const empty = { nodes: [], links: [] };
+    expect(withGrossBranch(empty, estimate)).toBe(empty);
   });
 });

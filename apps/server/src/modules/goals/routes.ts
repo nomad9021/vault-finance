@@ -5,7 +5,7 @@ import {
 } from "@vault/shared";
 import { and, eq, gte, isNull, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { accounts, savingsGoals, transactions } from "../../db/schema.js";
+import { accounts, savingsBuckets, savingsGoals, transactions } from "../../db/schema.js";
 import { notFound } from "../../errors.js";
 
 /**
@@ -36,7 +36,11 @@ export default async function goalRoutes(app: FastifyInstance) {
     let savedCents = row.savedCents;
     let projectedCompletion: string | null = null;
 
-    if (row.linkedAccountId) {
+    // A savings bucket standing behind this goal is its progress.
+    const bucket = await app.db.query.savingsBuckets.findFirst({ where: eq(savingsBuckets.goalId, row.id) });
+    if (bucket) {
+      savedCents = bucket.allocatedCents;
+    } else if (row.linkedAccountId) {
       const account = await app.db.query.accounts.findFirst({
         where: eq(accounts.id, row.linkedAccountId),
       });

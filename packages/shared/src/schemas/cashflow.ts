@@ -65,6 +65,8 @@ export const SankeySection = z.enum([
   "savings",
   "giving",
   "saved",
+  /** Estimated taxes and pre-tax savings before income (from the tax profile). */
+  "taxes",
 ]);
 export type SankeySection = z.infer<typeof SankeySection>;
 

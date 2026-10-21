@@ -21,7 +21,7 @@ import {
 import { useEffect, useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
-import { buildBudgetSankey } from "./budgetSankey.js";
+import { buildBudgetSankey, withGrossBranch, withTaxBranch } from "./budgetSankey.js";
 import type { Navigate, PageId } from "./nav.js";
 import { SankeyCard } from "./SankeyCard.js";
 import { TrendChart, project } from "./TrendChart.js";
@@ -84,6 +84,15 @@ const SANKEY_VIEWS = [
   { value: "planned" as const, label: "Planned" },
   { value: "both" as const, label: "Both" },
 ];
+const FROM_GROSS_KEY = "vault.dashboard.from-gross";
+function loadFromGross(): boolean {
+  try {
+    return localStorage.getItem(FROM_GROSS_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
 function loadSankeyView(): SankeyView {
   try {
     const v = localStorage.getItem(SANKEY_VIEW_KEY);
@@ -126,6 +135,18 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
   const { data: billData } = useData(() => client.bills(), [client]);
   const { data: investData } = useData(() => client.investments(), [client]);
   const { data: planData } = useData(() => client.budgetPlan(), [client]);
+  // Tax add-on: with a tax profile, both diagrams can start from gross pay.
+  const { data: taxData } = useData(() => client.taxProfile(), [client]);
+  const taxEstimate = taxData?.estimate ?? null;
+  const [fromGross, setFromGross] = useState(loadFromGross);
+  const toggleGross = (on: boolean) => {
+    setFromGross(on);
+    try {
+      localStorage.setItem(FROM_GROSS_KEY, on ? "on" : "off");
+    } catch {
+      /* per-device convenience only */
+    }
+  };
 
   // Which cash-flow diagram the dashboard leads with. Remembered, because it's
   // a statement about how you think about money, not a per-visit choice.
@@ -166,11 +187,14 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
   // The planned diagram, built from the same category tree and allocations the
   // Budgets planner uses, so the two are always the same picture.
   const plannedIncome = planData?.plannedIncomeCents ?? 0;
-  const planSankey = buildBudgetSankey(
+  const planBase = buildBudgetSankey(
     plannedIncome,
     categories.filter((c) => c.kind === "expense"),
     new Map((budgetData?.budgets ?? []).map((b) => [b.categoryId, b.amountCents])),
   );
+  const gross = !!taxEstimate && fromGross;
+  const planSankey = { ...planBase, ...(gross && plannedIncome > 0 ? withTaxBranch(planBase, taxEstimate) : planBase) };
+  const actualSankey = sankeyData ? (gross ? withGrossBranch(sankeyData, taxEstimate) : sankeyData) : null;
   const hasPlan = plannedIncome > 0 || planSankey.allocated > 0;
 
   // Don't offer a view there's no data for — and fall back rather than render
@@ -256,12 +280,21 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
                 </button>
               )}
             </div>
-            <Segmented
-              options={availableViews}
-              value={effectiveView}
-              onChange={setSankeyView}
-              aria-label="Which cash-flow diagram to show"
-            />
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              {taxEstimate && (
+                <label className="radio" style={{ fontSize: "var(--text-sm)" }} title="Show estimated taxes and pre-tax savings before income (from Salary & taxes)">
+                  <input type="checkbox" checked={fromGross} onChange={(e) => toggleGross(e.target.checked)} />
+                  <span className="dot" style={{ borderRadius: "var(--radius-sm)" }} />
+                  From gross pay
+                </label>
+              )}
+              <Segmented
+                options={availableViews}
+                value={effectiveView}
+                onChange={setSankeyView}
+                aria-label="Which cash-flow diagram to show"
+              />
+            </div>
           </div>
 
           {effectiveView === "both" ? (
@@ -270,8 +303,8 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
                 <SankeyCard
                   compact
                   title="Actual"
-                  nodes={sankeyData!.nodes}
-                  links={sankeyData!.links}
+                  nodes={actualSankey!.nodes}
+                  links={actualSankey!.links}
                   month={sankeyData!.month}
                   onNavigate={onNavigate}
                   onChanged={reloadSankey}
@@ -299,8 +332,8 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
             />
           ) : (
             <SankeyCard
-              nodes={sankeyData!.nodes}
-              links={sankeyData!.links}
+              nodes={actualSankey!.nodes}
+              links={actualSankey!.links}
               month={sankeyData!.month}
               onNavigate={onNavigate}
               onChanged={reloadSankey}
@@ -418,8 +451,9 @@ function TrendCard({
         {history.length >= 2 && (
           <span className={`stat-delta ${good ? "pos" : "neg"}`}>
             <Icon name={delta >= 0 ? "arrowUp" : "arrowDown"} size={12} />
-            {formatCentsWhole(Math.abs(delta))} ({pct >= 0 ? "+" : ""}
-            {pct.toFixed(0)}%)
+            {formatCentsWhole(Math.abs(delta))}
+            {/* A % change from (almost) nothing is meaningless — show it only from a real base. */}
+            {Math.abs(first) >= 100 && Math.abs(pct) < 1000 && ` (${pct >= 0 ? "+" : ""}${pct.toFixed(0)}%)`}
           </span>
         )}
       </div>

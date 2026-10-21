@@ -450,6 +450,29 @@ export const budgetPlan = pgTable("budget_plan", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Savings buckets: a savings (or any asset) account's balance divided into
+// named parts — Emergency, Vacation… The buckets' amounts are an allocation of
+// the real balance; whatever isn't allocated is "unassigned". A bucket can
+// stand behind a savings goal, which then shows the bucket as its progress.
+export const savingsBuckets = pgTable(
+  "savings_buckets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => accounts.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    color: text("color").notNull(),
+    allocatedCents: bigint("allocated_cents", { mode: "number" }).notNull().default(0),
+    targetCents: bigint("target_cents", { mode: "number" }),
+    goalId: uuid("goal_id").references(() => savingsGoals.id, { onDelete: "set null" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("savings_buckets_account_idx").on(t.accountId, t.sortOrder)],
+);
+
 // Single-row (id = 1) household tax profile: earners' gross pay, pre-tax
 // deductions, filing status and location. The take-home estimate is
 // computed from it with the shared tax engine, never stored.

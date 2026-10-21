@@ -211,8 +211,9 @@ export function Sankey({
   // falling back to the summed income sources if there is no hub node.
   const rootTotal = useMemo(() => {
     const hub = nodes.find((n) => n.kind === "hub");
-    if (hub && hub.value > 0) return hub.value;
     const incomeSum = nodes.filter((n) => n.depth === 0).reduce((s, n) => s + n.value, 0);
+    // A gross-pay column in front of the hub is the real 100%.
+    if (hub && hub.value > 0) return Math.max(hub.value, incomeSum);
     return incomeSum > 0 ? incomeSum : nodes.reduce((m, n) => Math.max(m, n.value), 0);
   }, [nodes]);
 

@@ -212,7 +212,7 @@ function PageBody({
     case "investments":
       return <InvestmentsPage onNavigate={onNavigate} />;
     case "goals":
-      return <GoalsPage onNavigate={onNavigate} />;
+      return <GoalsPage onNavigate={onNavigate} {...(filter.tab ? { initialTab: filter.tab } : {})} />;
     case "networth":
       return <NetWorthPage onNavigate={onNavigate} />;
     case "reports":

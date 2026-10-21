@@ -140,12 +140,15 @@ export const AGENTS: AgentDef[] = [
   {
     id: "goals",
     name: "Goals",
-    keywords: /goal|save for|saving for|emergency fund|vacation|house|down payment|wedding|car|target/i,
+    keywords: /goal|save for|saving for|emergency fund|vacation|house|down payment|wedding|car|target|bucket|envelope|sinking fund|set aside|earmark/i,
     actions: [
       '  create_goal {name, target: dollars, monthly?, saved?, targetDate?: "YYYY-MM-DD"}',
       "  update_goal {goal: name, target?, monthly?, saved?, targetDate?}   delete_goal {goal}",
+      "  create_bucket {account: account name, name, amount?: dollars from Unassigned, target?, goal?: goal name}",
+      '  update_bucket {bucket, amount?, target?, newName?}   move_bucket_money {from: bucket or "Unassigned", to, amount}   delete_bucket {bucket}',
+      "  (buckets split a savings account's real balance into parts; they never move real money)",
     ],
-    queries: ["  goals {}"],
+    queries: ["  goals {}", "  buckets {}   (savings accounts split into buckets, and what's unassigned)"],
     examples: ['  "I want to save $6,000 for a vacation by next June" → <vault-action>{"type":"create_goal","name":"Vacation","target":6000,"targetDate":"<next June 30, YYYY-MM-DD>"}</vault-action>'],
   },
   {

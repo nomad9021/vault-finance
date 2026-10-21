@@ -363,3 +363,22 @@ describe("stop", () => {
     expect(out[0]!["conversationId"]).toBe(out.find((l) => "done" in l)!["conversationId"]);
   });
 });
+
+describe("savings buckets through the assistant", () => {
+  it("creates buckets, moves money and refuses unknown accounts", async () => {
+    await api("POST", "/accounts", { name: "Ally Savings", type: "savings", balanceCents: 500_000 });
+    replies = [
+      '<vault-action>{"type":"create_bucket","account":"Ally Savings","name":"Vacation","amount":2000,"target":3000}</vault-action>\n' +
+        '<vault-action>{"type":"create_bucket","account":"Ally Savings","name":"Emergency"}</vault-action>\n' +
+        '<vault-action>{"type":"move_bucket_money","from":"Unassigned","to":"Emergency","amount":1500}</vault-action>\n' +
+        '<vault-action>{"type":"create_bucket","account":"Mattress","name":"Nope"}</vault-action>',
+      "That account doesn't exist, so I skipped it.",
+    ];
+    const out = lines((await app.inject({ method: "POST", url: "/api/v1/ai/chat", headers: auth, payload: { message: "Split my savings into vacation and emergency buckets", autoApply: true } })).payload);
+    const actions = out.find((l) => "actions" in l)!["actions"] as Array<{ action: { type: string }; status: string }>;
+    expect(actions.map((a) => a.status)).toEqual(["applied", "applied", "applied"]);
+    const acct = (await api("GET", "/buckets")).accounts.find((a: { accountName: string }) => a.accountName === "Ally Savings");
+    expect(acct.buckets.map((b: { name: string; allocatedCents: number }) => [b.name, b.allocatedCents])).toEqual([["Vacation", 200_000], ["Emergency", 150_000]]);
+    expect(acct.unassignedCents).toBe(150_000);
+  });
+});

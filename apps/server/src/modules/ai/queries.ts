@@ -48,6 +48,7 @@ const QUERY_LABEL: Record<AiQuery["type"], string> = {
   bills: "bills",
   subscriptions: "subscriptions",
   goals: "goals",
+  buckets: "savings buckets",
   giving: "giving",
   debts: "debts",
   cashflow: "cash flow",
@@ -255,6 +256,17 @@ export async function runQuery(app: FastifyInstance, request: FastifyRequest, q:
     case "goals": {
       const { goals } = await get<{ goals: Array<{ name: string; targetCents: number; savedCents: number; monthlyCents: number; targetDate: string | null }> }>("/goals");
       return ["SAVINGS GOALS (name | saved / target | per month | by):", ...(goals.length ? goals.map((g) => `  ${g.name} | ${dollars(g.savedCents)} / ${dollars(g.targetCents)} | ${dollars(g.monthlyCents)}/mo | ${g.targetDate ?? "no date"}`) : ["  (none)"])].join("\n");
+    }
+
+    case "buckets": {
+      const { accounts } = await get<{ accounts: Array<{ accountName: string; balanceCents: number; unassignedCents: number; buckets: Array<{ name: string; allocatedCents: number; targetCents: number | null }> }> }>("/buckets");
+      return [
+        "SAVINGS BUCKETS (account: bucket = amount / target; Unassigned = balance not in a bucket):",
+        ...accounts.map(
+          (x) =>
+            `  ${x.accountName} (balance ${dollars(x.balanceCents)}): ${[...x.buckets.map((b) => `${b.name} = ${dollars(b.allocatedCents)}${b.targetCents ? ` / ${dollars(b.targetCents)}` : ""}`), `Unassigned = ${dollars(x.unassignedCents)}`].join("; ")}`,
+        ),
+      ].join("\n");
     }
 
     case "giving": {
