@@ -125,7 +125,7 @@ describe("AI-proposed changes", () => {
   it("teaches the model the category tree and the action syntax", async () => {
     nextReply = "Sure.";
     await chat("hi");
-    expect(lastSystemPrompt).toContain("CATEGORY TREE:");
+    expect(lastSystemPrompt).toContain("CATEGORY TREE");
     expect(lastSystemPrompt).toContain("Groceries");
     expect(lastSystemPrompt).toContain("<vault-action>");
   });

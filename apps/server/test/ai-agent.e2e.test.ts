@@ -123,7 +123,8 @@ describe("finance agent", () => {
     expect(results.content).toContain("LOOK-UP RESULTS");
     expect(results.content).toMatch(/Blue Kettle 4411 \| 2× \| out \$13\.70 \| Uncategorized/);
     expect(results.content).toContain("Zephyr Gym Club");
-    expect(out.find((l) => "status" in l)?.["status"]).toBe("Checking your merchants…");
+    expect(out[0]?.["status"]).toMatch(/agents are on it/);
+    expect(out.filter((l) => "status" in l).map((l) => l["status"])).toContain("Checking your merchants…");
 
     // The guide teaches the look-ups and the new changes.
     expect(calls[0]![0]!.content).toContain("<vault-query>");
@@ -230,5 +231,81 @@ describe("rule check", () => {
       { type: "create_rule", keyword: "kettle", category: "Dining Out" },
     ]);
     expect(actions.every((a) => a.status === "pending")).toBe(true);
+  });
+});
+
+describe("specialist agents", () => {
+  const chat = async (message: string, extra: Record<string, unknown> = {}) =>
+    lines((await app.inject({ method: "POST", url: "/api/v1/ai/chat", headers: auth, payload: { message, ...extra } })).payload);
+
+  it("routes a salary question to the tax agent and teaches only what it needs", async () => {
+    calls.length = 0;
+    replies = ["Sure."];
+    const out = await chat("What would my take-home be on a $95k salary?");
+    expect(out[0]).toEqual({ status: "Tax & salary agent is on it…" });
+    const system = calls[0]![0]!.content;
+    expect(system).toContain("--- Tax & salary agent ---");
+    expect(system).toContain("TAX PROFILE:");
+    expect(system).not.toContain("--- Giving agent ---");
+    expect(system).toContain("Also available if the user asks");
+  });
+
+  it("sets up salary and taxes, then answers what-ifs from the engine", async () => {
+    calls.length = 0;
+    replies = [
+      'Setting that up.\n<vault-action>{"type":"set_tax_profile","state":"CO","filingStatus":"single"}</vault-action>\n' +
+        '<vault-action>{"type":"set_salary","earner":"Alex","grossAnnual":100000}</vault-action>\n' +
+        '<vault-action>{"type":"set_pretax","earner":"Alex","retirementPct":0}</vault-action>',
+    ];
+    const out = await chat("My salary is $100k and I live in Colorado", { autoApply: true });
+    const actions = out.find((l) => "actions" in l)!["actions"] as Array<{ status: string; error: string | null }>;
+    expect(actions.map((a) => a.status)).toEqual(["applied", "applied", "applied"]);
+    const { estimate } = await api("GET", "/tax-profile");
+    expect(estimate.takeHomeCents).toBe(7_548_840);
+    expect((await api("GET", "/budget-plan")).plannedIncomeCents).toBe(Math.round(7_548_840 / 12));
+
+    calls.length = 0;
+    replies = [
+      '<vault-query>{"type":"tax_compare","states":["TX","CA"]}</vault-query>\n<vault-query>{"type":"tax_whatif","grossAnnual":110000}</vault-query>',
+      "Texas would leave you more.",
+    ];
+    await chat("How much more would I take home if I moved to Texas, or got a raise to 110k?");
+    const results = calls[1]!.at(-1)!.content;
+    expect(results).toContain("Texas: take-home $79180.00/yr"); // CO take-home + the $3,691.60 CO tax
+    expect(results).toContain("TAX WHAT-IF (not saved)");
+    expect(results).toMatch(/compared with now: take-home \+\$/);
+  });
+
+  it("bills, goals and the debt plan go through the same checks and cards", async () => {
+    replies = [
+      '<vault-action>{"type":"create_bill","name":"Rent","amount":1500,"dueDay":1,"category":"Mortgage & Rent"}</vault-action>\n' +
+        '<vault-action>{"type":"create_goal","name":"Emergency fund","target":10000,"monthly":400}</vault-action>\n' +
+        '<vault-action>{"type":"set_debt_plan","strategy":"snowball","extraMonthly":150}</vault-action>\n' +
+        '<vault-action>{"type":"update_bill","bill":"Netflix","amount":20}</vault-action>',
+      "Netflix isn't a bill yet, so I left it.",
+    ];
+    const out = await chat("Set up my bills, an emergency fund goal, and a snowball debt plan", { autoApply: true });
+    const actions = out.find((l) => "actions" in l)!["actions"] as Array<{ action: { type: string }; status: string }>;
+    expect(actions.map((a) => [a.action.type, a.status])).toEqual([
+      ["create_bill", "applied"],
+      ["create_goal", "applied"],
+      ["set_debt_plan", "applied"],
+    ]);
+    expect((await api("GET", "/bills")).bills.map((b: { name: string }) => b.name)).toContain("Rent");
+    expect((await api("GET", "/goals")).goals[0]).toMatchObject({ name: "Emergency fund", targetCents: 1_000_000, monthlyCents: 40_000 });
+    expect(await api("GET", "/debt-plan")).toMatchObject({ strategy: "snowball", extraCents: 15_000 });
+  });
+
+  it("refuses a salary before there's a state, and asks the model to fix it", async () => {
+    // A fresh profile would need a state; here the saved one already has CO, so
+    // test the rule directly through a bad locality instead.
+    calls.length = 0;
+    replies = [
+      '<vault-action>{"type":"set_tax_profile","locality":"nyc"}</vault-action>',
+      "Right, NYC isn't in Colorado — no change.",
+    ];
+    const out = await chat("Add New York City tax to my taxes");
+    expect(calls[1]!.at(-1)!.content).toContain("New York City is in NY, not CO");
+    expect(out.find((l) => "actions" in l)).toBeUndefined();
   });
 });

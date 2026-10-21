@@ -2,6 +2,9 @@ import {
   CLIENT_ACTION_TYPES,
   describeAiAction,
   UNCATEGORIZED,
+  findLocality,
+  STATES_2026,
+  type TaxProfile,
   type AiAction,
   type AiActionRecord,
   type Category,
@@ -9,6 +12,7 @@ import {
 import { eq } from "drizzle-orm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { aiActions } from "../../db/schema.js";
+import { AGENTS, type AgentId } from "./agents.js";
 
 /**
  * Carrying out what the assistant proposes. Every server-side change goes
@@ -137,6 +141,23 @@ export function resolveCategory(all: Category[], ref: string): Category {
 }
 
 const DEFAULT_COLOR = "#6b7bd6";
+
+/** A bill, goal, giving fund or earner by name (case-insensitive). */
+function resolveNamed<T extends { name: string }>(list: T[], ref: string, what: string): T {
+  const matches = list.filter((x) => x.name.trim().toLowerCase() === ref.trim().toLowerCase());
+  if (matches.length === 1) return matches[0]!;
+  if (!matches.length) throw new ActionError(`There's no ${what} called "${ref}".`);
+  throw new ActionError(`Several ${what}s are called "${ref}"; rename one first.`);
+}
+
+const BLANK_TAX_PROFILE = (state: string): TaxProfile => ({
+  filingStatus: "single",
+  state,
+  locality: null,
+  dependents: 0,
+  earners: [],
+  syncPlannedIncome: true,
+});
 const cents = (dollars: number) => Math.round(dollars * 100);
 
 export async function applyAction(app: FastifyInstance, request: FastifyRequest, a: AiAction): Promise<void> {
@@ -257,6 +278,139 @@ export async function applyAction(app: FastifyInstance, request: FastifyRequest,
     case "autocategorize":
       await call(app, request, "POST", "/transactions/autocategorize", {});
       return;
+
+    // ── tax & salary ──
+    case "set_tax_profile":
+    case "set_salary":
+    case "set_pretax":
+    case "remove_earner": {
+      const { profile } = await call<{ profile: TaxProfile | null }>(app, request, "GET", "/tax-profile");
+      const state = a.type === "set_tax_profile" && a.state ? a.state.toUpperCase() : profile?.state;
+      if (!state) throw new ActionError("Set the state first (set_tax_profile with a state).");
+      const next: TaxProfile = { ...(profile ?? BLANK_TAX_PROFILE(state)), earners: [...(profile?.earners ?? [])] };
+      if (a.type === "set_tax_profile") {
+        if (a.state) {
+          next.state = state;
+          if (next.locality && findLocality(next.locality)?.state !== state) next.locality = null;
+        }
+        if (a.filingStatus) next.filingStatus = a.filingStatus;
+        if (a.locality !== undefined) next.locality = a.locality;
+        if (a.customLocalRatePct !== undefined) next.customLocalRatePct = a.customLocalRatePct;
+        if (a.dependents !== undefined) next.dependents = a.dependents;
+        if (a.syncPlannedIncome !== undefined) next.syncPlannedIncome = a.syncPlannedIncome;
+      } else if (a.type === "set_salary") {
+        const i = next.earners.findIndex((e) => e.name.toLowerCase() === a.earner.trim().toLowerCase());
+        const base = i >= 0 ? next.earners[i]! : { name: a.earner.trim(), grossAnnualCents: 0, payFrequency: "biweekly" as const };
+        const updated = { ...base, grossAnnualCents: cents(a.grossAnnual), ...(a.payFrequency ? { payFrequency: a.payFrequency } : {}) };
+        if (i >= 0) next.earners[i] = updated;
+        else next.earners.push(updated);
+      } else {
+        const earner = resolveNamed(next.earners, a.earner, "earner");
+        const i = next.earners.indexOf(earner);
+        if (a.type === "remove_earner") next.earners.splice(i, 1);
+        else {
+          next.earners[i] = {
+            ...earner,
+            ...(a.retirementPct !== undefined ? { retirementPct: a.retirementPct, retirementCents: null } : {}),
+            ...(a.hsaAnnual !== undefined ? { hsaCents: cents(a.hsaAnnual) } : {}),
+            ...(a.healthPremiumsAnnual !== undefined ? { healthPremiumCents: cents(a.healthPremiumsAnnual) } : {}),
+            ...(a.otherPretaxAnnual !== undefined ? { otherPretaxCents: cents(a.otherPretaxAnnual) } : {}),
+          };
+        }
+      }
+      await call(app, request, "PUT", "/tax-profile", next);
+      return;
+    }
+
+    // ── bills ──
+    case "create_bill": {
+      const cat = a.category ? resolveCategory(await categories(), a.category) : null;
+      await call(app, request, "POST", "/bills", {
+        name: a.name,
+        amountCents: cents(a.amount),
+        dueDay: a.dueDay,
+        ...(a.cadence ? { cadence: a.cadence } : {}),
+        ...(a.autopay !== undefined ? { autopay: a.autopay } : {}),
+        ...(cat ? { categoryId: cat.id, color: cat.color } : {}),
+      });
+      return;
+    }
+    case "update_bill":
+    case "delete_bill": {
+      const { bills } = await call<{ bills: Array<{ id: string; name: string }> }>(app, request, "GET", "/bills");
+      const bill = resolveNamed(bills, a.bill, "bill");
+      if (a.type === "delete_bill") await call(app, request, "DELETE", `/bills/${bill.id}`);
+      else
+        await call(app, request, "PATCH", `/bills/${bill.id}`, {
+          ...(a.amount !== undefined ? { amountCents: cents(a.amount) } : {}),
+          ...(a.dueDay !== undefined ? { dueDay: a.dueDay } : {}),
+          ...(a.cadence ? { cadence: a.cadence } : {}),
+          ...(a.autopay !== undefined ? { autopay: a.autopay } : {}),
+        });
+      return;
+    }
+
+    // ── goals ──
+    case "create_goal":
+      await call(app, request, "POST", "/goals", {
+        name: a.name,
+        targetCents: cents(a.target),
+        monthlyCents: cents(a.monthly ?? 0),
+        savedCents: cents(a.saved ?? 0),
+        ...(a.targetDate ? { targetDate: a.targetDate } : {}),
+        color: "#3ecf8e",
+      });
+      return;
+    case "update_goal":
+    case "delete_goal": {
+      const { goals } = await call<{ goals: Array<{ id: string; name: string }> }>(app, request, "GET", "/goals");
+      const goal = resolveNamed(goals, a.goal, "goal");
+      if (a.type === "delete_goal") await call(app, request, "DELETE", `/goals/${goal.id}`);
+      else
+        await call(app, request, "PATCH", `/goals/${goal.id}`, {
+          ...(a.target !== undefined ? { targetCents: cents(a.target) } : {}),
+          ...(a.monthly !== undefined ? { monthlyCents: cents(a.monthly) } : {}),
+          ...(a.saved !== undefined ? { savedCents: cents(a.saved) } : {}),
+          ...(a.targetDate !== undefined ? { targetDate: a.targetDate } : {}),
+        });
+      return;
+    }
+
+    // ── giving ──
+    case "create_giving_fund":
+      await call(app, request, "POST", "/giving", {
+        name: a.name,
+        ...(a.kind ? { kind: a.kind } : {}),
+        monthlyCents: cents(a.monthly ?? 0),
+        ...(a.target ? { targetCents: cents(a.target) } : {}),
+        ...(a.recipient ? { recipient: a.recipient } : {}),
+        ...(a.occasionDate ? { occasionDate: a.occasionDate } : {}),
+      });
+      return;
+    case "update_giving_fund":
+    case "delete_giving_fund": {
+      const { funds } = await call<{ funds: Array<{ id: string; name: string }> }>(app, request, "GET", "/giving");
+      const fund = resolveNamed(funds, a.fund, "giving fund");
+      if (a.type === "delete_giving_fund") await call(app, request, "DELETE", `/giving/${fund.id}`);
+      else
+        await call(app, request, "PATCH", `/giving/${fund.id}`, {
+          ...(a.monthly !== undefined ? { monthlyCents: cents(a.monthly) } : {}),
+          ...(a.target !== undefined ? { targetCents: a.target ? cents(a.target) : null } : {}),
+          ...(a.occasionDate !== undefined ? { occasionDate: a.occasionDate } : {}),
+        });
+      return;
+    }
+
+    // ── debt ──
+    case "set_debt_plan": {
+      const plan = await call<Record<string, unknown>>(app, request, "GET", "/debt-plan");
+      await call(app, request, "PUT", "/debt-plan", {
+        ...plan,
+        ...(a.strategy ? { strategy: a.strategy } : {}),
+        ...(a.extraMonthly !== undefined ? { extraCents: cents(a.extraMonthly) } : {}),
+      });
+      return;
+    }
     case "set_theme":
     case "set_review_prefs":
       return; // unreachable — handled above
@@ -269,8 +423,46 @@ export async function applyAction(app: FastifyInstance, request: FastifyRequest,
  * earlier in the same reply counts) and returns why each one would fail, or
  * null. Mirrors what applyAction and the API enforce.
  */
-export function checkActions(categoriesNow: Category[], actions: AiAction[]): Array<string | null> {
-  const all: Category[] = categoriesNow.map((c) => ({ ...c }));
+/** Everything the rule check needs, read through the API as this user. */
+export async function loadCheckWorld(app: FastifyInstance, request: FastifyRequest): Promise<CheckWorld> {
+  const [{ categories }, { bills }, { goals }, { funds }, { profile }] = await Promise.all([
+    call<{ categories: Category[] }>(app, request, "GET", "/categories"),
+    call<{ bills: Array<{ name: string }> }>(app, request, "GET", "/bills"),
+    call<{ goals: Array<{ name: string }> }>(app, request, "GET", "/goals"),
+    call<{ funds: Array<{ name: string }> }>(app, request, "GET", "/giving"),
+    call<{ profile: TaxProfile | null }>(app, request, "GET", "/tax-profile"),
+  ]);
+  return {
+    categories,
+    bills: bills.map((b) => b.name),
+    goals: goals.map((g) => g.name),
+    funds: funds.map((f) => f.name),
+    taxState: profile?.state ?? null,
+    earners: profile?.earners.map((e) => e.name) ?? [],
+  };
+}
+
+export interface CheckWorld {
+  categories: Category[];
+  bills?: string[];
+  goals?: string[];
+  funds?: string[];
+  /** The saved tax profile's state and earner names, if there is one. */
+  taxState?: string | null;
+  earners?: string[];
+}
+
+export function checkActions(worldOrCategories: CheckWorld | Category[], actions: AiAction[]): Array<string | null> {
+  const world: CheckWorld = Array.isArray(worldOrCategories) ? { categories: worldOrCategories } : worldOrCategories;
+  const all: Category[] = world.categories.map((c) => ({ ...c }));
+  const lower = (xs: string[] | undefined) => new Set((xs ?? []).map((x) => x.trim().toLowerCase()));
+  const bills = lower(world.bills);
+  const goals = lower(world.goals);
+  const funds = lower(world.funds);
+  const earners = lower(world.earners);
+  let taxState = world.taxState ?? null;
+  const named = (set: Set<string>, ref: string, what: string) =>
+    set.has(ref.trim().toLowerCase()) ? null : `There's no ${what} called "${ref}".`;
   let fake = 0;
   const isNone = (ref: string) => ref.trim().toLowerCase() === UNCATEGORIZED.toLowerCase();
   const find = (ref: string) => resolveCategory(all, ref);
@@ -355,6 +547,64 @@ export function checkActions(categoriesNow: Category[], actions: AiAction[]): Ar
           }
           return null;
         }
+        case "set_tax_profile": {
+          const state = a.state?.toUpperCase() ?? taxState;
+          if (a.state && !(a.state.toUpperCase() in STATES_2026)) return `"${a.state}" isn't a US state code (use two letters, like CO).`;
+          if (!state) return "Include the state (two-letter code) the first time the tax profile is set up.";
+          if (a.locality) {
+            const loc = findLocality(a.locality);
+            if (!loc) return `There's no local tax "${a.locality}"; use a tax_places look-up for the ids, or customLocalRatePct.`;
+            if (loc.state !== state) return `${loc.name} is in ${loc.state}, not ${state}.`;
+          }
+          taxState = state;
+          return null;
+        }
+        case "set_salary":
+          if (!taxState) return "Set the tax profile's state first (set_tax_profile with state) in the same reply.";
+          earners.add(a.earner.trim().toLowerCase());
+          return null;
+        case "set_pretax":
+          return named(earners, a.earner, "earner");
+        case "remove_earner": {
+          const err = named(earners, a.earner, "earner");
+          if (!err) earners.delete(a.earner.trim().toLowerCase());
+          return err;
+        }
+        case "create_bill":
+          if (a.category) find(a.category);
+          if (bills.has(a.name.toLowerCase())) return `There's already a bill called "${a.name}" (use update_bill).`;
+          bills.add(a.name.toLowerCase());
+          return null;
+        case "update_bill":
+          return named(bills, a.bill, "bill");
+        case "delete_bill": {
+          const err = named(bills, a.bill, "bill");
+          if (!err) bills.delete(a.bill.toLowerCase());
+          return err;
+        }
+        case "create_goal":
+          if (a.target <= 0) return "A goal needs a target above zero.";
+          if (goals.has(a.name.toLowerCase())) return `There's already a goal called "${a.name}" (use update_goal).`;
+          goals.add(a.name.toLowerCase());
+          return null;
+        case "update_goal":
+          return named(goals, a.goal, "goal");
+        case "delete_goal": {
+          const err = named(goals, a.goal, "goal");
+          if (!err) goals.delete(a.goal.toLowerCase());
+          return err;
+        }
+        case "create_giving_fund":
+          if (funds.has(a.name.toLowerCase())) return `There's already a giving fund called "${a.name}" (use update_giving_fund).`;
+          funds.add(a.name.toLowerCase());
+          return null;
+        case "update_giving_fund":
+          return named(funds, a.fund, "giving fund");
+        case "delete_giving_fund": {
+          const err = named(funds, a.fund, "giving fund");
+          if (!err) funds.delete(a.fund.toLowerCase());
+          return err;
+        }
         default:
           return null;
       }
@@ -373,74 +623,28 @@ function isDescendant(all: Category[], id: string, ancestorId: string): boolean 
 }
 
 /**
- * The part of the system prompt that teaches the model how to propose
- * changes, plus the current category tree and rules so it names real rows.
+ * The part of the system prompt that teaches the model how to look things up
+ * and propose changes, for the agents this message needs (agents.ts), plus
+ * the data those agents work with (category tree, tax profile, bills…) so it
+ * names real rows.
  */
-export async function buildActionGuide(app: FastifyInstance, request: FastifyRequest): Promise<string> {
-  const { categories } = await call<{ categories: Category[] }>(app, request, "GET", "/categories");
-  const { rules } = await call<{ rules: { keyword: string; categoryId: string }[] }>(
-    app,
-    request,
-    "GET",
-    "/categorization-rules",
-  );
-  const byParent = new Map<string | null, Category[]>();
-  for (const c of categories) {
-    const list = byParent.get(c.parentCategoryId) ?? [];
-    list.push(c);
-    byParent.set(c.parentCategoryId, list);
-  }
-  const tree: string[] = [];
-  const walk = (parent: string | null, depth: number) => {
-    for (const c of byParent.get(parent) ?? []) {
-      if (tree.length > 150) return;
-      tree.push(`${"  ".repeat(depth + 1)}- ${c.name} (${c.kind}${c.isSystem ? ", built-in" : ""})`);
-      if (depth < 6) walk(c.id, depth + 1);
-    }
-  };
-  walk(null, 0);
-  const catName = new Map(categories.map((c) => [c.id, c.name]));
+export async function buildActionGuide(app: FastifyInstance, request: FastifyRequest, agentIds: AgentId[] = AGENTS.map((a) => a.id)): Promise<string> {
+  const agents = AGENTS.filter((a) => agentIds.includes(a.id));
+  const has = (id: AgentId) => agentIds.includes(id);
+  const others = AGENTS.filter((a) => !agentIds.includes(a.id)).map((a) => a.name);
 
-  return [
+  const lines: string[] = [
     "",
     "=== CHANGING THINGS ===",
-    "You can propose changes to the category tree (including its order),",
-    "which category transactions are in, auto-categorization rules, budgets,",
-    "planned income, the household name, the app theme, and the weekly/monthly",
-    "finance review settings. The cash-flow and budget Sankey diagrams are drawn",
-    "from the category tree, its order, budgets and planned income, so changing",
-    "those is how you set the Sankeys up. You can NOT change security settings,",
-    "members, bank links, AI settings, or transaction amounts/dates — say so if asked.",
+    "You have no function or tool calls: <vault-action> and <vault-query> are plain",
+    "text tags you write in your reply.",
+    `Specialist agents active for this message: ${agents.map((a) => a.name).join(", ")}.`,
+    ...(others.length ? [`(Also available if the user asks: ${others.join(", ")}.)`] : []),
+    "You can NOT change security settings, members, bank links, AI settings, or",
+    "transaction amounts/dates — say so if asked.",
     "Only propose a change when the user asks for it or clearly agrees to one.",
     "To propose a change, put ONE JSON object per block on its own line:",
     '<vault-action>{"type":"create_category","name":"Pets","parent":"Household"}</vault-action>',
-    "Types and fields:",
-    '  create_category {name, parent?, kind?: "expense"|"income", color?: "#rrggbb"}',
-    "  rename_category {category, newName}",
-    "  move_category {category, newParent: name or null for top level}",
-    '  recolor_category {category, color: "#rrggbb"}',
-    "  delete_category {category}   (only works if nothing uses it)",
-    "  create_rule {keyword, category}   delete_rule {keyword}",
-    "  set_budget {category, amount: monthly dollars}   remove_budget {category}",
-    "  set_planned_income {amount: monthly dollars}",
-    "  rename_household {name}",
-    '  recategorize {merchant: text in the merchant name, category, from?: category or "Uncategorized", since?: "YYYY-MM-DD"}',
-    "  reorder_categories {parent: name or null for top level, order: [sibling names, first = top]}",
-    "  autocategorize {}   (applies the rules to uncategorized transactions)",
-    '  set_theme {theme: "automatic"|"light"|"dark"|"oled"|"contrast"}',
-    '  set_review_prefs {defaultPeriod?: "week"|"month", weekStartsOn?: "monday"|"sunday",',
-    "    compare?: bool, autoAdvanceSeconds?: number, startFullscreen?: bool,",
-    "    showSlides?: [ids], hideSlides?: [ids]}",
-    "    slide ids: overview, categories, daily, merchants, largest, budgets, bills, goals, ai",
-    'Name categories exactly as below; if two share a name use "Parent > Child".',
-    "RULES (changes that break these are sent back to you to fix):",
-    "  - Income and expense categories are separate trees: never nest one inside",
-    "    the other; reorder_categories only orders siblings (same parent).",
-    "  - Budgets are only for expense categories.",
-    "  - Built-in categories can't be deleted; a category with sub-categories",
-    "    can't be deleted until they're moved out.",
-    "  - Only use category names from the tree below or ones you create earlier",
-    "    in the same reply.",
     "Briefly say what you're proposing in plain words too; the app shows each",
     "change as a card the user approves (or it applies automatically in auto mode).",
     "",
@@ -448,26 +652,82 @@ export async function buildActionGuide(app: FastifyInstance, request: FastifyReq
     "The snapshot is short. To see more before answering or proposing changes,",
     "put look-ups on their own lines and STOP writing; the results come back to",
     "you and you continue (a few rounds per message):",
-    '<vault-query>{"type":"merchants","months":3,"uncategorizedOnly":true}</vault-query>',
-    "Types:",
-    '  transactions {merchant?, category?: name or "Uncategorized", from?, to?: "YYYY-MM-DD", limit?: up to 100}',
-    "  merchants {months?: 1-24, uncategorizedOnly?: bool}   (who you pay, how often, which category)",
-    "  category_totals {months?: 1-24}   (spending and income per category)",
-    "To organize their finances: look up merchants and category totals first,",
-    "then propose a tidy tree, recategorize/rules for the messy merchants, and",
-    "budgets — in one reply, so the user can approve it all at once.",
+    '<vault-query>{"type":"category_totals","months":3}</vault-query>',
+    "",
+  ];
+  for (const a of agents) {
+    lines.push(`--- ${a.name} agent ---`);
+    if (a.queries.length) lines.push("Look-ups:", ...a.queries);
+    if (a.actions.length) lines.push("Changes:", ...a.actions);
+    if (a.tips?.length) lines.push(...a.tips);
+    lines.push("");
+  }
+  lines.push(
+    "RULES (changes that break these are sent back to you to fix):",
+    "  - Income and expense categories are separate trees: never nest one inside",
+    "    the other; reorder_categories only orders siblings (same parent).",
+    "  - Budgets are only for expense categories.",
+    "  - Built-in categories can't be deleted; a category with sub-categories",
+    "    can't be deleted until they're moved out.",
+    "  - Only use names (categories, bills, goals, funds, earners) that exist below",
+    "    or that you create earlier in the same reply.",
     "",
     "=== MEMORY ===",
     "To remember a lasting fact or preference about the user for future chats",
     "(goals, preferences, household facts — never passwords or account numbers),",
     "add: <vault-remember>Prefers weekly reviews on Sunday evenings</vault-remember>",
     "Don't re-save things already listed under REMEMBERED.",
-    "",
-    "CATEGORY TREE:",
-    ...(tree.length ? tree : ["  (none)"]),
-    "AUTO-CATEGORIZATION RULES (keyword → category):",
-    ...(rules.length
-      ? rules.slice(0, 60).map((r) => `  "${r.keyword}" → ${catName.get(r.categoryId) ?? "?"}`)
-      : ["  (none)"]),
-  ].join("\n");
+  );
+
+  // The data the active agents act on.
+  if (has("organizer") || has("budget") || has("bills")) {
+    const { categories } = await call<{ categories: Category[] }>(app, request, "GET", "/categories");
+    const byParent = new Map<string | null, Category[]>();
+    for (const c of categories) {
+      const list = byParent.get(c.parentCategoryId) ?? [];
+      list.push(c);
+      byParent.set(c.parentCategoryId, list);
+    }
+    const tree: string[] = [];
+    const walk = (parent: string | null, depth: number) => {
+      for (const c of byParent.get(parent) ?? []) {
+        if (tree.length > 150) return;
+        tree.push(`${"  ".repeat(depth + 1)}- ${c.name} (${c.kind}${c.isSystem ? ", built-in" : ""})`);
+        if (depth < 6) walk(c.id, depth + 1);
+      }
+    };
+    walk(null, 0);
+    lines.push("", 'CATEGORY TREE (name categories exactly; if two share a name use "Parent > Child"):', ...(tree.length ? tree : ["  (none)"]));
+    if (has("organizer")) {
+      const { rules } = await call<{ rules: { keyword: string; categoryId: string }[] }>(app, request, "GET", "/categorization-rules");
+      const catName = new Map(categories.map((c) => [c.id, c.name]));
+      lines.push(
+        "AUTO-CATEGORIZATION RULES (keyword → category):",
+        ...(rules.length ? rules.slice(0, 60).map((r) => `  "${r.keyword}" → ${catName.get(r.categoryId) ?? "?"}`) : ["  (none)"]),
+      );
+    }
+  }
+  if (has("tax")) {
+    const { profile } = await call<{ profile: TaxProfile | null }>(app, request, "GET", "/tax-profile");
+    lines.push(
+      "",
+      "TAX PROFILE:",
+      ...(profile
+        ? [
+            `  ${profile.filingStatus.replace(/_/g, " ")}, ${profile.state}${profile.locality ? ` (${profile.locality})` : ""}, ${profile.dependents} child(ren) under 17`,
+            ...profile.earners.map((e) => `  earner "${e.name}": $${Math.round(e.grossAnnualCents / 100).toLocaleString("en-US")}/yr gross, paid ${e.payFrequency}${e.retirementPct ? `, 401(k) ${e.retirementPct}%` : ""}`),
+          ]
+        : ["  (not set up yet — ask for salary, state and filing status, then use set_tax_profile + set_salary)"]),
+    );
+  }
+  const named = async (agent: AgentId, url: string, key: string, label: string) => {
+    if (!has(agent)) return;
+    const body = await call<Record<string, Array<{ name: string }>>>(app, request, "GET", url);
+    const names = (body[key] ?? []).map((x) => `"${x.name}"`);
+    lines.push(`${label}: ${names.length ? names.slice(0, 40).join(", ") : "(none)"}`);
+  };
+  await named("bills", "/bills", "bills", "BILLS");
+  await named("goals", "/goals", "goals", "SAVINGS GOALS");
+  await named("giving", "/giving", "funds", "GIVING FUNDS");
+  return lines.join("\n");
 }

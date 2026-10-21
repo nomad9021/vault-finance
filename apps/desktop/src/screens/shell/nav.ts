@@ -27,6 +27,7 @@ export type PageId =
   | "income"
   | "subscriptions"
   | "budgets"
+  | "taxes"
   | "bills"
   | "cashflow"
   | "giving"
@@ -127,6 +128,13 @@ export const NAV_GROUPS: NavGroup[] = [
         title: "Budgets",
         // The old standalone "Budget Planner" page is a tab in here now.
         keywords: "budget planner allocate categories monthly limits envelope",
+      },
+      {
+        id: "taxes",
+        label: "Taxes",
+        icon: "scale",
+        title: "Salary & taxes",
+        keywords: "salary gross pay take-home paycheck tax federal state city 401k hsa withholding move compare sankey",
       },
       {
         id: "bills",
