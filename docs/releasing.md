@@ -55,7 +55,9 @@ manually for that version with **latest** checked.
 The same tag push triggers [release-server.yml](../.github/workflows/release-server.yml),
 which builds `docker/Dockerfile.server` and `docker/Dockerfile.control` and
 pushes them to GHCR as `ghcr.io/<owner>/vault-finance-server:<version>` +
-`:latest` (multi-arch). The GHCR packages must be **public** so servers can
+`:latest` (multi-arch: amd64 and arm64 build on their own native runners,
+pushed as `:<version>-amd64` / `:<version>-arm64`, then combined). If the build
+fails or times out, re-run just the failed job. The GHCR packages must be **public** so servers can
 `docker pull` without credentials (Packages → package → Settings → Change
 visibility). Self-hosters then update with `installers/server/update-server.sh`
 (`familyctl.sh update --all` on a multi-family host).

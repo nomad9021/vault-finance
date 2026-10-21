@@ -19,16 +19,29 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE: ${{ github.repository_owner }}/vault-finance-server
+  CONTROL_IMAGE: ${{ github.repository_owner }}/vault-finance-control
 
 jobs:
-  image:
-    runs-on: ubuntu-latest
-    # Normally ~10 min. QEMU can crash mid-step for arm64 and hang instead of
-    # failing (seen on v0.1.7); fail fast so a re-run can be started.
-    timeout-minutes: 45
+  # Each platform builds on its own native runner (GitHub's free arm64 runners
+  # for public repos) instead of arm64 under QEMU, which hung mid-build on
+  # v0.1.7 and v0.1.10. Each pushes a per-arch tag; `publish` then combines
+  # them into the multi-arch :<version> (and :latest) tags.
+  build:
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.channel.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v7
 
@@ -66,7 +79,6 @@ jobs:
           fi
           echo "prerelease=$pre" >> "$GITHUB_OUTPUT"
 
-      - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
@@ -81,33 +93,55 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile.server
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/${{ matrix.arch }}
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ steps.v.outputs.version }}
-            ${{ steps.channel.outputs.prerelease != 'true' && format('{0}/{1}:latest', env.REGISTRY, env.IMAGE) || '' }}
-          cache-from: type=gha,scope=server
-          cache-to: type=gha,mode=max,scope=server
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ steps.v.outputs.version }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=server-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=server-${{ matrix.arch }}
 
       - name: Build and push control-plane image
         uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile.control
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/${{ matrix.arch }}
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/vault-finance-control:${{ steps.v.outputs.version }}
-            ${{ steps.channel.outputs.prerelease != 'true' && format('{0}/{1}/vault-finance-control:latest', env.REGISTRY, github.repository_owner) || '' }}
-          cache-from: type=gha,scope=control
-          cache-to: type=gha,mode=max,scope=control
+          tags: ${{ env.REGISTRY }}/${{ env.CONTROL_IMAGE }}:${{ steps.v.outputs.version }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=control-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=control-${{ matrix.arch }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      PRERELEASE: ${{ needs.build.outputs.prerelease }}
+    steps:
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Combine the per-arch images
+        run: |
+          for image in "$IMAGE" "$CONTROL_IMAGE"; do
+            ref="$REGISTRY/$image"
+            tags=(-t "$ref:$VERSION")
+            [ "$PRERELEASE" = "true" ] || tags+=(-t "$ref:latest")
+            docker buildx imagetools create "${tags[@]}" "$ref:$VERSION-amd64" "$ref:$VERSION-arm64"
+          done
 
       - name: Summary
         run: |
-          echo "Published \`${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ steps.v.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ steps.channel.outputs.prerelease }}" = "true" ]; then
+          echo "Published \`$REGISTRY/$IMAGE:$VERSION\` (amd64 + arm64)" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$PRERELEASE" = "true" ]; then
             echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "Pre-release: \`:latest\` was NOT moved. To run it, set VAULT_VERSION=${{ steps.v.outputs.version }} in docker/.env." >> "$GITHUB_STEP_SUMMARY"
+            echo "Pre-release: \`:latest\` was NOT moved. To run it, set VAULT_VERSION=$VERSION in docker/.env." >> "$GITHUB_STEP_SUMMARY"
           fi
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Servers update with: \`vault-update\` (or \`familyctl.sh update --all\`)." >> "$GITHUB_STEP_SUMMARY"
