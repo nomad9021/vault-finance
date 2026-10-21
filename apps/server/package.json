@@ -22,7 +22,7 @@
     "fastify-plugin": "^6.0.1",
     "jose": "^6.2.12",
     "nodemailer": "^10.1.7",
-    "openai": "^6.10.0",
+    "openai": "^7.38.0",
     "postgres": "^3.4.5",
     "selfsigned": "^5.5.0",
     "zod": "^3.24.1"
