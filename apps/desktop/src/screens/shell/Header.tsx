@@ -72,6 +72,7 @@ export function Header({
           <Avatar
             name={user?.displayName ?? "?"}
             color={user?.avatarColor ?? "var(--color-accent)"}
+            image={user?.avatarImage ?? null}
             size={32}
             title="Account"
             translucent

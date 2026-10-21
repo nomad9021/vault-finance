@@ -2,6 +2,8 @@ export interface AvatarProps {
   name: string;
   /** Hex tint from the user's avatarColor. */
   color: string;
+  /** Profile picture (a data: URL); falls back to the initial on the colour. */
+  image?: string | null;
   size?: number;
   /** Render as a button (header account menu). */
   onClick?: () => void;
@@ -14,8 +16,12 @@ export interface AvatarProps {
 }
 
 /** Initial-bubble avatar, used in the header, login profiles and member lists. */
-export function Avatar({ name, color, size = 40, onClick, title, translucent = false }: AvatarProps) {
-  const initial = (name.trim()[0] ?? "?").toUpperCase();
+export function Avatar({ name, color, image, size = 40, onClick, title, translucent = false }: AvatarProps) {
+  const initial = image ? (
+    <img src={image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "50%", display: "block" }} />
+  ) : (
+    (name.trim()[0] ?? "?").toUpperCase()
+  );
   const style = translucent
     ? {
         width: size,
@@ -31,15 +37,16 @@ export function Avatar({ name, color, size = 40, onClick, title, translucent = f
         fontSize: Math.round(size * 0.4),
       };
   const cls = translucent ? "avatar avatar-glass" : "avatar";
+  const shown = image ? { ...style, overflow: "hidden", padding: 0 } : style;
   if (onClick) {
     return (
-      <button className={cls} style={style} onClick={onClick} aria-label={title ?? name} type="button">
+      <button className={cls} style={shown} onClick={onClick} aria-label={title ?? name} type="button">
         {initial}
       </button>
     );
   }
   return (
-    <span className={cls} style={style} aria-hidden="true">
+    <span className={cls} style={shown} aria-hidden="true">
       {initial}
     </span>
   );

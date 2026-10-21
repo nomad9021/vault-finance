@@ -5,6 +5,8 @@ import { UserRole } from "./common.js";
 export const Member = z.object({
   id: z.string().uuid(),
   displayName: z.string(),
+  avatarColor: z.string().optional(),
+  avatarImage: z.string().nullable().optional(),
   email: z.string(),
   role: UserRole,
   createdAt: z.string().datetime(),

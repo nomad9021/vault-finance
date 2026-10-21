@@ -190,7 +190,7 @@ export function LoginScreen() {
                 font: "inherit",
               }}
             >
-              <Avatar name={p.displayName} color={p.avatarColor} />
+              <Avatar name={p.displayName} color={p.avatarColor} image={p.avatarImage ?? null} />
               <span style={{ fontSize: "var(--text-sm)", fontWeight: 500, color: "var(--color-text)" }}>
                 {p.displayName.split(" ")[0]}
               </span>
