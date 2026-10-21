@@ -176,7 +176,9 @@ export async function runQuery(app: FastifyInstance, request: FastifyRequest, q:
     case "tax_whatif":
     case "tax_compare": {
       const { profile } = await get<{ profile: TaxProfile | null }>("/tax-profile");
-      if (!profile || !profile.earners.length) return "TAX: no tax profile yet. Ask for each earner's salary, the state and filing status, then propose set_tax_profile and set_salary.";
+      if (!profile || !profile.earners.length) {
+        return "TAX: no tax profile is saved yet. If the user already gave a salary and where they live, propose set_tax_profile (state, locality) and set_salary now; otherwise ask for them.";
+      }
       if (q.type === "tax_estimate") return describeEstimate(estimateTaxes(profile), "TAX ESTIMATE (saved profile)").join("\n");
       if (q.type === "tax_compare") {
         const rows = q.states.map((code) => {

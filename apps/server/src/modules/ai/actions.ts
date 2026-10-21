@@ -3,6 +3,7 @@ import {
   describeAiAction,
   UNCATEGORIZED,
   findLocality,
+  LOCALITIES_2026,
   STATES_2026,
   type TaxProfile,
   type AiAction,
@@ -645,8 +646,9 @@ export async function buildActionGuide(app: FastifyInstance, request: FastifyReq
     "Only propose a change when the user asks for it or clearly agrees to one.",
     "To propose a change, put ONE JSON object per block on its own line:",
     '<vault-action>{"type":"create_category","name":"Pets","parent":"Household"}</vault-action>',
-    "Briefly say what you're proposing in plain words too; the app shows each",
-    "change as a card the user approves (or it applies automatically in auto mode).",
+    "ALWAYS write at least one sentence to the user, saying what you're proposing in",
+    "plain words; the app shows each change as a card the user approves (or it",
+    "applies automatically in auto mode).",
     "",
     "=== LOOKING THINGS UP ===",
     "The snapshot is short. To see more before answering or proposing changes,",
@@ -717,7 +719,11 @@ export async function buildActionGuide(app: FastifyInstance, request: FastifyReq
             `  ${profile.filingStatus.replace(/_/g, " ")}, ${profile.state}${profile.locality ? ` (${profile.locality})` : ""}, ${profile.dependents} child(ren) under 17`,
             ...profile.earners.map((e) => `  earner "${e.name}": $${Math.round(e.grossAnnualCents / 100).toLocaleString("en-US")}/yr gross, paid ${e.payFrequency}${e.retirementPct ? `, 401(k) ${e.retirementPct}%` : ""}`),
           ]
-        : ["  (not set up yet — ask for salary, state and filing status, then use set_tax_profile + set_salary)"]),
+        : ["  (not set up yet — set it up from what the user said, or ask for salary and where they live)"]),
+      "LOCAL TAX ids (state: id = place):",
+      ...[...new Set(LOCALITIES_2026.map((l) => l.state))].map(
+        (st) => `  ${st}: ${LOCALITIES_2026.filter((l) => l.state === st).map((l) => `${l.id} = ${l.name}`).join("; ")}`,
+      ),
     );
   }
   const named = async (agent: AgentId, url: string, key: string, label: string) => {

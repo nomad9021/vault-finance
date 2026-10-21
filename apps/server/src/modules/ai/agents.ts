@@ -1,3 +1,5 @@
+import { LOCALITIES_2026 } from "@vault/shared";
+
 /**
  * The assistant's specialist agents. Each one is a set of look-ups and
  * changes for one part of the app, taught to the model in plain text, so
@@ -25,6 +27,11 @@ export interface AgentDef {
 
 const STATE_NAMES =
   "alabama|alaska|arizona|arkansas|california|colorado|connecticut|delaware|florida|georgia|hawaii|idaho|illinois|indiana|iowa|kansas|kentucky|louisiana|maine|maryland|massachusetts|michigan|minnesota|mississippi|missouri|montana|nebraska|nevada|new hampshire|new jersey|new mexico|new york|north carolina|north dakota|ohio|oklahoma|oregon|pennsylvania|rhode island|south carolina|south dakota|tennessee|texas|utah|vermont|virginia|washington|west virginia|wisconsin|wyoming|district of columbia|nyc|philly|philadelphia|detroit|portland|baltimore";
+
+// Every city/county the tax engine knows (Grand Rapids, Montgomery County…).
+const PLACE_NAMES = LOCALITIES_2026.map((l) => l.name.toLowerCase().replace(/ county.*$| \(.*\)$/, "").replace(/[^a-z' ]/g, "").trim())
+  .filter((n) => n.length > 3)
+  .join("|");
 
 export const AGENTS: AgentDef[] = [
   {
@@ -57,19 +64,23 @@ export const AGENTS: AgentDef[] = [
   {
     id: "budget",
     name: "Budget",
-    keywords: /budget|spend|overspen|limit|allocat|planned income|plan my|save money|afford|envelope/i,
+    keywords: /budg|buj|budj|bugdet|sankey|spend|overspen|limit|allocat|planned income|plan my|save money|afford|envelope/i,
     actions: [
       "  set_budget {category, amount: monthly dollars}   remove_budget {category}",
       "  set_planned_income {amount: monthly dollars}   (skip if the tax profile keeps it in sync)",
     ],
     queries: ["  budgets {}   (this month's budgets vs. spending)", "  category_totals {months?: 1-24}"],
-    tips: ["Base budgets on the last few months' category totals, rounded; leave room for savings."],
+    tips: [
+      "Base budgets on the last few months' category totals, rounded; leave room for savings.",
+      "\"Budget Sankey like the actual one\" = set_budget for each spending category from its",
+      "category_totals monthly average (and set_planned_income if there's no tax profile).",
+    ],
   },
   {
     id: "tax",
     name: "Tax & salary",
     keywords: new RegExp(
-      `tax|salary|salaries|gross|take.?home|paycheck|pay stub|raise|wage|401\\s?k|403\\s?b|hsa|withh?old|bracket|filing|irs|move to|moving|relocat|cost of living|\\bstate\\b|city|county|w-?2|make in|earn in|${STATE_NAMES}`,
+      `tax|salary|salaries|gross|take.?home|paycheck|pay stub|raise|wage|401\\s?k|403\\s?b|hsa|withh?old|bracket|filing|irs|move to|moving|relocat|cost of living|\\bstate\\b|city|county|w-?2|make in|earn in|${STATE_NAMES}|${PLACE_NAMES}`,
       "i",
     ),
     actions: [
@@ -90,7 +101,12 @@ export const AGENTS: AgentDef[] = [
     tips: [
       "Estimates cover 2026 federal tax, Social Security/Medicare, every state and main local taxes;",
       "say they're estimates. Use look-ups for numbers — never work tax out yourself.",
-      "The Taxes page shows a tax Sankey (gross pay → taxes → take-home) from the profile.",
+      "Taxes on the budget Sankey come from the tax profile, NOT from a category: once a profile",
+      "exists the budget planner starts from gross pay with federal, state, local and FICA",
+      "branches before take-home, and the Taxes page has its own tax Sankey. Never create a",
+      "\"Taxes\" category for this. If the user gives a salary and a place, propose",
+      "set_tax_profile (state, locality id from tax_places, filingStatus if known, else single)",
+      "and set_salary straight away — earner name \"Me\" unless they say otherwise.",
     ],
   },
   {

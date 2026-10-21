@@ -309,3 +309,26 @@ describe("specialist agents", () => {
     expect(out.find((l) => "actions" in l)).toBeUndefined();
   });
 });
+
+describe("never an empty reply", () => {
+  it("explains when every proposed change is dropped", async () => {
+    replies = [
+      '<vault-action>{"type":"create_category","name":"Taxes","parent":"Income"}</vault-action>',
+      '<vault-action>{"type":"create_category","name":"Taxes","parent":"Nowhere"}</vault-action>',
+    ];
+    const out = lines((await app.inject({ method: "POST", url: "/api/v1/ai/chat", headers: auth, payload: { message: "add taxes" } })).payload);
+    const text = out.filter((l) => "token" in l).map((l) => l["token"]).join("");
+    expect(text).toContain("I couldn't make those changes:");
+    expect(text).toContain('no category called "Income"');
+    expect(out.find((l) => "actions" in l)).toBeUndefined();
+  });
+
+  it("introduces the cards when the model wrote only change blocks", async () => {
+    replies = ['<vault-action>{"type":"set_budget","category":"Groceries","amount":500}</vault-action>'];
+    const out = lines((await app.inject({ method: "POST", url: "/api/v1/ai/chat", headers: auth, payload: { message: "budget groceries" } })).payload);
+    const text = out.filter((l) => "token" in l).map((l) => l["token"]).join("");
+    expect(text).toContain("Here's what I'd change (1 change):");
+    const convo = out.find((l) => "done" in l)!["conversationId"] as string;
+    expect((await api("GET", `/ai/conversations/${convo}`)).messages.at(-1).content).toBe("Here's what I'd change (1 change):");
+  });
+});
