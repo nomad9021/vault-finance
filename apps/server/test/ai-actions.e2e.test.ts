@@ -176,7 +176,7 @@ describe("AI-proposed changes", () => {
     expect(await categoryNames()).toContain("Pets");
   });
 
-  it("auto mode applies server changes at once, records failures, leaves app-side ones pending", async () => {
+  it("auto mode applies server changes at once, drops ones the rule check rejects, leaves app-side ones pending", async () => {
     nextReply = [
       '<vault-action>{"type":"create_category","name":"Vet","parent":"Pets"}</vault-action>',
       '<vault-action>{"type":"set_budget","category":"Vet","amount":75}</vault-action>',
@@ -187,9 +187,10 @@ describe("AI-proposed changes", () => {
     ].join("\n");
     const out = await chat("set up vet tracking", { autoApply: true });
     const actions = out.find((l) => "actions" in l)!["actions"] as Array<Record<string, unknown>>;
-    expect(actions.map((a) => a["status"])).toEqual(["applied", "applied", "applied", "failed", "pending"]);
-    expect(actions[3]!["error"]).toContain('no category called "Nope"');
-    expect(actions[4]).toMatchObject({ client: true });
+    // The rename of a missing category never becomes a card (the mock model
+    // repeats itself when asked to fix it, so nothing is added twice either).
+    expect(actions.map((a) => a["status"])).toEqual(["applied", "applied", "applied", "pending"]);
+    expect(actions[3]).toMatchObject({ client: true });
 
     const budgets = (await app.inject({ method: "GET", url: "/api/v1/budgets", headers: auth })).json();
     expect(budgets.budgets.some((b: { amountCents: number }) => b.amountCents === 7_500)).toBe(true);
@@ -197,7 +198,7 @@ describe("AI-proposed changes", () => {
     // The app reports how its own change went.
     const reported = await app.inject({
       method: "POST",
-      url: `/api/v1/ai/actions/${actions[4]!["id"]}/result`,
+      url: `/api/v1/ai/actions/${actions[3]!["id"]}/result`,
       headers: auth,
       payload: { status: "applied" },
     });
