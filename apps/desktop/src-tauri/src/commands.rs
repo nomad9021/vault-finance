@@ -248,6 +248,37 @@ pub fn open_external(url: String) -> Result<(), CommandError> {
         .map_err(|e| CommandError::Other(format!("couldn't open the browser: {e}")))
 }
 
+/// A launcher that manages this install itself (e.g. an extracted AppImage,
+/// which Tauri's updater can't replace) registers via `VF_EXTERNAL_UPDATER`:
+/// an absolute path to an executable that understands `update-and-restart`.
+/// Only the launching process can set it, never the webview.
+fn external_updater() -> Option<std::path::PathBuf> {
+    if !cfg!(target_os = "linux") || std::env::var_os("APPIMAGE").is_some() {
+        return None;
+    }
+    let path = std::path::PathBuf::from(std::env::var_os("VF_EXTERNAL_UPDATER")?);
+    (path.is_absolute() && path.is_file()).then_some(path)
+}
+
+#[tauri::command]
+pub fn external_updater_available() -> bool {
+    external_updater().is_some()
+}
+
+/// Hand the update to the external updater and quit: it waits for this
+/// process to exit, installs the verified release, then starts the app again.
+#[tauri::command]
+pub fn run_external_updater(app: tauri::AppHandle) -> Result<(), CommandError> {
+    let path = external_updater()
+        .ok_or_else(|| CommandError::Other("no external updater registered".into()))?;
+    std::process::Command::new(&path)
+        .arg("update-and-restart")
+        .spawn()
+        .map_err(|e| CommandError::Other(format!("couldn't start the updater: {e}")))?;
+    app.exit(0);
+    Ok(())
+}
+
 /// Reveal the pre-declared, normally-hidden admin console window. Its webview
 /// is a separate capability group (`admin.json`) so a fault in the main window
 /// can't reach it and vice-versa.

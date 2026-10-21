@@ -119,6 +119,12 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
     },
     async installUpdateAndRestart(onProgress?: (fraction: number) => void) {
       if (!pendingUpdate) throw new Error("no update pending — check first");
+      // Installs Tauri's updater can't replace (extracted AppImage) hand off
+      // to the launcher's updater, which quits us, installs, and reopens.
+      if (await invoke<boolean>("external_updater_available")) {
+        await invoke("run_external_updater");
+        return;
+      }
       let downloaded = 0;
       let total: number | undefined;
       await pendingUpdate.downloadAndInstall((event) => {
