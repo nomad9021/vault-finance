@@ -288,10 +288,12 @@ export type ChatRequest = z.infer<typeof ChatRequest>;
  *   { actions: [...] }                 — proposed (or auto-applied) changes, before done
  *   { remembered: [...] }              — notes added to the assistant's memory
  *   { thinking: true }                 — the model is reasoning before it answers
+ *   { status }                         — what the assistant is looking up ("Checking transactions…")
  */
 export const ChatStreamLine = z.union([
   z.object({ token: z.string() }),
   z.object({ thinking: z.literal(true) }),
+  z.object({ status: z.string() }),
   z.object({ actions: z.array(AiActionRecord) }),
   z.object({ remembered: z.array(z.string()) }),
   z.object({ done: z.literal(true), conversationId: z.string().uuid() }),

@@ -1,6 +1,7 @@
 import {
   CreateCategoryRequest,
   MoveCategoryRequest,
+  ReorderCategoriesRequest,
   UpdateCategoryRequest,
   type Category as ApiCategory,
 } from "@vault/shared";
@@ -98,6 +99,36 @@ export default async function categoryRoutes(app: FastifyInstance) {
       });
     }
 
+    const rows = await app.db.query.categories.findMany({
+      orderBy: (t, { asc }) => [asc(t.sortOrder), asc(t.name)],
+    });
+    return { categories: rows.map(toApi) };
+  });
+
+  // Put several siblings in a given order at once (the assistant's
+  // reorder_categories). They must share a parent and kind; siblings not
+  // listed keep their relative order after the listed ones.
+  app.post("/categories/reorder", async (request) => {
+    const { orderedIds } = ReorderCategoriesRequest.parse(request.body);
+    const listed = await app.db.query.categories.findMany({
+      where: (t, { inArray }) => inArray(t.id, orderedIds),
+    });
+    if (listed.length !== new Set(orderedIds).size) throw notFound("Category");
+    const first = listed[0]!;
+    if (listed.some((c) => c.parentCategoryId !== first.parentCategoryId || c.kind !== first.kind)) {
+      throw new AppError("VALIDATION_ERROR", 400, "Only categories with the same parent can be put in order together.");
+    }
+    const siblings = await app.db.query.categories.findMany({
+      where: sameSiblings(first.parentCategoryId, first.kind),
+      orderBy: (t, { asc }) => [asc(t.sortOrder), asc(t.name)],
+    });
+    const rest = siblings.filter((s) => !orderedIds.includes(s.id)).map((s) => s.id);
+    const finalOrder = [...new Set(orderedIds)].concat(rest);
+    await app.db.transaction(async (tx) => {
+      for (const [i, id] of finalOrder.entries()) {
+        await tx.update(categories).set({ sortOrder: i }).where(eq(categories.id, id));
+      }
+    });
     const rows = await app.db.query.categories.findMany({
       orderBy: (t, { asc }) => [asc(t.sortOrder), asc(t.name)],
     });

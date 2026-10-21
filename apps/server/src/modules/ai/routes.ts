@@ -6,6 +6,8 @@ import {
   CLIENT_ACTION_TYPES,
   CLOUD_PROVIDERS,
   extractAssistantBlocks,
+  extractQueryBlocks,
+  stripAssistantBlocks,
   UpdateAiSettingsRequest,
   type AiTestResponse,
   type ChatStreamLine,
@@ -22,11 +24,14 @@ import type { AppConfig } from "../../config.js";
 import { buildFinancialContext } from "./context.js";
 import { createAiHost, ProxmoxError } from "./host.js";
 import { configForFeature } from "./model-manager.js";
+import { answerQueries, describeQueries } from "./queries.js";
 import { describeAiError, getProvider, isConfigured, type ChatMessage } from "./providers/index.js";
 import { resolveSettings, statusFor } from "./settings.js";
 import { decryptSecret, encryptSecret } from "../../secret-crypto.js";
 
 const HISTORY_LIMIT = 20;
+/** Model calls per chat message: the answer plus up to 3 rounds of look-ups. */
+const AGENT_MAX_STEPS = 4;
 
 export default async function aiRoutes(
   app: FastifyInstance,
@@ -387,21 +392,40 @@ export default async function aiRoutes(
     void (async () => {
       let assistantText = "";
       try {
+        // Agent loop: a reply may ask for look-ups (<vault-query>); the
+        // server answers them and the model continues, up to MAX_STEPS
+        // rounds. Plain text both ways, so it works with every model.
         let thinking = false;
-        await provider.streamChat(
-          aiConfig,
-          messages,
-          (token) => {
-            assistantText += token;
-            writeLine({ token });
-          },
-          undefined,
-          () => {
-            if (thinking || assistantText) return;
-            thinking = true;
-            writeLine({ thinking: true });
-          },
-        );
+        let convo = messages;
+        for (let step = 1; ; step++) {
+          let stepText = "";
+          await provider.streamChat(
+            aiConfig,
+            convo,
+            (token) => {
+              stepText += token;
+              assistantText += token;
+              writeLine({ token });
+            },
+            undefined,
+            () => {
+              if (thinking || assistantText) return;
+              thinking = true;
+              writeLine({ thinking: true });
+            },
+          );
+          const { queries, invalid } = extractQueryBlocks(stepText);
+          if ((!queries.length && !invalid.length) || step >= AGENT_MAX_STEPS) break;
+          writeLine({ status: describeQueries(queries) });
+          const results = await answerQueries(app, queries, invalid, AGENT_MAX_STEPS - step - 1);
+          convo = [...convo, { role: "assistant", content: stepText }, { role: "user", content: results }];
+          // Keep the visible parts of each step apart.
+          if (stripAssistantBlocks(stepText)) {
+            assistantText += "\n\n";
+            writeLine({ token: "\n\n" });
+          }
+          thinking = false;
+        }
         const blocks = extractAssistantBlocks(assistantText);
         if (blocks.invalid.length) request.log.info({ count: blocks.invalid.length }, "ignored malformed AI change blocks");
         const [saved] = await app.db

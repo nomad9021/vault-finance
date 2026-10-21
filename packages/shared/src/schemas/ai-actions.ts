@@ -7,13 +7,18 @@ import { z } from "zod";
  * later still lands on the right row.
  *
  * Deliberately absent: anything security-related (passwords, 2FA, devices,
- * sessions, members), bank links, the AI provider itself, and transactions.
+ * sessions, members), bank links, the AI provider itself, and transaction
+ * amounts, dates or deletion — for transactions it can only change the
+ * category, in bulk by merchant.
  */
 
 const Name = z.string().trim().min(1).max(60);
 const Color = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 /** Whole or decimal dollars, as the model writes them. */
 const Dollars = z.number().nonnegative().max(10_000_000);
+const Day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+/** "Uncategorized" is accepted wherever a source category is named. */
+export const UNCATEGORIZED = "Uncategorized";
 
 export const AiAction = z.discriminatedUnion("type", [
   z.object({
@@ -34,6 +39,23 @@ export const AiAction = z.discriminatedUnion("type", [
   z.object({ type: z.literal("remove_budget"), category: Name }),
   z.object({ type: z.literal("set_planned_income"), amount: Dollars }),
   z.object({ type: z.literal("rename_household"), name: z.string().trim().min(1).max(80) }),
+  /** Move every transaction whose merchant contains `merchant` into `category`. */
+  z.object({
+    type: z.literal("recategorize"),
+    merchant: z.string().trim().min(2).max(100),
+    category: Name,
+    /** Only transactions currently in this category ("Uncategorized" for none). */
+    from: Name.optional(),
+    since: Day.optional(),
+  }),
+  /** Put sibling categories in this order (it's the order the trees and the Sankey use). */
+  z.object({
+    type: z.literal("reorder_categories"),
+    parent: Name.nullable(),
+    order: z.array(Name).min(2).max(60),
+  }),
+  /** Run the auto-categorization rules (and AI, if on) over uncategorized transactions. */
+  z.object({ type: z.literal("autocategorize") }),
   // Applied by the app itself (they're per-device preferences).
   z.object({ type: z.literal("set_theme"), theme: z.string().min(1).max(20) }),
   z.object({
@@ -114,6 +136,12 @@ export function describeAiAction(a: AiAction): string {
       return `Set planned monthly income to $${a.amount.toLocaleString("en-US")}`;
     case "rename_household":
       return `Rename the household to "${a.name}"`;
+    case "recategorize":
+      return `Move ${a.from ? `"${a.from}" ` : ""}transactions from "${a.merchant}"${a.since ? ` since ${a.since}` : ""} to "${a.category}"`;
+    case "reorder_categories":
+      return `Order ${a.parent ? `the categories under "${a.parent}"` : "the top-level categories"}: ${a.order.join(", ")}`;
+    case "autocategorize":
+      return "Auto-categorize uncategorized transactions";
     case "set_theme":
       return `Switch the theme to ${a.theme}`;
     case "set_review_prefs": {
@@ -133,6 +161,47 @@ export function describeAiAction(a: AiAction): string {
 
 const ACTION_RE = /<vault-action>([\s\S]*?)<\/vault-action>/g;
 const REMEMBER_RE = /<vault-remember>([\s\S]*?)<\/vault-remember>/g;
+const QUERY_RE = /<vault-query>([\s\S]*?)<\/vault-query>/g;
+
+/**
+ * Look-ups the assistant asks the server for mid-answer (the agent loop):
+ * plain text, so every model can use them, with or without native tool
+ * calling. Read-only by design — changes still go through <vault-action>.
+ */
+export const AiQuery = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("transactions"),
+    merchant: z.string().trim().min(1).max(100).optional(),
+    category: Name.optional(),
+    from: Day.optional(),
+    to: Day.optional(),
+    limit: z.number().int().min(1).max(100).optional(),
+  }),
+  z.object({
+    type: z.literal("merchants"),
+    months: z.number().int().min(1).max(24).optional(),
+    uncategorizedOnly: z.boolean().optional(),
+  }),
+  z.object({ type: z.literal("category_totals"), months: z.number().int().min(1).max(24).optional() }),
+]);
+export type AiQuery = z.infer<typeof AiQuery>;
+
+/** The look-ups in a reply; malformed ones come back as raw text to report to the model. */
+export function extractQueryBlocks(text: string): { queries: AiQuery[]; invalid: string[] } {
+  const queries: AiQuery[] = [];
+  const invalid: string[] = [];
+  for (const m of text.matchAll(QUERY_RE)) {
+    const raw = (m[1] ?? "").trim();
+    try {
+      const parsed = AiQuery.safeParse(JSON.parse(raw));
+      if (parsed.success) queries.push(parsed.data);
+      else invalid.push(raw);
+    } catch {
+      invalid.push(raw);
+    }
+  }
+  return { queries, invalid };
+}
 
 /**
  * Pull action and memory blocks out of an assistant reply. Returns the
@@ -173,7 +242,8 @@ export function stripAssistantBlocks(text: string): string {
   return text
     .replace(ACTION_RE, "")
     .replace(REMEMBER_RE, "")
-    .replace(/<vault-(action|remember)>[\s\S]*$/, "")
+    .replace(QUERY_RE, "")
+    .replace(/<vault-(action|remember|query)>[\s\S]*$/, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }

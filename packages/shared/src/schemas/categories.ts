@@ -35,6 +35,12 @@ export const MoveCategoryRequest = z.object({
 });
 export type MoveCategoryRequest = z.infer<typeof MoveCategoryRequest>;
 
+/** Set the order of some sibling categories (first = top); others keep their place after them. */
+export const ReorderCategoriesRequest = z.object({
+  orderedIds: z.array(z.string().uuid()).min(1).max(200),
+});
+export type ReorderCategoriesRequest = z.infer<typeof ReorderCategoriesRequest>;
+
 export const CategoryListResponse = z.object({
   categories: z.array(Category),
 });

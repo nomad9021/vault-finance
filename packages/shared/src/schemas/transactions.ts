@@ -36,6 +36,19 @@ export const UpdateTransactionRequest = CreateTransactionRequest.omit({
 }).partial();
 export type UpdateTransactionRequest = z.infer<typeof UpdateTransactionRequest>;
 
+/** Move every transaction whose merchant contains `merchant` to one category. */
+export const RecategorizeRequest = z.object({
+  merchant: z.string().trim().min(2).max(100),
+  /** Target category; null makes them uncategorized. */
+  categoryId: z.string().uuid().nullable(),
+  /** Only those currently in this category ("none" = uncategorized). */
+  fromCategoryId: z.union([z.string().uuid(), z.literal("none")]).optional(),
+  since: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+export type RecategorizeRequest = z.infer<typeof RecategorizeRequest>;
+export const RecategorizeResponse = z.object({ updated: z.number().int() });
+export type RecategorizeResponse = z.infer<typeof RecategorizeResponse>;
+
 export const TransactionListQuery = z.object({
   accountId: z.string().uuid().optional(),
   /** A category id, or the literal "none" for uncategorized transactions. */
