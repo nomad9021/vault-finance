@@ -162,6 +162,13 @@
       "when": 1785201600000,
       "tag": "0022_profile_pictures_and_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1785288000000,
+      "tag": "0023_pre_income_items",
+      "breakpoints": true
     }
   ]
 }

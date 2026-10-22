@@ -1,6 +1,7 @@
 import {
   formatCentsWhole,
   type Goal,
+  type PreIncome,
   type SankeyResponse,
   type Transaction,
   type UserPreferences,
@@ -23,8 +24,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { moveWidget, placeWidget, resolveLayout, SPANS, type ResolvedWidget, type Span } from "../../lib/dashboardLayout.js";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
-import { buildBudgetSankey, withGrossBranch, withTaxBranch } from "./budgetSankey.js";
+import { buildBudgetSankey, preIncomeBranches, withGrossBranch, withTaxBranch } from "./budgetSankey.js";
 import type { Navigate, PageId } from "./nav.js";
+import { PreIncomeDialog } from "./PreIncomeDialog.js";
 import { SankeyCard } from "./SankeyCard.js";
 import { TrendChart, project } from "./TrendChart.js";
 
@@ -149,9 +151,15 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
     setPrefs((p) => ({ ...(p ?? {}), dashboard }));
     void client.savePreferences({ dashboard }).catch(() => {});
   };
-  // Tax add-on: with a tax profile, both diagrams can start from gross pay.
+  // Before income: the tax profile's estimate and/or the user's own taxes and
+  // deductions let both diagrams start from gross pay.
   const { data: taxData } = useData(() => client.taxProfile(), [client]);
   const taxEstimate = taxData?.estimate ?? null;
+  const { data: preIncome, reload: reloadPreIncome } = useData<PreIncome>(
+    () => client.preIncome().catch(() => ({ items: [], useEstimate: true })),
+    [client],
+  );
+  const [editingPreIncome, setEditingPreIncome] = useState(false);
   const [fromGross, setFromGross] = useState(loadFromGross);
   const toggleGross = (on: boolean) => {
     setFromGross(on);
@@ -206,9 +214,10 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
     categories.filter((c) => c.kind === "expense"),
     new Map((budgetData?.budgets ?? []).map((b) => [b.categoryId, b.amountCents])),
   );
-  const gross = !!taxEstimate && fromGross;
-  const planSankey = { ...planBase, ...(gross && plannedIncome > 0 ? withTaxBranch(planBase, taxEstimate) : planBase) };
-  const actualSankey = sankeyData ? (gross ? withGrossBranch(sankeyData, taxEstimate) : sankeyData) : null;
+  const branches = preIncomeBranches(taxEstimate, preIncome);
+  const gross = fromGross && branches.length > 0;
+  const planSankey = { ...planBase, ...(gross && plannedIncome > 0 ? withTaxBranch(planBase, branches) : planBase) };
+  const actualSankey = sankeyData ? (gross ? withGrossBranch(sankeyData, branches) : sankeyData) : null;
   const hasPlan = plannedIncome > 0 || planSankey.allocated > 0;
 
   // Don't offer a view there's no data for — and fall back rather than render
@@ -283,13 +292,16 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
               )}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              {taxEstimate && (
-                <label className="radio" style={{ fontSize: "var(--text-sm)" }} title="Show estimated taxes and pre-tax savings before income (from Salary & taxes)">
+              {branches.length > 0 && (
+                <label className="radio" style={{ fontSize: "var(--text-sm)" }} title="Show taxes and deductions coming off gross pay before income">
                   <input type="checkbox" checked={fromGross} onChange={(e) => toggleGross(e.target.checked)} />
                   <span className="dot" style={{ borderRadius: "var(--radius-sm)" }} />
                   From gross pay
                 </label>
               )}
+              <Button variant="ghost" size="sm" icon="edit" disabled={!preIncome} onClick={() => setEditingPreIncome(true)}>
+                Before income
+              </Button>
               <Segmented
                 options={availableViews}
                 value={effectiveView}
@@ -414,6 +426,18 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
             </div>
           ))}
       </div>
+      {editingPreIncome && preIncome && (
+        <PreIncomeDialog
+          value={preIncome}
+          hasEstimate={!!taxEstimate}
+          onClose={() => setEditingPreIncome(false)}
+          onSaved={() => {
+            setEditingPreIncome(false);
+            toggleGross(true);
+            reloadPreIncome();
+          }}
+        />
+      )}
     </div>
   );
 }

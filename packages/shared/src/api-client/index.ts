@@ -59,6 +59,7 @@ import {
   Budget,
   BudgetListResponse,
   BudgetPlan,
+  PreIncome,
   type CreateBudgetRequest,
   type UpdateBudgetPlanRequest,
   type UpdateBudgetRequest,
@@ -984,5 +985,11 @@ export class ApiClient {
   }
   updateBudgetPlan(body: UpdateBudgetPlanRequest) {
     return this.request(BudgetPlan, "PUT", "/budget-plan", body);
+  }
+  preIncome() {
+    return this.request(PreIncome, "GET", "/pre-income");
+  }
+  savePreIncome(body: PreIncome) {
+    return this.request(PreIncome, "PUT", "/pre-income", body);
   }
 }

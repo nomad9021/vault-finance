@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   CLIENT_ACTION_TYPES,
   describeAiAction,
@@ -5,6 +6,7 @@ import {
   findLocality,
   LOCALITIES_2026,
   STATES_2026,
+  type PreIncome,
   type TaxProfile,
   type AiAction,
   type AiActionRecord,
@@ -13,7 +15,7 @@ import {
 import { eq } from "drizzle-orm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { aiActions } from "../../db/schema.js";
-import { AGENTS, type AgentId } from "./agents.js";
+import { AGENTS, STYLE_AND_LIMITS, type AgentId } from "./agents.js";
 
 /**
  * Carrying out what the assistant proposes. Every server-side change goes
@@ -445,6 +447,25 @@ export async function applyAction(app: FastifyInstance, request: FastifyRequest,
     }
 
     // ── debt ──
+    case "set_pre_income_item":
+    case "remove_pre_income_item":
+    case "set_pre_income_estimate": {
+      const pre = await call<PreIncome>(app, request, "GET", "/pre-income");
+      const same = (n: string) => n.trim().toLowerCase() === ("name" in a ? a.name.trim().toLowerCase() : "");
+      let { items, useEstimate } = pre;
+      if (a.type === "set_pre_income_estimate") useEstimate = a.use;
+      else if (a.type === "remove_pre_income_item") {
+        if (!items.some((i) => same(i.name))) throw new ActionError(`There's no before-income item called "${a.name}".`);
+        items = items.filter((i) => !same(i.name));
+      } else {
+        const existing = items.find((i) => same(i.name));
+        items = existing
+          ? items.map((i) => (i === existing ? { ...i, monthlyCents: cents(a.amount), kind: a.kind ?? i.kind } : i))
+          : [...items, { id: randomUUID(), name: a.name, kind: a.kind ?? "tax", monthlyCents: cents(a.amount) }];
+      }
+      await call(app, request, "PUT", "/pre-income", { items, useEstimate });
+      return;
+    }
     case "set_debt_plan": {
       const plan = await call<Record<string, unknown>>(app, request, "GET", "/debt-plan");
       await call(app, request, "PUT", "/debt-plan", {
@@ -476,6 +497,7 @@ export async function loadCheckWorld(app: FastifyInstance, request: FastifyReque
     call<{ profile: TaxProfile | null }>(app, request, "GET", "/tax-profile"),
     call<{ accounts: Array<{ accountName: string; buckets: Array<{ name: string }> }> }>(app, request, "GET", "/buckets"),
   ]);
+  const preIncome = await call<PreIncome>(app, request, "GET", "/pre-income");
   return {
     categories,
     bills: bills.map((b) => b.name),
@@ -485,6 +507,7 @@ export async function loadCheckWorld(app: FastifyInstance, request: FastifyReque
     bucketAccounts: bucketAccounts.map((x) => x.accountName),
     taxState: profile?.state ?? null,
     earners: profile?.earners.map((e) => e.name) ?? [],
+    preIncome: preIncome.items.map((i) => i.name),
   };
 }
 
@@ -499,6 +522,7 @@ export interface CheckWorld {
   /** The saved tax profile's state and earner names, if there is one. */
   taxState?: string | null;
   earners?: string[];
+  preIncome?: string[];
 }
 
 export function checkActions(worldOrCategories: CheckWorld | Category[], actions: AiAction[]): Array<string | null> {
@@ -511,6 +535,7 @@ export function checkActions(worldOrCategories: CheckWorld | Category[], actions
   const earners = lower(world.earners);
   const bucketNames = lower(world.buckets);
   const bucketAccounts = lower(world.bucketAccounts);
+  const preIncome = lower(world.preIncome);
   let taxState = world.taxState ?? null;
   const named = (set: Set<string>, ref: string, what: string) =>
     set.has(ref.trim().toLowerCase()) ? null : `There's no ${what} called "${ref}".`;
@@ -678,6 +703,15 @@ export function checkActions(worldOrCategories: CheckWorld | Category[], actions
           if (!err) funds.delete(a.fund.toLowerCase());
           return err;
         }
+        case "set_pre_income_item":
+          if (a.amount <= 0) return `Give "${a.name}" a monthly amount above zero, or use remove_pre_income_item.`;
+          preIncome.add(a.name.trim().toLowerCase());
+          return null;
+        case "remove_pre_income_item": {
+          const err = named(preIncome, a.name, "before-income item");
+          if (!err) preIncome.delete(a.name.trim().toLowerCase());
+          return err;
+        }
         default:
           return null;
       }
@@ -708,19 +742,19 @@ export async function buildActionGuide(app: FastifyInstance, request: FastifyReq
 
   const lines: string[] = [
     "",
+    ...STYLE_AND_LIMITS,
+    "",
     "=== CHANGING THINGS ===",
     "You have no function or tool calls: <vault-action> and <vault-query> are plain",
     "text tags you write in your reply.",
     `Specialist agents active for this message: ${agents.map((a) => a.name).join(", ")}.`,
     ...(others.length ? [`(Also available if the user asks: ${others.join(", ")}.)`] : []),
-    "You can NOT change security settings, members, bank links, AI settings, or",
-    "transaction amounts/dates — say so if asked.",
     "Only propose a change when the user asks for it or clearly agrees to one.",
     "To propose a change, put ONE JSON object per block on its own line:",
     '<vault-action>{"type":"set_budget","category":"Groceries","amount":400}</vault-action>',
-    "ALWAYS write at least one sentence to the user, saying what you're proposing in",
-    "plain words; the app shows each change as a card the user approves (or it",
-    "applies automatically in auto mode).",
+    "ALWAYS write at least one sentence to the user stating what you're proposing;",
+    "the app shows each change as a card the user approves (or it applies",
+    "automatically in auto mode).",
     "",
     "=== LOOKING THINGS UP ===",
     "The snapshot is short. To see more before answering or proposing changes,",
@@ -800,6 +834,13 @@ export async function buildActionGuide(app: FastifyInstance, request: FastifyReq
       ...[...new Set(LOCALITIES_2026.map((l) => l.state))].map(
         (st) => `  ${st}: ${LOCALITIES_2026.filter((l) => l.state === st).map((l) => `${l.id} = ${l.name}`).join("; ")}`,
       ),
+    );
+  }
+  if (has("tax")) {
+    const pre = await call<PreIncome>(app, request, "GET", "/pre-income");
+    lines.push(
+      `BEFORE-INCOME ITEMS (estimated taxes ${pre.useEstimate ? "also shown" : "turned off"}):`,
+      ...(pre.items.length ? pre.items.map((i) => `  "${i.name}" | ${i.kind} | $${(i.monthlyCents / 100).toFixed(2)}/mo`) : ["  (none)"]),
     );
   }
   const named = async (agent: AgentId, url: string, key: string, label: string) => {

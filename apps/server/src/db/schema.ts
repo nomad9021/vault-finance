@@ -1,4 +1,4 @@
-import type { TaxProfile } from "@vault/shared";
+import type { PreIncome, TaxProfile } from "@vault/shared";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -451,6 +451,8 @@ export const debtPlan = pgTable("debt_plan", {
 export const budgetPlan = pgTable("budget_plan", {
   id: integer("id").primaryKey().default(1),
   plannedIncomeCents: bigint("planned_income_cents", { mode: "number" }).notNull().default(0),
+  // Taxes and deductions drawn before income on the Sankeys (PreIncome).
+  preIncome: jsonb("pre_income").$type<PreIncome>().notNull().default({ items: [], useEstimate: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

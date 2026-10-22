@@ -52,3 +52,28 @@ export type BudgetPlan = z.infer<typeof BudgetPlan>;
 
 export const UpdateBudgetPlanRequest = BudgetPlan;
 export type UpdateBudgetPlanRequest = z.infer<typeof UpdateBudgetPlanRequest>;
+
+/**
+ * What comes out of pay before it reaches the household's income: taxes,
+ * pre-tax savings and paycheck deductions the user enters themselves (from a
+ * pay stub). Both Sankeys draw them before income, beside — or instead of —
+ * the tax profile's estimate.
+ */
+export const PreIncomeKind = z.enum(["tax", "pretax", "deduction"]);
+export type PreIncomeKind = z.infer<typeof PreIncomeKind>;
+
+export const PreIncomeItem = z.object({
+  id: z.string().min(1).max(40),
+  name: z.string().trim().min(1).max(60),
+  kind: PreIncomeKind,
+  monthlyCents: z.number().int().min(0).max(100_000_000_00),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullish(),
+});
+export type PreIncomeItem = z.infer<typeof PreIncomeItem>;
+
+export const PreIncome = z.object({
+  items: z.array(PreIncomeItem).max(30),
+  /** Also draw the tax profile's estimated taxes (off when the items are the real figures). */
+  useEstimate: z.boolean(),
+});
+export type PreIncome = z.infer<typeof PreIncome>;

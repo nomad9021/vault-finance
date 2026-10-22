@@ -159,6 +159,18 @@ export const AiAction = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("delete_giving_fund"), fund: Name }),
 
+  // ── Before income (Sankey): taxes and deductions taken out of pay ──
+  /** Add a before-income item, or change the one with this name. */
+  z.object({
+    type: z.literal("set_pre_income_item"),
+    name: Name,
+    amount: Dollars,
+    kind: z.enum(["tax", "pretax", "deduction"]).optional(),
+  }),
+  z.object({ type: z.literal("remove_pre_income_item"), name: Name }),
+  /** Whether the tax profile's estimated taxes are drawn too. */
+  z.object({ type: z.literal("set_pre_income_estimate"), use: z.boolean() }),
+
   // ── Debt agent ──
   z.object({
     type: z.literal("set_debt_plan"),
@@ -299,6 +311,12 @@ export function describeAiAction(a: AiAction): string {
       return `Update giving fund "${a.fund}"`;
     case "delete_giving_fund":
       return `Delete giving fund "${a.fund}"`;
+    case "set_pre_income_item":
+      return `Before income: "${a.name}" $${a.amount.toLocaleString("en-US")} a month${a.kind ? ` (${a.kind === "pretax" ? "pre-tax savings" : a.kind})` : ""}`;
+    case "remove_pre_income_item":
+      return `Remove "${a.name}" from before income`;
+    case "set_pre_income_estimate":
+      return a.use ? "Show the estimated taxes before income" : "Stop showing the estimated taxes before income (use your own items)";
     case "set_debt_plan":
       return `Debt plan: ${[a.strategy && `${a.strategy} order`, a.extraMonthly !== undefined && `$${a.extraMonthly.toLocaleString("en-US")} extra a month`].filter(Boolean).join(", ") || "no change"}`;
     case "set_theme":
@@ -377,6 +395,7 @@ export const AiQuery = z.discriminatedUnion("type", [
   z.object({ type: z.literal("buckets") }),
   z.object({ type: z.literal("giving") }),
   z.object({ type: z.literal("debts") }),
+  z.object({ type: z.literal("pre_income") }),
   z.object({ type: z.literal("cashflow"), months: z.number().int().min(1).max(24).optional() }),
   z.object({ type: z.literal("insights") }),
   z.object({ type: z.literal("accounts") }),

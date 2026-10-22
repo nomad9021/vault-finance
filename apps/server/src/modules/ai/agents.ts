@@ -93,7 +93,7 @@ export const AGENTS: AgentDef[] = [
     id: "tax",
     name: "Tax & salary",
     keywords: new RegExp(
-      `tax|salary|salaries|gross|take.?home|paycheck|pay stub|raise|wage|401\\s?k|403\\s?b|hsa|withh?old|bracket|filing|irs|move to|moving|relocat|cost of living|\\bstate\\b|city|county|w-?2|make in|earn in|${STATE_NAMES}|${PLACE_NAMES}`,
+      `tax|salary|salaries|gross|take.?home|paycheck|pay ?stub|deduct|before income|pre.?income|raise|wage|401\\s?k|403\\s?b|hsa|withh?old|bracket|filing|irs|move to|moving|relocat|cost of living|\\bstate\\b|city|county|w-?2|make in|earn in|${STATE_NAMES}|${PLACE_NAMES}`,
       "i",
     ),
     actions: [
@@ -103,6 +103,10 @@ export const AGENTS: AgentDef[] = [
       '  set_salary {earner: name, grossAnnual: dollars before tax, payFrequency?: "weekly"|"biweekly"|"semimonthly"|"monthly"}',
       "  set_pretax {earner, retirementPct?: % of pay to 401(k), hsaAnnual?, healthPremiumsAnnual?, otherPretaxAnnual?}",
       "  remove_earner {earner}",
+      '  set_pre_income_item {name, amount: monthly dollars, kind?: "tax"|"pretax"|"deduction"}',
+      "    (adds a before-income item to both Sankeys, or changes the one with that name)",
+      "  remove_pre_income_item {name}",
+      "  set_pre_income_estimate {use: bool}   (false = draw only the user's own items, not the estimate)",
     ],
     queries: [
       "  tax_estimate {}   (the saved profile: take-home, every tax line, rates)",
@@ -110,16 +114,27 @@ export const AGENTS: AgentDef[] = [
       "    (the saved profile with those changed; nothing is saved)",
       "  tax_compare {states: [two-letter codes]}   (take-home in each state, same pay)",
       "  tax_places {state}   (local tax ids for that state)",
+      "  pre_income {}   (the before-income items on the Sankeys)",
     ],
     tips: [
       "Estimates cover 2026 federal tax, Social Security/Medicare, every state and main local taxes;",
       "say they're estimates. Use look-ups for numbers — never work tax out yourself.",
-      "Taxes on the budget Sankey come from the tax profile, NOT from a category: once a profile",
-      "exists the budget planner starts from gross pay with federal, state, local and FICA",
-      "branches before take-home, and the Taxes page has its own tax Sankey. Never create a",
+      "Taxes on the Sankeys come from the tax profile and the before-income items, NOT from a",
+      "category: with either, both Sankeys start from gross pay with the taxes and deductions",
+      "branching off before income, and the Taxes page has its own tax Sankey. Never create a",
       "\"Taxes\" category for this. If the user gives a salary and a place, propose",
       "set_tax_profile (state, locality id from tax_places, filingStatus if known, else single)",
       "and set_salary straight away — earner name \"Me\" unless they say otherwise.",
+      "Before-income items are the user's own figures (from a pay stub) drawn between gross pay",
+      "and income on both Sankeys: actual withholding, insurance, 401(k), union dues. Use them",
+      "when the user gives real amounts or has no tax profile; amounts are monthly (biweekly",
+      "paycheck × 26 ÷ 12). If their items are the real taxes, also set_pre_income_estimate",
+      "use false so taxes aren't counted twice.",
+    ],
+    examples: [
+      '  "Take $480 federal and $210 state out before income on my Sankey" →',
+      '    <vault-action>{"type":"set_pre_income_item","name":"Federal tax","amount":480,"kind":"tax"}</vault-action>',
+      '    <vault-action>{"type":"set_pre_income_item","name":"State tax","amount":210,"kind":"tax"}</vault-action>',
     ],
   },
   {
@@ -194,6 +209,52 @@ export const AGENTS: AgentDef[] = [
     ],
     queries: [],
   },
+];
+
+/**
+ * How the assistant talks, and the hard edge of what it can do. Sent with
+ * every message whichever agents are active, so a request for something
+ * impossible gets a flat "can't" instead of a guess or a fake workaround.
+ */
+export const STYLE_AND_LIMITS = [
+  "=== HOW TO ANSWER ===",
+  "Neutral, direct and to the point. Lead with the answer, the number or the change.",
+  "One to three short sentences unless the user asks for detail or a breakdown.",
+  "No greetings, praise, pep talk, filler, emojis or exclamation marks. Don't apologize,",
+  "don't compliment the question, don't repeat it back, don't end with an offer of more help.",
+  "State facts without judging the user's choices. Recommend only when asked, or when the",
+  "numbers show a clear problem — then in one sentence.",
+  "If the data isn't there, say \"I don't have that\" and what would provide it. Never guess.",
+  "",
+  "=== WHAT YOU CAN AND CAN'T DO ===",
+  "You CAN, through the changes and look-ups below (the user approves each change):",
+  "  categories (tree, order, colours), auto-categorization rules, moving transactions",
+  "  between categories, budgets and planned income, the tax profile, salaries and pre-tax",
+  "  deductions, before-income items on the Sankeys, bills, savings goals and buckets,",
+  "  giving funds, the debt payoff plan, theme, finance-review settings, the household name;",
+  "  and look up transactions, merchants, totals, cash flow, accounts, bills, goals, debts",
+  "  and tax estimates.",
+  "Creating new things — categories and sub-categories, budgets, rules, bills, goals,",
+  "buckets, funds — is always allowed: never refuse it. Say \"can't\" ONLY for this list.",
+  "You CAN'T do the following. If asked, say so in the first sentence (\"I can't do that.\"),",
+  "then say in one sentence where the user does it, if anywhere. Never offer a workaround",
+  "that only looks like it does the job, and never claim you did something you can't do:",
+  "  - Move, send, transfer or pay real money, or pay a bill. Vault only tracks money; that",
+  "    happens at the bank. (Buckets only label parts of a balance.)",
+  "  - Add, edit or delete a transaction, or change its amount, date or merchant: the",
+  "    Transactions page. (You can only change categories.)",
+  "  - Connect, reconnect, refresh or remove a bank: Settings → Money → Connected banks.",
+  "  - Passwords, two-factor, devices, sign-ins, auto-lock: Settings → Security.",
+  "  - Members and invitations: Settings → Members (owner only).",
+  "  - AI provider and model settings: Settings → AI. Server updates and status:",
+  "    Settings → Server & admin (owner only).",
+  "  - Anything outside this app: the internet, live prices or rates, credit scores, other",
+  "    banks' websites, sending email or messages.",
+  "  - File taxes or give official tax, legal or investment advice. Tax figures are estimates",
+  "    from the 2026 tables; say that once when you give them.",
+  "  - Predict markets or guarantee any outcome.",
+  "  - Store passwords, account numbers or card numbers.",
+  "If only part of a request is possible, do that part and state the rest is not possible.",
 ];
 
 const EVERYTHING = /organi[sz]e (my|all|every)|set (everything|it all|me) up|do everything|whole (thing|app)|all (of )?my finances|full (setup|review)|anything/i;

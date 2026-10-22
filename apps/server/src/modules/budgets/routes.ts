@@ -2,6 +2,7 @@ import {
   type BudgetPlan,
   BudgetListQuery,
   CreateBudgetRequest,
+  PreIncome,
   UpdateBudgetPlanRequest,
   UpdateBudgetRequest,
   type Budget as ApiBudget,
@@ -151,6 +152,25 @@ export default async function budgetRoutes(app: FastifyInstance) {
         target: budgetPlan.id,
         set: { plannedIncomeCents: body.plannedIncomeCents, updatedAt: new Date() },
       });
+    return body;
+  });
+
+  // ── Before income: taxes and paycheck deductions the user enters, drawn
+  // before income on both Sankeys. Saved whole (it's a short list). ──
+  app.get("/pre-income", async (): Promise<PreIncome> => {
+    const row = await app.db.query.budgetPlan.findFirst({ where: eq(budgetPlan.id, 1) });
+    return row?.preIncome ?? { items: [], useEstimate: true };
+  });
+
+  app.put("/pre-income", async (request): Promise<PreIncome> => {
+    const body = PreIncome.parse(request.body);
+    if (new Set(body.items.map((i) => i.id)).size !== body.items.length) {
+      throw new AppError("VALIDATION_ERROR", 400, "Each item needs its own id.");
+    }
+    await app.db
+      .insert(budgetPlan)
+      .values({ id: 1, preIncome: body, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: budgetPlan.id, set: { preIncome: body, updatedAt: new Date() } });
     return body;
   });
 }
