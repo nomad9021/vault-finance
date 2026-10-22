@@ -157,8 +157,8 @@ importers:
         specifier: ^10.1.7
         version: 10.1.7
       openai:
-        specifier: ^6.10.0
-        version: 6.48.0(zod@3.25.76)
+        specifier: ^7.38.0
+        version: 7.38.0(zod@3.25.76)
       postgres:
         specifier: ^3.4.5
         version: 3.4.9
@@ -1521,13 +1521,15 @@ packages:
     resolution: {integrity: sha512-0eJJY6hXLGf1udHwfNftBqH+g73EU4B504nZeKpz1sYRKafAghwxEJunB2O7rDZkL4PGfsMVnTXZ2EjibbqcsA==}
     engines: {node: '>=14.0.0'}
 
-  openai@6.48.0:
-    resolution: {integrity: sha512-KhVp+FyV50QrXNextvL9hIU5l6ox5HYuKQjGVk7lIqprgJol90+dQXWONV6S1lRWsKA1bXjrow8RsUT14M1hNA==}
+  openai@7.38.0:
+    resolution: {integrity: sha512-Ef+YyIeoiisZLP/tV4F4/RieJAl4OEJTyJg6gV0AXOb0T9CDkvYJoU224OY5CTmQ4zDJeku4jEHjz2b3/6Ndhw==}
+    engines: {node: '>=22.0.0'}
     peerDependencies:
       '@aws-sdk/credential-provider-node': '>=3.972.0 <4'
       '@smithy/hash-node': '>=4.3.0 <5'
       '@smithy/signature-v4': '>=5.4.0 <6'
-      ws: ^8.18.0
+      undici: '>=5 <9'
+      ws: ^8.21.0
       zod: ^3.25 || ^4.0
     peerDependenciesMeta:
       '@aws-sdk/credential-provider-node':
@@ -1535,6 +1537,8 @@ packages:
       '@smithy/hash-node':
         optional: true
       '@smithy/signature-v4':
+        optional: true
+      undici:
         optional: true
       ws:
         optional: true
@@ -2976,7 +2980,7 @@ snapshots:
 
   on-exit-leak-free@2.1.2: {}
 
-  openai@6.48.0(zod@3.25.76):
+  openai@7.38.0(zod@3.25.76):
     optionalDependencies:
       zod: 3.25.76
 
