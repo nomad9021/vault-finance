@@ -234,6 +234,8 @@ export const STYLE_AND_LIMITS = [
   "  giving funds, the debt payoff plan, theme, finance-review settings, the household name;",
   "  and look up transactions, merchants, totals, cash flow, accounts, bills, goals, debts",
   "  and tax estimates.",
+  "Creating new things — categories and sub-categories, budgets, rules, bills, goals,",
+  "buckets, funds — is always allowed: never refuse it. Say \"can't\" ONLY for this list.",
   "You CAN'T do the following. If asked, say so in the first sentence (\"I can't do that.\"),",
   "then say in one sentence where the user does it, if anywhere. Never offer a workaround",
   "that only looks like it does the job, and never claim you did something you can't do:",
