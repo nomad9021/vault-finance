@@ -193,7 +193,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ...(parsed.PLAID_BASE_URL ? { plaidBaseUrl: parsed.PLAID_BASE_URL } : {}),
     bankAutoSyncMinutes: parsed.BANK_AUTO_SYNC_MINUTES,
     logLevel: parsed.LOG_LEVEL,
-    apiVersion: "0.1.14",
+    apiVersion: "0.1.15",
     minClientVersion: "0.1.14",
     mail: {
       ...(parsed.SMTP_HOST ? { host: parsed.SMTP_HOST } : {}),
