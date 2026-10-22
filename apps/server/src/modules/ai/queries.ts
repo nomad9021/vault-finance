@@ -6,6 +6,7 @@ import {
   UNCATEGORIZED,
   type AiQuery,
   type Category,
+  type PreIncome,
   type TaxEstimate,
   type TaxProfile,
 } from "@vault/shared";
@@ -51,6 +52,7 @@ const QUERY_LABEL: Record<AiQuery["type"], string> = {
   buckets: "savings buckets",
   giving: "giving",
   debts: "debts",
+  pre_income: "before-income items",
   cashflow: "cash flow",
   insights: "insights",
   accounts: "accounts",
@@ -274,6 +276,16 @@ export async function runQuery(app: FastifyInstance, request: FastifyRequest, q:
       return [
         `GIVING FUNDS (given this year ${dollars(body.givenThisYearCents)}; name | kind | per month | saved / target | date):`,
         ...(body.funds.length ? body.funds.map((f) => `  ${f.name} | ${f.kind} | ${dollars(f.monthlyCents)}/mo | ${dollars(f.savedCents)}${f.targetCents ? ` / ${dollars(f.targetCents)}` : ""} | ${f.occasionDate ?? "-"}`) : ["  (none)"]),
+      ].join("\n");
+    }
+
+    case "pre_income": {
+      const pre = await get<PreIncome>("/pre-income");
+      const { estimate } = await get<{ estimate: TaxEstimate | null }>("/tax-profile");
+      return [
+        `BEFORE INCOME on the Sankeys (name | kind | per month): ${pre.items.length} item(s) entered by the user;`,
+        `  estimated taxes from the tax profile ${!estimate ? "(no tax profile)" : pre.useEstimate ? "are also shown" : "are turned off"}.`,
+        ...(pre.items.length ? pre.items.map((i) => `  ${i.name} | ${i.kind} | ${dollars(i.monthlyCents)}`) : ["  (none)"]),
       ].join("\n");
     }
 

@@ -1,7 +1,7 @@
 import type { Category } from "@vault/shared";
 import { describe, expect, it } from "vitest";
 import { estimateTaxes } from "@vault/shared";
-import { buildBudgetSankey, withGrossBranch, withTaxBranch } from "./budgetSankey.js";
+import { buildBudgetSankey, preIncomeBranches, withGrossBranch, withTaxBranch } from "./budgetSankey.js";
 
 /**
  * The budget Sankey must conserve money: every cent of planned income leaves
@@ -111,7 +111,7 @@ describe("withTaxBranch", () => {
   const base = buildBudgetSankey(takeHome, [cat("g", "Groceries")], new Map([["g", 60_000]]));
 
   it("starts from gross pay and branches taxes off beside the take-home hub", () => {
-    const out = withTaxBranch(base, estimate);
+    const out = withTaxBranch(base, preIncomeBranches(estimate, null));
     const gross = out.nodes.find((n) => n.id === "income")!;
     expect(gross.label).toBe("Gross pay");
     const leaves = out.nodes.filter((n) => n.id.startsWith("tax:"));
@@ -125,7 +125,7 @@ describe("withTaxBranch", () => {
 
   it("leaves the diagram alone without an income node", () => {
     const empty = { nodes: [], links: [] };
-    expect(withTaxBranch(empty, estimate)).toBe(empty);
+    expect(withTaxBranch(empty, preIncomeBranches(estimate, null))).toBe(empty);
   });
 });
 
@@ -145,7 +145,7 @@ describe("withGrossBranch", () => {
   };
 
   it("puts gross pay first, with taxes beside the real income, and shifts the rest right", () => {
-    const out = withGrossBranch(actual, estimate);
+    const out = withGrossBranch(actual, preIncomeBranches(estimate, null));
     const gross = out.nodes.find((n) => n.id === "gross")!;
     expect(gross).toMatchObject({ depth: 0, section: "taxes" });
     expect(out.nodes.find((n) => n.id === "income:acct")!.depth).toBe(1);
@@ -159,6 +159,41 @@ describe("withGrossBranch", () => {
 
   it("does nothing without income", () => {
     const empty = { nodes: [], links: [] };
-    expect(withGrossBranch(empty, estimate)).toBe(empty);
+    expect(withGrossBranch(empty, preIncomeBranches(estimate, null))).toBe(empty);
+  });
+});
+
+describe("preIncomeBranches", () => {
+  const estimate = estimateTaxes({ filingStatus: "single", state: "CO", earners: [{ name: "A", grossAnnualCents: 6_000_000 }] });
+  const items = [
+    { id: "a", name: "Federal withholding", kind: "tax" as const, monthlyCents: 52_000 },
+    { id: "b", name: "Health insurance", kind: "deduction" as const, monthlyCents: 18_000, color: "#123456" },
+    { id: "c", name: "Empty", kind: "pretax" as const, monthlyCents: 0 },
+  ];
+
+  it("adds the user's items after the estimate, skipping zero amounts", () => {
+    const out = preIncomeBranches(estimate, { items, useEstimate: true });
+    expect(out.filter((b) => b.id.startsWith("tax:")).length).toBeGreaterThan(0);
+    expect(out.filter((b) => b.id.startsWith("pre:")).map((b) => [b.label, b.valueCents, b.color])).toEqual([
+      ["Federal withholding", 52_000, "#6f8ef2"],
+      ["Health insurance", 18_000, "#123456"],
+    ]);
+  });
+
+  it("uses only the user's items when the estimate is off, or there's no tax profile", () => {
+    expect(preIncomeBranches(estimate, { items, useEstimate: false }).map((b) => b.id)).toEqual(["pre:a", "pre:b"]);
+    expect(preIncomeBranches(null, { items, useEstimate: true }).map((b) => b.id)).toEqual(["pre:a", "pre:b"]);
+    expect(preIncomeBranches(null, null)).toEqual([]);
+  });
+
+  it("drives the actual diagram from the items alone, without '(est.)'", () => {
+    const actual = {
+      nodes: [{ id: "income:acct", label: "Checking", valueCents: 400_000, color: "#3ecf8e", depth: 0, kind: "income" as const, categoryId: null }],
+      links: [],
+    };
+    const out = withGrossBranch(actual, preIncomeBranches(null, { items, useEstimate: true }));
+    const gross = out.nodes.find((n) => n.id === "gross")!;
+    expect(gross.label).toBe("Gross pay");
+    expect(gross.valueCents).toBe(400_000 + 52_000 + 18_000);
   });
 });

@@ -3,13 +3,15 @@ import {
   parseAmountToCents,
   type BudgetWithSpend,
   type Category,
+  type PreIncome,
 } from "@vault/shared";
 import { Button, Panel, Spinner } from "@vault/ui";
 import { useEffect, useRef, useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 import type { Navigate } from "./AppShell.js";
-import { buildBudgetSankey, withTaxBranch } from "./budgetSankey.js";
+import { buildBudgetSankey, preIncomeBranches, withTaxBranch } from "./budgetSankey.js";
+import { PreIncomeDialog } from "./PreIncomeDialog.js";
 import { SankeyCard } from "./SankeyCard.js";
 
 function currentMonth(): string {
@@ -42,8 +44,14 @@ export function BudgetPlannerPage({ onNavigate }: { onNavigate: Navigate }) {
   const { data: planData } = useData(() => client.budgetPlan(), [client]);
   const { data: budgetData, loading, reload } = useData(() => client.budgets(month), [client, month]);
   const { data: catData } = useData(() => client.categories(), [client]);
-  // Tax add-on: with a tax profile, the plan can start from gross pay.
+  // Before income: with a tax profile or the user's own taxes and deductions,
+  // the plan can start from gross pay.
   const { data: taxData } = useData(() => client.taxProfile(), [client]);
+  const { data: preIncome, reload: reloadPreIncome } = useData<PreIncome>(
+    () => client.preIncome().catch(() => ({ items: [], useEstimate: true })),
+    [client],
+  );
+  const [editingPreIncome, setEditingPreIncome] = useState(false);
   const [fromGross, setFromGross] = useState(true);
 
   const categories = catData?.categories ?? [];
@@ -93,7 +101,9 @@ export function BudgetPlannerPage({ onNavigate }: { onNavigate: Navigate }) {
   const budgetByCatAmount = new Map(budgets.map((b) => [b.categoryId, b.amountCents]));
   const plan = buildBudgetSankey(incomeCents, expenseCats, budgetByCatAmount);
   const taxEstimate = taxData?.estimate ?? null;
-  const { nodes, links } = taxEstimate && fromGross && incomeCents > 0 ? withTaxBranch(plan, taxEstimate) : plan;
+  const branches = preIncomeBranches(taxEstimate, preIncome);
+  const gross = fromGross && branches.length > 0 && incomeCents > 0;
+  const { nodes, links } = gross ? withTaxBranch(plan, branches) : plan;
   const hasFlow = incomeCents > 0 || allocated > 0;
 
   return (
@@ -160,17 +170,36 @@ export function BudgetPlannerPage({ onNavigate }: { onNavigate: Navigate }) {
           links={links}
           month={month}
           onNavigate={onNavigate}
-          title={taxEstimate && fromGross ? "Budget plan, from gross pay" : "Budget plan"}
+          title={gross ? "Budget plan, from gross pay" : "Budget plan"}
           hint="Click a category to see this month's actual spending"
         />
       ) : null}
-      {hasFlow && taxEstimate ? (
-        <label className="radio" style={{ fontSize: "var(--text-sm)", marginTop: -8 }}>
-          <input type="checkbox" checked={fromGross} onChange={(e) => setFromGross(e.target.checked)} />
-          <span className="dot" style={{ borderRadius: "var(--radius-sm)" }} />
-          Start from gross pay (show taxes and pre-tax savings from Salary &amp; taxes)
-        </label>
+      {hasFlow ? (
+        <div className="row" style={{ gap: 12, marginTop: -8, flexWrap: "wrap" }}>
+          {branches.length > 0 && (
+            <label className="radio" style={{ fontSize: "var(--text-sm)" }}>
+              <input type="checkbox" checked={fromGross} onChange={(e) => setFromGross(e.target.checked)} />
+              <span className="dot" style={{ borderRadius: "var(--radius-sm)" }} />
+              Start from gross pay (taxes and deductions come off first)
+            </label>
+          )}
+          <Button variant="ghost" size="sm" icon="edit" disabled={!preIncome} onClick={() => setEditingPreIncome(true)}>
+            Before income
+          </Button>
+        </div>
       ) : null}
+      {editingPreIncome && preIncome && (
+        <PreIncomeDialog
+          value={preIncome}
+          hasEstimate={!!taxEstimate}
+          onClose={() => setEditingPreIncome(false)}
+          onSaved={() => {
+            setEditingPreIncome(false);
+            setFromGross(true);
+            reloadPreIncome();
+          }}
+        />
+      )}
       {hasFlow ? null : (
         <Panel title="Budget plan">
           <p className="card-meta" style={{ padding: "12px 0" }}>

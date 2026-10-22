@@ -382,3 +382,51 @@ describe("savings buckets through the assistant", () => {
     expect(acct.unassignedCents).toBe(150_000);
   });
 });
+
+describe("before income through the assistant", () => {
+  it("adds and updates pay-stub items, turns the estimate off and refuses unknown items", async () => {
+    calls.length = 0;
+    replies = [
+      '<vault-action>{"type":"set_pre_income_item","name":"Federal tax","amount":480,"kind":"tax"}</vault-action>\n' +
+        '<vault-action>{"type":"set_pre_income_item","name":"Health insurance","amount":150,"kind":"deduction"}</vault-action>\n' +
+        '<vault-action>{"type":"set_pre_income_item","name":"Federal tax","amount":495}</vault-action>\n' +
+        '<vault-action>{"type":"set_pre_income_estimate","use":false}</vault-action>\n' +
+        '<vault-action>{"type":"remove_pre_income_item","name":"Union dues"}</vault-action>',
+      "Union dues isn't an item, so it was left out.",
+    ];
+    const out = lines((await app.inject({ method: "POST", url: "/api/v1/ai/chat", headers: auth, payload: { message: "Take my pay stub taxes out before income on the Sankey", autoApply: true } })).payload);
+    const system = calls[0]![0]!.content;
+    expect(system).toContain("BEFORE-INCOME ITEMS");
+    expect(system).toContain("=== WHAT YOU CAN AND CAN'T DO ===");
+    const actions = out.find((l) => "actions" in l)!["actions"] as Array<{ action: { type: string }; status: string }>;
+    expect(actions.map((a) => [a.action.type, a.status])).toEqual([
+      ["set_pre_income_item", "applied"],
+      ["set_pre_income_item", "applied"],
+      ["set_pre_income_item", "applied"],
+      ["set_pre_income_estimate", "applied"],
+    ]);
+    const pre = await api("GET", "/pre-income");
+    expect(pre.useEstimate).toBe(false);
+    expect(pre.items.map((i: { name: string; kind: string; monthlyCents: number }) => [i.name, i.kind, i.monthlyCents])).toEqual([
+      ["Federal tax", "tax", 49_500],
+      ["Health insurance", "deduction", 15_000],
+    ]);
+  });
+
+  it("rejects two items with the same id", async () => {
+    const item = { id: "x", name: "A", kind: "tax", monthlyCents: 100 };
+    const res = await app.inject({ method: "PUT", url: "/api/v1/pre-income", headers: auth, payload: { items: [item, { ...item, name: "B" }], useEstimate: true } });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("style and limits", () => {
+  it("tells every agent how to answer and what it can't do", async () => {
+    calls.length = 0;
+    replies = ["I can't do that."];
+    await app.inject({ method: "POST", url: "/api/v1/ai/chat", headers: auth, payload: { message: "Pay my rent from checking" } });
+    const system = calls[0]![0]!.content;
+    expect(system).toContain("=== HOW TO ANSWER ===");
+    expect(system).toMatch(/Move, send, transfer or pay real money/);
+  });
+});

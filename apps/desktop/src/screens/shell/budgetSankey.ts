@@ -1,4 +1,4 @@
-import type { Category, SankeyLink, SankeyNode, TaxEstimate, TaxGroup } from "@vault/shared";
+import type { Category, PreIncome, PreIncomeKind, SankeyLink, SankeyNode, TaxEstimate, TaxGroup } from "@vault/shared";
 
 /**
  * Build the budget-planner Sankey with the same hierarchical structure as the
@@ -90,67 +90,101 @@ const TAX_BRANCH: Record<TaxGroup, { label: string; color: string }> = {
   payroll: { label: "State payroll programs", color: "#4db6d0" },
 };
 
+export const PRE_INCOME_COLOR: Record<PreIncomeKind, string> = {
+  tax: "#6f8ef2",
+  pretax: "#43cfc0",
+  deduction: "#d8b23c",
+};
+
+/** One monthly amount taken out of pay before it reaches income. */
+export interface PreIncomeBranch {
+  id: string;
+  label: string;
+  valueCents: number;
+  color: string;
+}
+
 /**
- * The tax add-on: start the budget Sankey from gross pay. "Planned income"
- * becomes "Gross pay", which splits into the monthly taxes and pre-tax
- * savings (leaves beside the hub) and the take-home that flows on into the
- * budget exactly as before. Gross is taxes + pre-tax + the planned income,
- * so the diagram still balances when planned income isn't synced.
+ * What comes out before income, per month: the tax profile's estimated taxes
+ * and pre-tax savings (unless the user turned them off because their own
+ * items are the real figures), then the items they entered themselves.
+ */
+export function preIncomeBranches(estimate: TaxEstimate | null, pre: PreIncome | null): PreIncomeBranch[] {
+  const out: PreIncomeBranch[] = [];
+  if (estimate && (pre?.useEstimate ?? true)) {
+    const groups = new Map<TaxGroup, number>();
+    for (const l of estimate.lines) groups.set(l.group, (groups.get(l.group) ?? 0) + Math.max(0, l.amountCents));
+    for (const [g, c] of groups) {
+      const monthly = Math.round(c / 12);
+      if (monthly > 0) out.push({ id: `tax:${g}`, label: TAX_BRANCH[g].label, valueCents: monthly, color: TAX_BRANCH[g].color });
+    }
+  }
+  for (const item of pre?.items ?? []) {
+    if (item.monthlyCents > 0) {
+      out.push({ id: `pre:${item.id}`, label: item.name, valueCents: item.monthlyCents, color: item.color ?? PRE_INCOME_COLOR[item.kind] });
+    }
+  }
+  return out;
+}
+
+const branchNode = (b: PreIncomeBranch): SankeyNode => ({
+  id: b.id,
+  label: b.label,
+  valueCents: b.valueCents,
+  color: b.color,
+  depth: 1,
+  kind: "category",
+  categoryId: null,
+  section: "taxes",
+});
+
+/**
+ * The before-income add-on: start the budget Sankey from gross pay. "Planned
+ * income" becomes "Gross pay", which splits into the monthly taxes and
+ * deductions (leaves beside the hub) and the take-home that flows on into
+ * the budget exactly as before. Gross is those branches + the planned
+ * income, so the diagram still balances when planned income isn't synced.
  */
 export function withTaxBranch(
   sankey: { nodes: SankeyNode[]; links: SankeyLink[] },
-  estimate: TaxEstimate,
+  branches: PreIncomeBranch[],
 ): { nodes: SankeyNode[]; links: SankeyLink[] } {
-  const groups = new Map<TaxGroup, number>();
-  for (const l of estimate.lines) groups.set(l.group, (groups.get(l.group) ?? 0) + Math.max(0, l.amountCents));
-  const monthly = [...groups].map(([g, c]) => [g, Math.round(c / 12)] as const).filter(([, c]) => c > 0);
   const income = sankey.nodes.find((n) => n.id === "income");
-  if (!income || !monthly.length) return sankey;
-  const gross = income.valueCents + monthly.reduce((s, [, c]) => s + c, 0);
+  if (!income || !branches.length) return sankey;
+  const gross = income.valueCents + branches.reduce((s, b) => s + b.valueCents, 0);
   const nodes = sankey.nodes.map((n) =>
     n.id === "income" ? { ...n, label: "Gross pay", valueCents: gross, color: "#6f8ef2" } : n.id === "hub" ? { ...n, label: "Take-home to allocate" } : n,
   );
   const links = [...sankey.links];
-  for (const [g, c] of monthly) {
-    nodes.push({ id: `tax:${g}`, label: TAX_BRANCH[g].label, valueCents: c, color: TAX_BRANCH[g].color, depth: 1, kind: "category", categoryId: null, section: "taxes" });
-    links.push({ from: "income", to: `tax:${g}`, valueCents: c });
+  for (const b of branches) {
+    nodes.push(branchNode(b));
+    links.push({ from: "income", to: b.id, valueCents: b.valueCents });
   }
   return { nodes, links };
 }
 
 /**
- * The tax add-on for the actual cash-flow Sankey (real deposits and
- * spending): every column moves one to the right and an estimated "Gross
- * pay" column goes first, feeding the month's taxes and pre-tax savings
- * (from the tax profile) and the income that actually arrived. Gross is
- * income + those monthly estimates, so the diagram balances.
+ * The before-income add-on for the actual cash-flow Sankey (real deposits and
+ * spending): every column moves one to the right and a "Gross pay" column
+ * goes first, feeding the month's taxes and deductions and the income that
+ * actually arrived. Gross is income + those monthly amounts, so the diagram
+ * balances; it's "(est.)" whenever any of them come from the estimate.
  */
 export function withGrossBranch(
   sankey: { nodes: SankeyNode[]; links: SankeyLink[] },
-  estimate: TaxEstimate,
+  branches: PreIncomeBranch[],
 ): { nodes: SankeyNode[]; links: SankeyLink[] } {
-  const groups = new Map<TaxGroup, number>();
-  for (const l of estimate.lines) groups.set(l.group, (groups.get(l.group) ?? 0) + Math.max(0, l.amountCents));
-  const monthly = [...groups].map(([g, c]) => [g, Math.round(c / 12)] as const).filter(([, c]) => c > 0);
   const incomes = sankey.nodes.filter((n) => n.depth === 0 && n.valueCents > 0);
-  if (!incomes.length || !monthly.length) return sankey;
-  const gross = incomes.reduce((s, n) => s + n.valueCents, 0) + monthly.reduce((s, [, c]) => s + c, 0);
+  if (!incomes.length || !branches.length) return sankey;
+  const gross = incomes.reduce((s, n) => s + n.valueCents, 0) + branches.reduce((s, b) => s + b.valueCents, 0);
+  const estimated = branches.some((b) => b.id.startsWith("tax:"));
   const nodes: SankeyNode[] = [
-    { id: "gross", label: "Gross pay (est.)", valueCents: gross, color: "#6f8ef2", depth: 0, kind: "income", categoryId: null, section: "taxes" },
-    ...monthly.map(([g, c]) => ({
-      id: `tax:${g}`,
-      label: TAX_BRANCH[g].label,
-      valueCents: c,
-      color: TAX_BRANCH[g].color,
-      depth: 1,
-      kind: "category" as const,
-      categoryId: null,
-      section: "taxes" as const,
-    })),
+    { id: "gross", label: estimated ? "Gross pay (est.)" : "Gross pay", valueCents: gross, color: "#6f8ef2", depth: 0, kind: "income", categoryId: null, section: "taxes" },
+    ...branches.map(branchNode),
     ...sankey.nodes.map((n) => ({ ...n, depth: n.depth + 1 })),
   ];
   const links: SankeyLink[] = [
-    ...monthly.map(([g, c]) => ({ from: "gross", to: `tax:${g}`, valueCents: c })),
+    ...branches.map((b) => ({ from: "gross", to: b.id, valueCents: b.valueCents })),
     ...incomes.map((n) => ({ from: "gross", to: n.id, valueCents: n.valueCents })),
     ...sankey.links,
   ];

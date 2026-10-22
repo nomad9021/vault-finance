@@ -10,6 +10,15 @@ for all 50 states + DC, the main local income taxes, and the state payroll
 programs whose 2026 employee rates are confirmed. It's an estimate: wages
 only, standard deduction, no other credits. The app says so.
 
+**Before income.** On the dashboard and budget planner, *Before income* lets
+the household enter their own monthly taxes and deductions (from a pay stub:
+withholding, insurance, 401(k), union dues). Both Sankeys draw them between
+gross pay and income, beside the estimate or — with "Also show the estimated
+taxes" off — instead of it. Stored in `budget_plan.pre_income` (`GET/PUT
+/pre-income`); the assistant edits them with `set_pre_income_item`,
+`remove_pre_income_item` and `set_pre_income_estimate`. They don't change the
+take-home estimate itself.
+
 ## Sources (2026)
 
 | Data | Source | Confirmed with the authority? |
