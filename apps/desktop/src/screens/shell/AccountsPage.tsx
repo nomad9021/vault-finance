@@ -19,6 +19,7 @@ import {
   Spinner,
 } from "@vault/ui";
 import { useMemo, useState } from "react";
+import { availableCents, shownBalance, useShowActualBalances } from "../../lib/balanceView.js";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 import type { Navigate } from "./AppShell.js";
@@ -57,6 +58,7 @@ export function AccountsPage({ onNavigate }: { onNavigate: Navigate }) {
   const { data: trendData } = useData(() => client.trends(6), [client]);
   const [editing, setEditing] = useState<Account | "new" | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
+  const [showActual, setShowActual] = useShowActualBalances();
 
   const toggleGroup = (title: string) =>
     setCollapsed((prev) => {
@@ -89,6 +91,8 @@ export function AccountsPage({ onNavigate }: { onNavigate: Navigate }) {
       liabilities: rows.filter((r) => r.liability && r.subtotal < 0),
     };
   }, [accounts]);
+
+  const totalSetAside = accounts.reduce((s, a) => s + (a.setAsideCents ?? 0), 0);
 
   const nwHistory = (trendData?.points ?? []).map((p) => p.netWorthCents);
   const nwProjected = project(nwHistory, 3);
@@ -145,7 +149,19 @@ export function AccountsPage({ onNavigate }: { onNavigate: Navigate }) {
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        {totalSetAside > 0 && (
+          <>
+            <span className="t-xs t-tertiary">
+              {showActual
+                ? "Showing bank balances, including money set aside"
+                : `Showing what's free to use · ${formatCentsWhole(totalSetAside)} set aside`}
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setShowActual(!showActual)}>
+              {showActual ? "Show available" : "Show actual balances"}
+            </Button>
+          </>
+        )}
         <Button variant="primary" icon="plus" onClick={() => setEditing("new")}>
           Add account
         </Button>
@@ -167,7 +183,7 @@ export function AccountsPage({ onNavigate }: { onNavigate: Navigate }) {
         GROUPS.map((group) => {
           const rows = visibleAccounts.filter((a) => group.types.includes(a.type));
           if (rows.length === 0) return null;
-          const subtotal = rows.reduce((s, a) => s + a.balanceCents, 0);
+          const subtotal = rows.reduce((s, a) => s + shownBalance(a, showActual), 0);
           const isCollapsed = collapsed.has(group.title);
           return (
             <Panel
@@ -215,11 +231,11 @@ export function AccountsPage({ onNavigate }: { onNavigate: Navigate }) {
                         alignItems: "center",
                         gap: 12,
                         padding: "11px 0",
+                        // Only the faint top divider: a later `border: none` +
+                        // borderTopStyle reset it to a thick currentColor line.
                         borderTop: "1px solid color-mix(in srgb, var(--color-text) 7%, transparent)",
                         width: "100%",
                         background: "none",
-                        border: "none",
-                        borderTopStyle: "solid",
                         cursor: "pointer",
                         textAlign: "left",
                         font: "inherit",
@@ -235,10 +251,20 @@ export function AccountsPage({ onNavigate }: { onNavigate: Navigate }) {
                           {[ACCOUNT_TYPE_LABELS[account.type], account.institution, account.mask ? `••${account.mask}` : null].filter(Boolean).join(" · ")}
                         </div>
                       </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontWeight: 600, fontSize: "var(--text-base)", color: account.balanceCents < 0 ? "var(--color-negative)" : "var(--color-text)" }}>
-                          {formatCents(account.balanceCents, { currency: account.currency })}
+                      <div
+                        style={{ textAlign: "right" }}
+                        title={account.setAside?.length ? account.setAside.map((p) => `${p.name}: ${formatCents(p.cents)}`).join("\n") : undefined}
+                      >
+                        <div style={{ fontWeight: 600, fontSize: "var(--text-base)", color: shownBalance(account, showActual) < 0 ? "var(--color-negative)" : "var(--color-text)" }}>
+                          {formatCents(shownBalance(account, showActual), { currency: account.currency })}
                         </div>
+                        {(account.setAsideCents ?? 0) > 0 && (
+                          <div style={{ fontSize: "var(--text-2xs)", color: "var(--content-tertiary)" }}>
+                            {showActual
+                              ? `${formatCentsWhole(availableCents(account))} available`
+                              : `${formatCentsWhole(account.setAsideCents ?? 0)} set aside`}
+                          </div>
+                        )}
                       </div>
                       <button
                         title="View this account's transactions"

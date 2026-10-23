@@ -48,10 +48,9 @@ export default async function memberRoutes(
         }),
       });
     } else {
-      app.log.warn(
-        "member invited but APP_PUBLIC_URL is unset — no email sent. Invite link: /invite?token=" +
-          token,
-      );
+      // Never log the link itself: the token is a credential, and the owner
+      // already gets it in the response below.
+      app.log.warn("member invited but APP_PUBLIC_URL is unset — no email sent; link shown to the owner in the app");
     }
     // The raw link is returned so the owner can share it manually (e.g. when
     // SMTP isn't set up). It's shown once and not stored anywhere retrievable.

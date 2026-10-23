@@ -1,5 +1,7 @@
 import {
   formatCentsWhole,
+  type Account,
+  type Bill,
   type Goal,
   type PreIncome,
   type SankeyResponse,
@@ -21,6 +23,7 @@ import {
   Skeleton,
 } from "@vault/ui";
 import { useEffect, useState, type ReactNode } from "react";
+import { availableCents, shownBalance, useShowActualBalances } from "../../lib/balanceView.js";
 import { moveWidget, placeWidget, resolveLayout, SPANS, type ResolvedWidget, type Span } from "../../lib/dashboardLayout.js";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
@@ -357,6 +360,18 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
       ) : (
         <GetStarted onNavigate={onNavigate} hasAccounts={accounts.length > 0} />
       )) },
+    "this-month": { label: "This month: plan vs actual", span: 8, node: <ThisMonth
+            month={month}
+            isCurrentMonth={isCurrentMonth}
+            plannedIncomeCents={plannedIncome}
+            incomeCents={income}
+            budgetedCents={budgetData?.totalBudgetedCents ?? 0}
+            spentCents={budgetData?.totalSpentCents ?? spending}
+            accounts={accounts}
+            bills={billData?.bills ?? []}
+            onNavigate={onNavigate}
+          /> },
+    accounts: { label: "Accounts", span: 4, node: <AccountsCard accounts={accounts} onViewAll={() => onNavigate("accounts")} /> },
     "trend-networth": { label: "Net worth trend", span: 4, node: <TrendCard
             label="Net worth"
             points={points}
@@ -512,6 +527,172 @@ function CustomizeDashboard({
           </div>
         ))}
       </div>
+    </Panel>
+  );
+}
+
+/** Accounts you spend from: checking, savings and other cash. */
+const CASH_TYPES = new Set<Account["type"]>(["checking", "savings", "other"]);
+
+function daysLeftInMonth(): number {
+  const now = new Date();
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+  return end.getUTCDate() - now.getUTCDate() + 1;
+}
+
+/**
+ * Where the plan meets the bank: the month's plan next to what actually
+ * happened, and what's safe to spend — free cash (after set-asides) minus the
+ * part of this month's remaining bills that hasn't been set aside yet.
+ */
+function ThisMonth({
+  month,
+  isCurrentMonth,
+  plannedIncomeCents,
+  incomeCents,
+  budgetedCents,
+  spentCents,
+  accounts,
+  bills,
+  onNavigate,
+}: {
+  month: string;
+  isCurrentMonth: boolean;
+  plannedIncomeCents: number;
+  incomeCents: number;
+  budgetedCents: number;
+  spentCents: number;
+  accounts: Account[];
+  bills: Bill[];
+  onNavigate: Navigate;
+}) {
+  const daysLeft = daysLeftInMonth();
+  const freeCash = accounts
+    .filter((a) => !a.isLiability && CASH_TYPES.has(a.type))
+    .reduce((s, a) => s + availableCents(a), 0);
+  const billsDue = bills.filter((b) => b.daysUntilDue < daysLeft);
+  const unfundedBills = billsDue.reduce((s, b) => s + Math.max(0, b.amountCents - b.savedCents), 0);
+  const safeToSpend = freeCash - unfundedBills;
+  const leftToSpend = budgetedCents - spentCents;
+  const perDay = isCurrentMonth && leftToSpend > 0 ? Math.floor(leftToSpend / daysLeft) : null;
+
+  const rows: { label: string; planned: number; actual: number; goodWhenOver: boolean; page: PageId }[] = [
+    { label: "Income", planned: plannedIncomeCents, actual: incomeCents, goodWhenOver: true, page: "income" },
+    // Only categories with a budget — unbudgeted spending has nothing to compare against.
+    { label: "Budgeted spending", planned: budgetedCents, actual: spentCents, goodWhenOver: false, page: "budgets" },
+  ];
+
+  return (
+    <Panel title={`${monthLong(month)}: plan vs actual`} subtitle={isCurrentMonth ? `${daysLeft} days left` : "Past month"}>
+      <div className="grid">
+        <div className="col-5">
+          <div className="eyebrow">Safe to spend</div>
+          <div className="stat-value" style={{ color: safeToSpend < 0 ? "var(--color-negative)" : undefined }}>
+            {formatCentsWhole(safeToSpend)}
+          </div>
+          <div className="t-xs t-tertiary" style={{ marginTop: "var(--space-1)" }}>
+            {formatCentsWhole(freeCash)} free cash
+            {unfundedBills > 0 && ` − ${formatCentsWhole(unfundedBills)} for ${billsDue.length} bill${billsDue.length === 1 ? "" : "s"} still due`}
+          </div>
+          {budgetedCents > 0 && (
+            <div className="t-xs t-tertiary" style={{ marginTop: "var(--space-2)" }}>
+              Budget left: <b style={{ color: leftToSpend < 0 ? "var(--color-negative)" : "var(--content-primary)" }}>{formatCentsWhole(leftToSpend)}</b>
+              {perDay !== null && ` · ${formatCentsWhole(perDay)}/day`}
+            </div>
+          )}
+        </div>
+        <div className="col-7 stack">
+          {rows.map((r) => {
+            const off = r.actual - r.planned;
+            const good = r.goodWhenOver ? off >= 0 : off <= 0;
+            return (
+              <button
+                key={r.label}
+                type="button"
+                onClick={() => onNavigate(r.page)}
+                style={{ background: "none", border: 0, padding: 0, font: "inherit", color: "inherit", textAlign: "left", cursor: "pointer" }}
+              >
+                <div className="row-between t-sm" style={{ marginBottom: "var(--space-1)" }}>
+                  <span className="t-medium">{r.label}</span>
+                  <span className="num t-tertiary">
+                    {formatCentsWhole(r.actual)}
+                    {r.planned > 0 && ` / ${formatCentsWhole(r.planned)}`}
+                  </span>
+                </div>
+                {r.planned > 0 ? (
+                  <ProgressBar
+                    value={r.actual / r.planned}
+                    over={!r.goodWhenOver && r.actual > r.planned}
+                    label={`${r.label}: actual vs plan`}
+                  />
+                ) : (
+                  <div className="t-2xs t-tertiary">No plan yet — set one in Budgets</div>
+                )}
+                {r.planned > 0 && (
+                  <div className="t-2xs" style={{ marginTop: 2, color: good ? "var(--content-tertiary)" : "var(--color-negative)" }}>
+                    {off === 0 ? "On plan" : `${formatCentsWhole(Math.abs(off))} ${off > 0 ? "over" : "under"} plan`}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+/** Balances at a glance — free to use by default, the bank's number on request. */
+function AccountsCard({ accounts, onViewAll }: { accounts: Account[]; onViewAll: () => void }) {
+  const [showActual, setShowActual] = useShowActualBalances();
+  const rows = accounts.filter((a) => !a.archivedAt && a.balanceCents !== 0).slice(0, 6);
+  const anySetAside = accounts.some((a) => (a.setAsideCents ?? 0) > 0);
+  return (
+    <Panel
+      title="Accounts"
+      subtitle={showActual ? "Bank balances" : "Free to use"}
+      actions={
+        <span className="row" style={{ gap: "var(--space-2)" }}>
+          {anySetAside && (
+            <button className="panel-link" onClick={() => setShowActual(!showActual)}>
+              {showActual ? "Show available" : "Show actual"}
+            </button>
+          )}
+          <PanelLink onClick={onViewAll} />
+        </span>
+      }
+    >
+      {rows.length === 0 ? (
+        <EmptyState
+          compact
+          icon="bank"
+          title="No accounts yet"
+          body="Add an account to see balances here."
+          action={
+            <Button variant="secondary" size="sm" onClick={onViewAll}>
+              Add an account
+            </Button>
+          }
+        />
+      ) : (
+        <div className="list list-divided">
+          {rows.map((a) => (
+            <ListRow
+              key={a.id}
+              chevron={false}
+              title={a.name}
+              subtitle={
+                (a.setAsideCents ?? 0) > 0
+                  ? showActual
+                    ? `${formatCentsWhole(availableCents(a))} available`
+                    : `${formatCentsWhole(a.setAsideCents ?? 0)} set aside`
+                  : undefined
+              }
+              trailing={<Money cents={shownBalance(a, showActual)} whole />}
+            />
+          ))}
+        </div>
+      )}
     </Panel>
   );
 }

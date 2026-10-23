@@ -902,6 +902,15 @@ export class ApiClient {
   subscriptions() {
     return this.request(SubscriptionListResponse, "GET", "/subscriptions");
   }
+  /** Mark a detected charge as "not a subscription" (by its id). */
+  dismissSubscription(id: string, merchantName: string) {
+    return this.request(z.undefined(), "POST", `/subscriptions/${encodeURIComponent(id)}/dismiss`, {
+      merchantName,
+    });
+  }
+  restoreSubscription(id: string) {
+    return this.request(z.undefined(), "DELETE", `/subscriptions/${encodeURIComponent(id)}/dismiss`);
+  }
 
   // ── Insights ──
   insights() {

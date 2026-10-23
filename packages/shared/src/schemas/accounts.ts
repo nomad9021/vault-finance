@@ -28,6 +28,15 @@ export const LIABILITY_TYPES: ReadonlySet<AccountType> = new Set([
   "mortgage",
 ]);
 
+/** One thing an account's money is set aside for. */
+export const AccountSetAside = z.object({
+  kind: z.enum(["bill", "fund", "bucket"]),
+  id: z.string().uuid(),
+  name: z.string(),
+  cents: z.number().int(),
+});
+export type AccountSetAside = z.infer<typeof AccountSetAside>;
+
 export const Account = z.object({
   id: z.string().uuid(),
   name: z.string(),
@@ -38,6 +47,14 @@ export const Account = z.object({
   isLiability: z.boolean(),
   interestRate: z.string().nullable(),
   balanceCents: z.number().int(),
+  /**
+   * Money in this account already set aside for something: bill savings, gift
+   * and giving funds, savings buckets. balanceCents − setAsideCents is what's
+   * free to use. Always 0 for liabilities. Optional only so a newer app still
+   * reads an older server's accounts.
+   */
+  setAsideCents: z.number().int().optional(),
+  setAside: z.array(AccountSetAside).optional(),
   archivedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),

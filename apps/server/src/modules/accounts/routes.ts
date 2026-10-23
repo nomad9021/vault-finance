@@ -3,13 +3,49 @@ import {
   LIABILITY_TYPES,
   UpdateAccountRequest,
   type Account as ApiAccount,
+  type AccountSetAside,
 } from "@vault/shared";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, isNotNull, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { accounts, transactions } from "../../db/schema.js";
+import type { Db } from "../../plugins/db.js";
+import { accounts, bills, givingFunds, savingsBuckets, transactions } from "../../db/schema.js";
 import { notFound } from "../../errors.js";
 
-function toApi(row: typeof accounts.$inferSelect): ApiAccount {
+/**
+ * What each account's money is already set aside for. Bills and funds carry a
+ * saved amount and an optional account; buckets split an account outright. A
+ * fund linked to an account reports that account's whole balance as its
+ * savings (see giving routes), so here it claims the whole positive balance.
+ */
+async function setAsideByAccount(db: Db): Promise<Map<string, AccountSetAside[]>> {
+  const [billRows, fundRows, bucketRows, acctRows] = await Promise.all([
+    db.select().from(bills).where(and(isNull(bills.archivedAt), isNotNull(bills.accountId))),
+    db.select().from(givingFunds).where(and(isNull(givingFunds.archivedAt), isNotNull(givingFunds.accountId))),
+    db.select().from(savingsBuckets),
+    db.select({ id: accounts.id, balanceCents: accounts.balanceCents }).from(accounts),
+  ]);
+  const balance = new Map(acctRows.map((a) => [a.id, a.balanceCents]));
+  const out = new Map<string, AccountSetAside[]>();
+  const add = (accountId: string, item: AccountSetAside) => {
+    if (item.cents <= 0) return;
+    const list = out.get(accountId) ?? [];
+    list.push(item);
+    out.set(accountId, list);
+  };
+  for (const b of billRows) add(b.accountId!, { kind: "bill", id: b.id, name: b.name, cents: b.savedCents });
+  const claimed = new Set<string>();
+  for (const f of fundRows) {
+    // Two funds on one account share it; count the balance once.
+    if (claimed.has(f.accountId!)) continue;
+    claimed.add(f.accountId!);
+    add(f.accountId!, { kind: "fund", id: f.id, name: f.name, cents: balance.get(f.accountId!) ?? 0 });
+  }
+  for (const b of bucketRows) add(b.accountId, { kind: "bucket", id: b.id, name: b.name, cents: b.allocatedCents });
+  return out;
+}
+
+function toApi(row: typeof accounts.$inferSelect, setAside: AccountSetAside[] = []): ApiAccount {
+  const parts = row.isLiability ? [] : setAside;
   return {
     id: row.id,
     name: row.name,
@@ -20,6 +56,8 @@ function toApi(row: typeof accounts.$inferSelect): ApiAccount {
     isLiability: row.isLiability,
     interestRate: row.interestRate,
     balanceCents: row.balanceCents,
+    setAsideCents: parts.reduce((s, p) => s + p.cents, 0),
+    setAside: parts,
     archivedAt: row.archivedAt?.toISOString() ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -40,7 +78,8 @@ export default async function accountRoutes(app: FastifyInstance) {
       ...(includeArchived ? {} : { where: isNull(accounts.archivedAt) }),
       orderBy: (t, { asc }) => [asc(t.createdAt)],
     });
-    return { accounts: rows.map(toApi) };
+    const setAside = await setAsideByAccount(app.db);
+    return { accounts: rows.map((r) => toApi(r, setAside.get(r.id))) };
   });
 
   app.post("/accounts", async (request, reply) => {
@@ -66,7 +105,7 @@ export default async function accountRoutes(app: FastifyInstance) {
       where: eq(accounts.id, request.params.id),
     });
     if (!row) throw notFound("Account");
-    return toApi(row);
+    return toApi(row, (await setAsideByAccount(app.db)).get(row.id));
   });
 
   app.patch<{ Params: { id: string } }>("/accounts/:id", async (request) => {

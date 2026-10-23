@@ -38,8 +38,13 @@ export const Subscription = z.object({
 export type Subscription = z.infer<typeof Subscription>;
 
 export const SubscriptionListResponse = z.object({
+  /** Detected subscriptions, minus dismissed ones and ones tracked as bills. */
   subscriptions: z.array(Subscription),
-  /** Monthly-equivalent total across every detected subscription. */
+  /** Marked "not a subscription" — kept so the choice can be undone. */
+  dismissed: z.array(Subscription).default([]),
+  /** How many detected charges are already covered by a tracked bill. */
+  trackedAsBillCount: z.number().int().default(0),
+  /** Monthly-equivalent total across the listed (active) subscriptions. */
   monthlyTotalCents: z.number().int(),
   yearlyTotalCents: z.number().int(),
 });
