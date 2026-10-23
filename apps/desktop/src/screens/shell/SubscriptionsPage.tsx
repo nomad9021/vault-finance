@@ -1,5 +1,5 @@
 import { formatCentsWhole, type Subscription } from "@vault/shared";
-import { Button, EmptyState, MetricCard, Panel, Spinner, Tag } from "@vault/ui";
+import { Button, EmptyState, MetricCard, Panel, PanelLink, Spinner, Tag } from "@vault/ui";
 import { useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
@@ -25,12 +25,17 @@ function shortDate(iso: string): string {
  * is called out as possibly cancelled rather than silently dropped, and a price
  * rise since the previous charge is flagged — that's the thing people actually
  * want to catch and never do.
+ *
+ * A wrong guess can be marked "Not a subscription" (undoable from the Hidden
+ * list), and a charge tracked as a bill moves to the Bills page entirely — the
+ * server drops both from the list and the totals.
  */
 export function SubscriptionsPage({ onNavigate }: { onNavigate: Navigate }) {
   const client = useApp((s) => s.client);
   const { data, loading, reload: reloadSubs } = useData(() => client.subscriptions(), [client]);
   const { data: billData, reload: reloadBills } = useData(() => client.bills(), [client]);
   const [tracking, setTracking] = useState<string | null>(null);
+  const [showHidden, setShowHidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (loading && !data) return <Spinner label="Scanning for recurring charges" />;
@@ -39,9 +44,8 @@ export function SubscriptionsPage({ onNavigate }: { onNavigate: Navigate }) {
   const active = subs.filter((s) => !s.stale);
   const stale = subs.filter((s) => s.stale);
   const increases = subs.filter((s) => s.priceIncreaseCents !== null && !s.stale);
-  // How many of THESE rows are already tracked — not how many bills exist. The
-  // latter read as "4 of these are handled" when none of them were.
-  const trackedCount = subs.filter((s) => s.billId).length;
+  const hidden = data?.dismissed ?? [];
+  const trackedCount = data?.trackedAsBillCount ?? 0;
 
   // Promote a detected charge into a tracked bill so it joins the Bills branch
   // of the cash-flow diagram and gets due-date reminders.
@@ -66,6 +70,20 @@ export function SubscriptionsPage({ onNavigate }: { onNavigate: Navigate }) {
       // Without this the rejection vanished into the void and the button simply
       // stopped spinning, which reads as "it worked".
       setError(err instanceof Error ? err.message : "Couldn't track that as a bill.");
+    } finally {
+      setTracking(null);
+    }
+  };
+
+  const setDismissed = async (sub: Subscription, dismissed: boolean) => {
+    setTracking(sub.id);
+    setError(null);
+    try {
+      if (dismissed) await client.dismissSubscription(sub.id, sub.merchantName);
+      else await client.restoreSubscription(sub.id);
+      reloadSubs();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't update that subscription.");
     } finally {
       setTracking(null);
     }
@@ -105,7 +123,7 @@ export function SubscriptionsPage({ onNavigate }: { onNavigate: Navigate }) {
         </div>
       </div>
 
-      {subs.length === 0 ? (
+      {subs.length === 0 && hidden.length === 0 && trackedCount === 0 ? (
         <div className="panel">
           <EmptyState
             icon="refresh"
@@ -122,7 +140,16 @@ export function SubscriptionsPage({ onNavigate }: { onNavigate: Navigate }) {
         <>
           <Panel
             title="Active subscriptions"
-            subtitle={`Detected from your history · ${trackedCount} of ${subs.length} already tracked as bills`}
+            subtitle={
+              trackedCount > 0
+                ? `Detected from your history · ${trackedCount} more tracked as bills`
+                : "Detected from your history"
+            }
+            actions={
+              trackedCount > 0 ? (
+                <PanelLink onClick={() => onNavigate("bills")}>View bills</PanelLink>
+              ) : undefined
+            }
           >
             {active.length === 0 ? (
               <p className="card-meta">Nothing currently charging on a schedule.</p>
@@ -134,6 +161,7 @@ export function SubscriptionsPage({ onNavigate }: { onNavigate: Navigate }) {
                     sub={s}
                     busy={tracking === s.id}
                     onTrack={() => void trackAsBill(s)}
+                    onDismiss={() => void setDismissed(s, true)}
                     onView={() => onNavigate("transactions", s.accountId ? { accountId: s.accountId } : {})}
                   />
                 ))}
@@ -153,10 +181,38 @@ export function SubscriptionsPage({ onNavigate }: { onNavigate: Navigate }) {
                     sub={s}
                     busy={tracking === s.id}
                     onTrack={() => void trackAsBill(s)}
+                    onDismiss={() => void setDismissed(s, true)}
                     onView={() => onNavigate("transactions", s.accountId ? { accountId: s.accountId } : {})}
                   />
                 ))}
               </div>
+            </Panel>
+          )}
+
+          {hidden.length > 0 && (
+            <Panel
+              title="Not subscriptions"
+              subtitle={`${hidden.length} hidden · left out of the totals`}
+              actions={
+                <button type="button" className="panel-link" onClick={() => setShowHidden((v) => !v)}>
+                  {showHidden ? "Hide" : "Show"}
+                </button>
+              }
+            >
+              {showHidden && (
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  {hidden.map((s) => (
+                    <SubscriptionRow
+                      key={s.id}
+                      sub={s}
+                      busy={tracking === s.id}
+                      hidden
+                      onRestore={() => void setDismissed(s, false)}
+                      onView={() => onNavigate("transactions", s.accountId ? { accountId: s.accountId } : {})}
+                    />
+                  ))}
+                </div>
+              )}
             </Panel>
           )}
         </>
@@ -168,12 +224,19 @@ export function SubscriptionsPage({ onNavigate }: { onNavigate: Navigate }) {
 function SubscriptionRow({
   sub,
   busy,
+  hidden = false,
   onTrack,
+  onDismiss,
+  onRestore,
   onView,
 }: {
   sub: Subscription;
   busy: boolean;
-  onTrack: () => void;
+  /** Shown in the "Not subscriptions" list: only an undo, no tracking. */
+  hidden?: boolean;
+  onTrack?: () => void;
+  onDismiss?: () => void;
+  onRestore?: () => void;
   onView: () => void;
 }) {
   return (
@@ -184,7 +247,6 @@ function SubscriptionRow({
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 600, fontSize: "var(--text-base)" }}>{sub.merchantName}</span>
-          {sub.billId && <Tag variant="positive">tracked as a bill</Tag>}
           {sub.stale && <Tag variant="warning">no recent charge</Tag>}
           {sub.priceIncreaseCents !== null && !sub.stale && (
             <Tag variant="negative">up {formatCentsWhole(sub.priceIncreaseCents)}</Tag>
@@ -212,10 +274,19 @@ function SubscriptionRow({
         </div>
       </div>
 
-      {!sub.billId && (
-        <Button variant="secondary" size="sm" onClick={onTrack} disabled={busy}>
-          {busy ? <Spinner label="Adding" /> : "Track as bill"}
+      {hidden ? (
+        <Button variant="secondary" size="sm" onClick={onRestore} disabled={busy}>
+          {busy ? <Spinner label="Restoring" /> : "It's a subscription"}
         </Button>
+      ) : (
+        <>
+          <Button variant="secondary" size="sm" onClick={onTrack} disabled={busy}>
+            {busy ? <Spinner label="Working" /> : "Track as bill"}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onDismiss} disabled={busy}>
+            Not a subscription
+          </Button>
+        </>
       )}
       <Button variant="ghost" size="sm" iconEnd="arrowRight" onClick={onView}>
         Charges

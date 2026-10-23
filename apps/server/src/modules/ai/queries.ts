@@ -315,9 +315,13 @@ export async function runQuery(app: FastifyInstance, request: FastifyRequest, q:
     }
 
     case "accounts": {
-      const { accounts } = await get<{ accounts: Array<{ name: string; type: string; balanceCents: number; isLiability: boolean }> }>("/accounts");
+      const { accounts } = await get<{ accounts: Array<{ name: string; type: string; balanceCents: number; isLiability: boolean; setAsideCents?: number }> }>("/accounts");
       const net = accounts.reduce((s, a) => s + a.balanceCents, 0);
-      return [`ACCOUNTS (net worth ${dollars(net)}; name | type | balance):`, ...accounts.map((a) => `  ${a.name} | ${a.type} | ${dollars(a.balanceCents)}`)].join("\n");
+      // Set-aside money (bill savings, funds, buckets) is in the balance but not free to spend.
+      return [
+        `ACCOUNTS (net worth ${dollars(net)}; name | type | balance | free to use after set-asides):`,
+        ...accounts.map((a) => `  ${a.name} | ${a.type} | ${dollars(a.balanceCents)} | ${dollars(a.balanceCents - (a.setAsideCents ?? 0))}`),
+      ].join("\n");
     }
   }
 }

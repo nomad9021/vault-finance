@@ -11,6 +11,7 @@ import {
   savingsGoals,
   transactions,
 } from "../../db/schema.js";
+import { billMatchesMerchant, normalizeMerchant } from "../subscriptions/merchant.js";
 
 const SummaryQuery = z.object({
   months: z.coerce.number().int().min(1).max(24).default(6),
@@ -49,6 +50,9 @@ function billMonthlyCents(amountCents: number, cadence: string): number {
       return amountCents; // monthly
   }
 }
+
+/** A category transaction counts as a bill payment within this much of the bill amount. */
+const BILL_AMOUNT_TOLERANCE = 0.1;
 
 /**
  * Estimated monthly minimum payment for a liability account. Mirrors the
@@ -265,12 +269,55 @@ export default async function cashflowRoutes(app: FastifyInstance) {
       });
     }
 
+    // Bill payments: this month's transactions that paid a tracked bill —
+    // same merchant as the bill's name, or the bill's category at about the
+    // bill's amount. That money is drawn once, under Bills, and taken out of the
+    // category it was filed in; otherwise rent shows up as both "Mortgage &
+    // Rent" spending and a "Rent" bill and the diagram overstates outflows.
+    const billRows = await app.db.select().from(bills).where(isNull(bills.archivedAt));
+    const spendTxns = await app.db
+      .select({
+        id: transactions.id,
+        merchantName: transactions.merchantName,
+        amountCents: transactions.amountCents,
+        categoryId: transactions.categoryId,
+      })
+      .from(transactions)
+      .where(
+        and(
+          gte(transactions.postedAt, first),
+          lt(transactions.postedAt, nextFirst),
+          lt(transactions.amountCents, 0),
+          notArchived,
+        ),
+      );
+    const paidByBill = new Map<string, number>();
+    const billSpendByCategory = new Map<string | null, number>();
+    const claimed = new Set<string>();
+    for (const b of billRows) {
+      for (const t of spendTxns) {
+        if (claimed.has(t.id)) continue;
+        const amount = -t.amountCents;
+        const byName = billMatchesMerchant(b.name, normalizeMerchant(t.merchantName));
+        const byCategory =
+          b.categoryId !== null &&
+          t.categoryId === b.categoryId &&
+          Math.abs(amount - b.amountCents) <= b.amountCents * BILL_AMOUNT_TOLERANCE;
+        if (!byName && !byCategory) continue;
+        claimed.add(t.id);
+        paidByBill.set(b.id, (paidByBill.get(b.id) ?? 0) + amount);
+        const catKey = t.categoryId && catById.has(t.categoryId) ? t.categoryId : null;
+        billSpendByCategory.set(catKey, (billSpendByCategory.get(catKey) ?? 0) + amount);
+      }
+    }
+    const billPaidTotal = [...paidByBill.values()].reduce((s, v) => s + v, 0);
+
     const directSpend = new Map<string, number>();
     let uncategorizedSpend = 0;
 
     for (const row of spendRows) {
-      const spending = Number(row.spending);
       const cat = row.categoryId ? catById.get(row.categoryId) : undefined;
+      const spending = Number(row.spending) - (billSpendByCategory.get(cat ? cat.id : null) ?? 0);
       if (spending > 0) {
         if (cat) directSpend.set(cat.id, (directSpend.get(cat.id) ?? 0) + spending);
         else uncategorizedSpend += spending;
@@ -340,10 +387,10 @@ export default async function cashflowRoutes(app: FastifyInstance) {
     };
 
     // Planned outflows: recurring bills + estimated debt minimums, each
-    // normalized to a monthly figure. They're added as their own branches off
-    // the hub alongside actual category spending (they may overlap it), and are
-    // NOT counted in totalSpendingCents, which stays actual transaction spending.
-    const billRows = await app.db.select().from(bills).where(isNull(bills.archivedAt));
+    // normalized to a monthly figure, as their own branches off the hub. A bill
+    // shows what was actually paid toward it this month (already taken out of
+    // category spending above), or its monthly amount when that's more — e.g.
+    // a yearly bill not yet due still needs its monthly share set aside.
     const billItems = billRows
       .map((b) => ({
         id: b.id,
@@ -351,7 +398,8 @@ export default async function cashflowRoutes(app: FastifyInstance) {
         color: b.color,
         accountId: b.accountId,
         categoryId: b.categoryId,
-        monthly: billMonthlyCents(b.amountCents, b.cadence),
+        planned: billMonthlyCents(b.amountCents, b.cadence),
+        monthly: Math.max(billMonthlyCents(b.amountCents, b.cadence), paidByBill.get(b.id) ?? 0),
       }))
       .filter((b) => b.monthly > 0)
       .sort((a, b) => b.monthly - a.monthly);
@@ -494,10 +542,14 @@ export default async function cashflowRoutes(app: FastifyInstance) {
     // saved = income − spending − bills − debt − savings − giving − gifts.
     // Money going into a savings goal is NOT counted here — it has a job now,
     // and showing it twice would overstate what's actually free.
+    // Category spending as drawn — bill payments were moved under Bills, so
+    // they're counted there (billsMonthlyTotal) and not here.
+    const diagramSpendingCents = totalSpendingCents;
+    totalSpendingCents += billPaidTotal;
     const savedCents = Math.max(
       0,
       totalIncomeCents -
-        totalSpendingCents -
+        diagramSpendingCents -
         billsMonthlyTotal -
         debtMonthlyTotal -
         savingsMonthlyTotal -
@@ -545,7 +597,7 @@ export default async function cashflowRoutes(app: FastifyInstance) {
           accountId: b.accountId ?? null,
           section: "bills",
           entityId: b.id,
-          editableMonthlyCents: b.monthly,
+          editableMonthlyCents: b.planned,
         });
         links.push({ from: "bills:hub", to: `bill:${b.id}`, valueCents: b.monthly });
       }
@@ -668,7 +720,7 @@ export default async function cashflowRoutes(app: FastifyInstance) {
     // The hub balances again, and the diagram says the plan needs money that
     // isn't arriving.
     const committedCents =
-      totalSpendingCents +
+      diagramSpendingCents +
       billsMonthlyTotal +
       debtMonthlyTotal +
       savingsMonthlyTotal +

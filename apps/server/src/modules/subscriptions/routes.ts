@@ -3,9 +3,11 @@ import type {
   SubscriptionCadence,
   SubscriptionListResponse,
 } from "@vault/shared";
-import { and, gte, isNull, lt, notInArray } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, notInArray } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { accounts, bills, transactions } from "../../db/schema.js";
+import { z } from "zod";
+import { accounts, bills, subscriptionDismissals, transactions } from "../../db/schema.js";
+import { billMatchesMerchant, normalizeMerchant } from "./merchant.js";
 
 /**
  * Recurring-charge detection over transaction history.
@@ -15,6 +17,11 @@ import { accounts, bills, transactions } from "../../db/schema.js";
  * The trade-off is that detection is a guess, so every result carries the
  * evidence behind it (occurrence count, regularity) and the UI is expected to
  * present these as candidates, not facts.
+ *
+ * Two kinds of result are taken out of the list and its totals: charges the
+ * household marked "not a subscription" (returned separately so it can be
+ * undone), and charges a tracked bill already covers — counting those here too
+ * would show the same money twice.
  */
 
 /** Charges closer together than this are one purchase, not two occurrences. */
@@ -53,22 +60,6 @@ function dayNumber(date: string): number {
 
 function dateFromDayNumber(day: number): string {
   return new Date(day * 86_400_000).toISOString().slice(0, 10);
-}
-
-/**
- * Merchant names arrive with transaction noise — store numbers, dates, card
- * suffixes. Normalizing lets "AMZN Mktp US*2K4L" and "AMZN Mktp US*9F1C" land in
- * the same bucket, which is the difference between spotting a subscription and
- * seeing thirty one-offs.
- */
-function normalizeMerchant(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[*#]\w+/g, " ")
-    .replace(/\b\d[\d-]*\b/g, " ")
-    .replace(/[^a-z\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 /** 0–1 regularity: how tightly the gaps cluster around their median. */
@@ -115,6 +106,9 @@ export default async function subscriptionRoutes(app: FastifyInstance) {
     }
 
     const billRows = await app.db.select().from(bills).where(isNull(bills.archivedAt));
+    const dismissedKeys = new Set(
+      (await app.db.select().from(subscriptionDismissals)).map((d) => d.merchantKey),
+    );
     const today = dayNumber(new Date().toISOString().slice(0, 10));
     const found: ApiSubscription[] = [];
 
@@ -159,10 +153,7 @@ export default async function subscriptionRoutes(app: FastifyInstance) {
       const previous = occurrences[occurrences.length - 2]!;
       const nextExpectedDay = latest.day + medInterval;
 
-      const bill = billRows.find((b) => {
-        const billKey = normalizeMerchant(b.name);
-        return billKey.length > 2 && (billKey === key || key.includes(billKey) || billKey.includes(key));
-      });
+      const bill = billRows.find((b) => billMatchesMerchant(b.name, key));
 
       found.push({
         id: key.replace(/\s+/g, "-"),
@@ -185,13 +176,37 @@ export default async function subscriptionRoutes(app: FastifyInstance) {
     }
 
     found.sort((a, b) => b.monthlyCents - a.monthlyCents);
-    const monthlyTotalCents = found
+    const dismissed = found.filter((s) => dismissedKeys.has(s.id));
+    const trackedAsBillCount = found.filter((s) => !dismissedKeys.has(s.id) && s.billId).length;
+    const subscriptions = found.filter((s) => !dismissedKeys.has(s.id) && !s.billId);
+    const monthlyTotalCents = subscriptions
       .filter((s) => !s.stale)
       .reduce((sum, s) => sum + s.monthlyCents, 0);
     return {
-      subscriptions: found,
+      subscriptions,
+      dismissed,
+      trackedAsBillCount,
       monthlyTotalCents,
       yearlyTotalCents: monthlyTotalCents * 12,
     };
+  });
+
+  // "Not a subscription". The id is the detection key (merchant name, normalized
+  // and hyphenated), so the dismissal also covers future charges from it.
+  app.post<{ Params: { id: string } }>("/subscriptions/:id/dismiss", async (request, reply) => {
+    const { merchantName } = z.object({ merchantName: z.string().min(1).max(200) }).parse(request.body);
+    const merchantKey = z.string().min(1).max(200).parse(request.params.id);
+    await app.db
+      .insert(subscriptionDismissals)
+      .values({ merchantKey, merchantName })
+      .onConflictDoNothing();
+    return reply.status(204).send();
+  });
+
+  app.delete<{ Params: { id: string } }>("/subscriptions/:id/dismiss", async (request, reply) => {
+    await app.db
+      .delete(subscriptionDismissals)
+      .where(eq(subscriptionDismissals.merchantKey, request.params.id));
+    return reply.status(204).send();
   });
 }

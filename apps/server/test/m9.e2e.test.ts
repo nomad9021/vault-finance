@@ -276,6 +276,79 @@ describe("giving, savings branches and derived views", () => {
     expect(found.stale).toBe(false);
   });
 
+  it("drops a subscription marked not-a-subscription, and restores it", async () => {
+    const del = (url: string) => app.inject({ method: "DELETE", url, headers: auth });
+    const list = async () => (await get("/api/v1/subscriptions")).json();
+    const before = await list();
+    const sub = before.subscriptions.find((s: { merchantName: string }) => s.merchantName === "Streamflix");
+    expect(sub).toBeDefined();
+
+    expect((await post(`/api/v1/subscriptions/${sub.id}/dismiss`, { merchantName: sub.merchantName })).statusCode).toBe(204);
+    const after = await list();
+    expect(after.subscriptions.find((s: { id: string }) => s.id === sub.id)).toBeUndefined();
+    expect(after.dismissed.map((s: { id: string }) => s.id)).toContain(sub.id);
+    expect(after.monthlyTotalCents).toBe(before.monthlyTotalCents - sub.monthlyCents);
+
+    expect((await del(`/api/v1/subscriptions/${sub.id}/dismiss`)).statusCode).toBe(204);
+    const restored = await list();
+    expect(restored.subscriptions.find((s: { id: string }) => s.id === sub.id)).toBeDefined();
+    expect(restored.dismissed).toHaveLength(0);
+  });
+
+  it("leaves a subscription tracked as a bill out of the list and totals", async () => {
+    const before = (await get("/api/v1/subscriptions")).json();
+    const sub = before.subscriptions.find((s: { merchantName: string }) => s.merchantName === "Streamflix");
+    const bill = await post("/api/v1/bills", { name: "Streamflix", amountCents: 1_599, dueDay: 14, cadence: "monthly" });
+    expect(bill.statusCode).toBe(201);
+
+    const after = (await get("/api/v1/subscriptions")).json();
+    expect(after.subscriptions.find((s: { id: string }) => s.id === sub.id)).toBeUndefined();
+    expect(after.trackedAsBillCount).toBe(before.trackedAsBillCount + 1);
+    expect(after.monthlyTotalCents).toBe(before.monthlyTotalCents - sub.monthlyCents);
+  });
+
+  it("reports money set aside in an account (bill savings and buckets)", async () => {
+    const acct = (await post("/api/v1/accounts", { name: "Set-aside checking", type: "checking", balanceCents: 100_000 })).json();
+    expect((await post("/api/v1/bills", { name: "Insurance", amountCents: 60_000, savedCents: 20_000, dueDay: 3, cadence: "yearly", accountId: acct.id })).statusCode).toBe(201);
+    expect((await post("/api/v1/buckets", { accountId: acct.id, name: "Vacation", allocatedCents: 5_000 })).statusCode).toBe(201);
+
+    const listed = (await get("/api/v1/accounts")).json().accounts.find((a: { id: string }) => a.id === acct.id);
+    expect(listed.balanceCents).toBe(100_000);
+    expect(listed.setAsideCents).toBe(25_000);
+    expect(listed.setAside.map((p: { kind: string }) => p.kind).sort()).toEqual(["bill", "bucket"]);
+    expect((await get(`/api/v1/accounts/${acct.id}`)).json().setAsideCents).toBe(25_000);
+  });
+
+  it("counts a paid bill once, under Bills, not also in its category", async () => {
+    const cats = (await get("/api/v1/categories")).json().categories as { id: string; name: string }[];
+    const housing = cats.find((c) => /rent|housing/i.test(c.name))!;
+    await post("/api/v1/transactions", {
+      accountId,
+      postedAt: day(3),
+      amountCents: -123_400,
+      merchantName: "Lakeside Rentals #0042",
+      categoryId: housing.id,
+      pending: false,
+    });
+    const before = await sankey();
+    const beforeTotals = (await get(`/api/v1/cashflow/sankey?month=${month}`)).json();
+    const catBefore = nodeById(before.nodes, `cat:${housing.id}`)!.valueCents;
+
+    const bill = (await post("/api/v1/bills", { name: "Lakeside Rentals", amountCents: 123_400, dueDay: 3, cadence: "monthly" })).json();
+    const after = await sankey();
+    const afterTotals = (await get(`/api/v1/cashflow/sankey?month=${month}`)).json();
+
+    // Moved, not added: the category shrinks by the payment, the bill carries it,
+    // and actual spending is unchanged.
+    expect(nodeById(after.nodes, `cat:${housing.id}`)?.valueCents ?? 0).toBe(catBefore - 123_400);
+    expect(nodeById(after.nodes, `bill:${bill.id}`)!.valueCents).toBe(123_400);
+    expect(afterTotals.totalSpendingCents).toBe(beforeTotals.totalSpendingCents);
+    // The hub still balances.
+    const into = after.links.filter((l) => l.to === "hub").reduce((s, l) => s + l.valueCents, 0);
+    const out = after.links.filter((l) => l.from === "hub").reduce((s, l) => s + l.valueCents, 0);
+    expect(out).toBe(into);
+  });
+
   it("reports insights with the page that resolves each one", async () => {
     const res = await get("/api/v1/insights");
     expect(res.statusCode).toBe(200);

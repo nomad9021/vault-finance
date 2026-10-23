@@ -397,6 +397,15 @@ export const bills = pgTable("bills", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Detected subscriptions marked "not a subscription". Detection is a guess, so
+// a wrong one has to be dismissable; keyed by the normalized merchant name so
+// the dismissal survives new charges from the same merchant.
+export const subscriptionDismissals = pgTable("subscription_dismissals", {
+  merchantKey: text("merchant_key").primaryKey(),
+  merchantName: text("merchant_name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ── giving ──
 // Money leaving the household on purpose: recurring giving (tithe, charities,
 // sponsorships) and gift sinking funds saved up for a specific occasion. Both
