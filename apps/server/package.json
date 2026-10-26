@@ -12,7 +12,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.135.0",
+    "@anthropic-ai/sdk": "^1.2.0",
     "@fastify/cors": "^11.3.1",
     "@vault/design-tokens": "workspace:*",
     "@vault/shared": "workspace:*",
