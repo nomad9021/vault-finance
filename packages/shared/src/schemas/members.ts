@@ -35,6 +35,8 @@ export const InviteMemberRequest = z.object({
   email: z.string().email(),
   /** The address the owner's app uses; builds the link when APP_PUBLIC_URL is unset. */
   serverUrl: z.string().url().max(500).optional(),
+  /** False creates the invite and returns its link without emailing anyone. */
+  sendEmail: z.boolean().optional(),
 });
 export type InviteMemberRequest = z.infer<typeof InviteMemberRequest>;
 

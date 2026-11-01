@@ -194,6 +194,24 @@ describe("owner email invitations", () => {
     expect(list.json().members.some((m: { displayName: string }) => m.displayName === "Sam Carter")).toBe(true);
   });
 
+  it("a link-only invite emails nobody, even with a mailbox connected", async () => {
+    const res = await asOwner("POST", "/api/v1/members/invite", {
+      email: "linkonly@vault.test",
+      serverUrl: "https://192.168.1.10:8443",
+      sendEmail: false,
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ emailed: false, sentFrom: null, emailProblem: null });
+    expect(smtp.mails).toHaveLength(0);
+
+    const token = new URL(res.json().inviteUrl).searchParams.get("token")!;
+    const preview = await app.inject({
+      method: "GET",
+      url: `/api/v1/members/invite/${encodeURIComponent(token)}`,
+    });
+    expect(preview.json()).toMatchObject({ email: "linkonly@vault.test" });
+  });
+
   it("a failed send is reported, and the invite link still works", async () => {
     smtp.sendError = codeError("ECONNECTION");
     const res = await asOwner("POST", "/api/v1/members/invite", {
