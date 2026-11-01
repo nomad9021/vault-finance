@@ -141,7 +141,9 @@ export default async function memberRoutes(
     let emailed = false;
     let sentFrom: string | null = null;
     let emailProblem: string | null = null;
-    if (!url) {
+    if (body.sendEmail === false) {
+      // The owner will pass the link on themselves; nothing to send or report.
+    } else if (!url) {
       // Never log the link itself: the token is a credential, and the owner
       // already gets it in the response below.
       app.log.warn("member invited but no shareable server address is known — no email sent");

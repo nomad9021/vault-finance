@@ -1,7 +1,16 @@
 import type { FetchLike } from "@vault/shared";
 import { describe, expect, it } from "vitest";
 import type { ProbeResult } from "../platform/index.js";
-import { alternateTrust, downgradesTransport, makeReselect, newRoute, pickAddress, rewriteUrl, routedFetch } from "./serverRoute.js";
+import {
+  alternateTrust,
+  downgradesTransport,
+  makeReselect,
+  newRoute,
+  pickAddress,
+  rewriteUrl,
+  routedFetch,
+  shareableInviteLink,
+} from "./serverRoute.js";
 
 const HOME = "https://192.168.1.10:8443";
 const VPN = "https://100.70.0.1:8443";
@@ -80,6 +89,20 @@ describe("routedFetch", () => {
     const { calls, fetch } = setup({ [HOME]: down }, null);
     await expect(fetch(`${HOME}/api/v1/x`, { method: "GET", headers: {} })).rejects.toThrow("connection failed");
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe("shareableInviteLink", () => {
+  it("keeps a full link as it is", () => {
+    expect(shareableInviteLink("https://vault.example/invite?token=a.b", HOME)).toBe("https://vault.example/invite?token=a.b");
+  });
+  it("builds a relative link on the address the app uses", () => {
+    expect(shareableInviteLink("/invite?token=a.b", HOME)).toBe(`${HOME}/invite?token=a.b`);
+  });
+  it("gives nothing when that address only works on this computer", () => {
+    expect(shareableInviteLink("/invite?token=a.b", "https://localhost:8443")).toBeNull();
+    expect(shareableInviteLink("/invite?token=a.b", "http://127.0.0.1:8444")).toBeNull();
+    expect(shareableInviteLink("/invite?token=a.b", null)).toBeNull();
   });
 });
 

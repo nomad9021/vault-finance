@@ -92,6 +92,19 @@ export function routedStreamFetch(streamFetchImpl: StreamFetchLike, getRoute: ()
   return (url, init, onChunk, signal) => streamFetchImpl(rewriteUrl(getRoute(), url), init, onChunk, signal);
 }
 
+/**
+ * A link someone else can open. Servers without a public address hand back a
+ * relative one, so it's built on the address this app reached them at, unless
+ * that only works on this computer. Null when there's nothing shareable.
+ */
+export function shareableInviteLink(link: string, address: string | null): string | null {
+  if (link.startsWith("http")) return link;
+  if (!address) return null;
+  const { hostname } = new URL(address);
+  const local = hostname === "localhost" || hostname.endsWith(".localhost") || hostname === "[::1]" || hostname.startsWith("127.");
+  return local ? null : new URL(link, address).toString();
+}
+
 /** A plain http:// address has no certificate to check, and exposes everything sent to it. */
 export function downgradesTransport(primary: string, alternate: string): boolean {
   return primary.startsWith("https://") && !alternate.startsWith("https://");

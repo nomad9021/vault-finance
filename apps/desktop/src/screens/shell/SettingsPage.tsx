@@ -40,6 +40,7 @@ import {
   usesTailscaleClient,
 } from "../../lib/privateNetwork.js";
 import { REVIEW_SLIDE_LABELS, type ReviewPrefs } from "../../lib/reviewPrefs.js";
+import { shareableInviteLink } from "../../lib/serverRoute.js";
 import { runChecks, type UiCheck } from "../../lib/startupChecks.js";
 import { useCheckActions } from "../../lib/useCheckActions.js";
 import { useData } from "../../lib/useData.js";
@@ -588,13 +589,18 @@ function MembersSection() {
   const user = useApp((s) => s.user);
   const [data, setData] = useState<MemberListResponse | null>(null);
   const platform = useApp((s) => s.platform);
-  const [mode, setMode] = useState<"none" | "connect" | "invite" | "create">("none");
+  const [mode, setMode] = useState<"none" | "connect" | "invite" | "link" | "create">("none");
   const [form, setForm] = useState({ displayName: "", email: "", tempPassword: "" });
   const [emailStatus, setEmailStatus] = useState<EmailConnectionStatus | null>(null);
+  // Servers before 0.1.17 send invites their own way and have no email settings.
+  const [olderServer, setOlderServer] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [connect, setConnect] = useState({ email: "", password: "", host: "", port: "587" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [inviteResult, setInviteResult] = useState<(InviteMemberResponse & { to: string }) | null>(null);
+  const [inviteResult, setInviteResult] = useState<
+    (InviteMemberResponse & { to: string; linkOnly: boolean; link: string | null }) | null
+  >(null);
   const [removing, setRemoving] = useState<{ id: string; label: string } | null>(null);
 
   const reload = useCallback(() => {
@@ -605,7 +611,10 @@ function MembersSection() {
     client
       .emailConnection()
       .then(setEmailStatus)
-      .catch(() => setEmailStatus(null));
+      .catch((err: unknown) => {
+        setEmailStatus(null);
+        setOlderServer(err instanceof ApiRequestError && err.status === 404);
+      });
   }, [client]);
   useEffect(reload, [reload]);
 
@@ -618,7 +627,7 @@ function MembersSection() {
 
   const startInvite = () => {
     setError(null);
-    if (canSendEmail) {
+    if (canSendEmail || olderServer) {
       setMode("invite");
     } else {
       setConnect({ email: user.email ?? "", password: "", host: "", port: "587" });
@@ -669,11 +678,19 @@ function MembersSection() {
         setBusy(false);
         return;
       }
-      if (mode === "invite") {
+      if (mode === "invite" || mode === "link") {
         const to = form.email.trim();
         const serverUrl = useApp.getState().activeAddress ?? client.baseUrl;
-        const result = await client.inviteMember({ email: to, serverUrl });
-        setInviteResult({ ...result, to });
+        const linkOnly = mode === "link";
+        const result = await client.inviteMember({
+          email: to,
+          serverUrl,
+          ...(linkOnly ? { sendEmail: false } : {}),
+          // Older servers require a name; the part before the @ stands in for it.
+          ...(olderServer ? { displayName: to.split("@")[0] || to } : {}),
+        });
+        setCopied(false);
+        setInviteResult({ ...result, to, linkOnly, link: shareableInviteLink(result.inviteUrl, serverUrl) });
       } else {
         await client.createMember({
           displayName: form.displayName.trim(),
@@ -783,6 +800,9 @@ function MembersSection() {
           <Button variant="secondary" onClick={startInvite}>
             Invite by email
           </Button>
+          <Button variant="ghost" onClick={() => setMode("link")}>
+            Get an invite link
+          </Button>
           <Button variant="ghost" onClick={() => setMode("create")}>
             Add with temporary password
           </Button>
@@ -849,13 +869,18 @@ function MembersSection() {
               autoFocus
             />
           )}
+          {mode === "link" && (
+            <p className="card-body" style={{ margin: 0 }}>
+              You'll get a one-time link to send them however you like. No email is sent.
+            </p>
+          )}
           {mode !== "connect" && (
             <Field
-              label={mode === "invite" ? "Their email" : "Email"}
+              label={mode === "create" ? "Email" : "Their email"}
               type="email"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
-              autoFocus={mode === "invite"}
+              autoFocus={mode !== "create"}
             />
           )}
           {mode === "create" && (
@@ -879,10 +904,24 @@ function MembersSection() {
                 "Connect email"
               ) : mode === "invite" ? (
                 "Send invite"
+              ) : mode === "link" ? (
+                "Create link"
               ) : (
                 "Create account"
               )}
             </Button>
+            {mode === "connect" && (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setError(null);
+                  setMode("link");
+                }}
+                disabled={busy}
+              >
+                Skip email, get a link
+              </Button>
+            )}
             <Button variant="ghost" onClick={reset} disabled={busy}>
               Cancel
             </Button>
@@ -892,15 +931,44 @@ function MembersSection() {
 
       <Dialog
         open={inviteResult !== null}
-        title={inviteResult?.emailed ? "Invite sent" : "Invite not emailed"}
+        title={
+          inviteResult?.emailed
+            ? "Invite sent"
+            : inviteResult?.linkOnly || (olderServer && inviteResult?.link)
+              ? "Invite link ready"
+              : "Invite not emailed"
+        }
         onClose={() => setInviteResult(null)}
         actions={
-          <Button variant="primary" onClick={() => setInviteResult(null)}>
-            Done
-          </Button>
+          <>
+            {inviteResult?.link && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  void navigator.clipboard.writeText(inviteResult.link!).then(() => setCopied(true)).catch(() => {});
+                }}
+              >
+                {copied ? "Copied" : "Copy link"}
+              </Button>
+            )}
+            <Button variant="primary" onClick={() => setInviteResult(null)}>
+              Done
+            </Button>
+          </>
         }
       >
-        {inviteResult?.emailed ? (
+        {inviteResult && !inviteResult.link && inviteResult.linkOnly ? (
+          <>
+            This app reaches the server through an address that only works on this computer, so
+            there's no link to share. Connect the app using the server's network address, then try again.
+          </>
+        ) : inviteResult?.linkOnly || (olderServer && inviteResult?.link) ? (
+          <>
+            Send this one-time link to {inviteResult.to}. It lasts 7 days. They'll need to be on the
+            same home Wi-Fi or private network (VPN) as this server to open it, and their browser may
+            warn about the server's certificate.
+          </>
+        ) : inviteResult?.emailed ? (
           <>
             Sent to {inviteResult.to}
             {inviteResult.sentFrom ? ` from ${inviteResult.sentFrom}` : ""}. It can take a minute to
@@ -910,11 +978,10 @@ function MembersSection() {
         ) : (
           <>
             {inviteResult?.emailProblem ?? "The email couldn't be sent."}
-            {inviteResult?.inviteUrl.startsWith("http") &&
-              " The invite is still valid, so you can share this one-time link yourself:"}
+            {inviteResult?.link && " The invite is still valid, so you can share this one-time link yourself:"}
           </>
         )}
-        {inviteResult?.inviteUrl.startsWith("http") && (
+        {inviteResult?.link && (
           <div
             style={{
               fontFamily: "ui-monospace, monospace",
@@ -924,7 +991,7 @@ function MembersSection() {
               userSelect: "all",
             }}
           >
-            {inviteResult.inviteUrl}
+            {inviteResult.link}
           </div>
         )}
       </Dialog>
