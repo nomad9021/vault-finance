@@ -92,6 +92,11 @@ export function routedStreamFetch(streamFetchImpl: StreamFetchLike, getRoute: ()
   return (url, init, onChunk, signal) => streamFetchImpl(rewriteUrl(getRoute(), url), init, onChunk, signal);
 }
 
+/** A plain http:// address has no certificate to check, and exposes everything sent to it. */
+export function downgradesTransport(primary: string, alternate: string): boolean {
+  return primary.startsWith("https://") && !alternate.startsWith("https://");
+}
+
 export type AlternateTrust =
   /** Valid for the OS, or no pinning on this platform: nothing to store. */
   | { kind: "os" }

@@ -1,7 +1,7 @@
 import type { FetchLike } from "@vault/shared";
 import { describe, expect, it } from "vitest";
 import type { ProbeResult } from "../platform/index.js";
-import { alternateTrust, makeReselect, newRoute, pickAddress, rewriteUrl, routedFetch } from "./serverRoute.js";
+import { alternateTrust, downgradesTransport, makeReselect, newRoute, pickAddress, rewriteUrl, routedFetch } from "./serverRoute.js";
 
 const HOME = "https://192.168.1.10:8443";
 const VPN = "https://100.70.0.1:8443";
@@ -80,6 +80,16 @@ describe("routedFetch", () => {
     const { calls, fetch } = setup({ [HOME]: down }, null);
     await expect(fetch(`${HOME}/api/v1/x`, { method: "GET", headers: {} })).rejects.toThrow("connection failed");
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe("downgradesTransport", () => {
+  it("refuses plain http as a second address for an https server", () => {
+    expect(downgradesTransport(HOME, "http://100.70.0.1:8080")).toBe(true);
+  });
+  it("allows https, and leaves an http-only setup as it is", () => {
+    expect(downgradesTransport(HOME, VPN)).toBe(false);
+    expect(downgradesTransport("http://127.0.0.1:8444", "http://localhost:8444")).toBe(false);
   });
 });
 

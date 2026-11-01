@@ -86,6 +86,18 @@ cmd_lock() {
   ok "Locked. The server is stopped and its data is sealed until you unlock it."
 }
 
+# A failed copy puts everything back as it was, so the stack never sees an
+# empty volume and `create` can simply be run again.
+undo_migration() {
+  $SUDO umount "$MOUNT"
+  $SUDO cryptsetup close "$MAPPER"
+  $SUDO rmdir "$MOUNT"
+  $SUDO mv "$2" "$MOUNT"
+  $SUDO rm -f "$1"
+  if [ -f "$COMPOSE_DIR/.env" ]; then stack up -d || warn "Couldn't restart the server."; fi
+  die "$3 Your data is back in $MOUNT, unencrypted, and nothing was changed."
+}
+
 cmd_create() {
   local size="20G" image="/var/lib/vault-finance/vault.img"
   while [ $# -gt 0 ]; do
@@ -144,8 +156,8 @@ cmd_create() {
 
   if [ -n "$staged" ]; then
     say "Copying your data into the encrypted volume…"
-    $SUDO cp -a "$staged/." "$MOUNT/" || die "Copy failed. Your original data is untouched at $staged."
-    $SUDO diff -rq "$staged" "$MOUNT" >/dev/null || die "The copy doesn't match the original. Your original data is untouched at $staged."
+    $SUDO cp -a "$staged/." "$MOUNT/" || undo_migration "$image" "$staged" "The copy failed (is the volume big enough? Use --size)."
+    $SUDO diff -rq "$staged" "$MOUNT" >/dev/null || undo_migration "$image" "$staged" "The copy didn't match the original."
     $SUDO rm -rf "$staged"
     ok "Moved your data in and removed the unencrypted copy."
     warn "Deleted files can linger on a disk. For full certainty, also wipe that disk's free space (or the old disk)."

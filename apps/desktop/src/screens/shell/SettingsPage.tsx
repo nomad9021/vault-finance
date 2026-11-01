@@ -671,7 +671,8 @@ function MembersSection() {
       }
       if (mode === "invite") {
         const to = form.email.trim();
-        const result = await client.inviteMember({ email: to, serverUrl: client.baseUrl });
+        const serverUrl = useApp.getState().activeAddress ?? client.baseUrl;
+        const result = await client.inviteMember({ email: to, serverUrl });
         setInviteResult({ ...result, to });
       } else {
         await client.createMember({
@@ -908,21 +909,24 @@ function MembersSection() {
           </>
         ) : (
           <>
-            {inviteResult?.emailProblem ?? "The email couldn't be sent."} The invite is still
-            valid, so you can share this one-time link yourself:
+            {inviteResult?.emailProblem ?? "The email couldn't be sent."}
+            {inviteResult?.inviteUrl.startsWith("http") &&
+              " The invite is still valid, so you can share this one-time link yourself:"}
           </>
         )}
-        <div
-          style={{
-            fontFamily: "ui-monospace, monospace",
-            fontSize: "var(--text-xs)",
-            wordBreak: "break-all",
-            marginTop: 8,
-            userSelect: "all",
-          }}
-        >
-          {inviteResult?.inviteUrl}
-        </div>
+        {inviteResult?.inviteUrl.startsWith("http") && (
+          <div
+            style={{
+              fontFamily: "ui-monospace, monospace",
+              fontSize: "var(--text-xs)",
+              wordBreak: "break-all",
+              marginTop: 8,
+              userSelect: "all",
+            }}
+          >
+            {inviteResult.inviteUrl}
+          </div>
+        )}
       </Dialog>
 
       <Dialog

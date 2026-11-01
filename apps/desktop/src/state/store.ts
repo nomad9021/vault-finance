@@ -24,6 +24,7 @@ import { getPrivateNetwork, usesTailscaleClient } from "../lib/privateNetwork.js
 import {
   alternateAddressKey,
   alternateTrust,
+  downgradesTransport,
   makeReselect,
   newRoute,
   routedFetch,
@@ -684,6 +685,9 @@ export const useApp = create<AppState>((set, get) => ({
     if (!address) return { status: "error", message: "Enter an address, e.g. https://100.64.0.5:8443" };
     if (address === serverAddress) {
       return { status: "error", message: "That's the address you're already using. Enter the server's other address." };
+    }
+    if (downgradesTransport(serverAddress, address)) {
+      return { status: "error", message: "The second address has to start with https://, so your sign-in stays encrypted." };
     }
     const probe = await platform.probeServer(address);
     if (!probe.reachable) {

@@ -118,5 +118,7 @@ export async function familyVersion(slug: string): Promise<string | null> {
     }
     req.on("timeout", () => req.destroy());
     req.on("error", () => resolve(null));
+    // Destroyed after the headers arrived: no "end" and no "error" will follow.
+    req.on("close", () => resolve(null));
   });
 }

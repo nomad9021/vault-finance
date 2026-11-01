@@ -62,6 +62,8 @@ If you'd rather configure by hand:
 git clone <your-fork-or-release-tarball> vault-finance
 cd vault-finance/docker
 cp .env.example .env        # defaults work; edit if you want
+mkdir -p data/{postgres,vault,redis,ollama}
+docker compose run --rm --no-deps --user root --entrypoint chown server -R vault:vault /data
 docker compose up -d
 ```
 

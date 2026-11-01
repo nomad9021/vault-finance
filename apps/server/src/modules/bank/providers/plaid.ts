@@ -242,7 +242,6 @@ export class PlaidBankProvider implements BankProviderClient {
     }
   }
 
-  /** Tell Plaid to forget the item (stops billing and data access). */
   /** The public key Plaid signed a webhook with (see bank/webhook-verify.ts). */
   async webhookVerificationKey(keyId: string): Promise<JWK & { expired_at: number | null }> {
     const res = await this.call<{ key: JWK & { expired_at: number | null } }>(
@@ -252,6 +251,7 @@ export class PlaidBankProvider implements BankProviderClient {
     return res.key;
   }
 
+  /** Tell Plaid to forget the item (stops billing and data access). */
   async removeItem(accessToken: string): Promise<void> {
     await this.call("/item/remove", { access_token: accessToken });
   }

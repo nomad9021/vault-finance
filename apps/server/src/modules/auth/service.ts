@@ -265,6 +265,9 @@ export async function loginWithDeviceKey(
   }
   const user = await db.query.users.findFirst({ where: eq(users.id, row.userId) });
   if (!user) throw invalidCredentials();
+  // No identity sent: a client that failed to load its own, not a wrong one.
+  // Refuse, but keep the key so biometric sign-in works once it can load again.
+  if (!input.deviceId || !input.deviceSecret) throw invalidCredentials();
   const device = await findApprovedDevice(db, user.id, input);
   // Keys enrolled before binding have no device yet; they adopt the approved
   // device they're presented with, which still has to prove its own secret.
@@ -357,41 +360,45 @@ export async function changePassword(
 
   const current = await db.query.deviceSessions.findFirst({ where: eq(deviceSessions.id, currentSessionId) });
   const now = new Date();
-  await db
-    .update(users)
-    .set({ passwordHash: await argon2.hash(input.newPassword), failedLoginCount: 0, lockedUntil: null, updatedAt: now })
-    .where(eq(users.id, userId));
-  await db
-    .update(deviceSessions)
-    .set({ revokedAt: now })
-    .where(
-      and(
-        eq(deviceSessions.userId, userId),
-        isNull(deviceSessions.revokedAt),
-        sql`${deviceSessions.id} <> ${currentSessionId}`,
-      ),
-    );
-  await db
-    .delete(deviceKeys)
-    .where(
-      and(
-        eq(deviceKeys.userId, userId),
-        current?.trustedDeviceId
-          ? sql`${deviceKeys.trustedDeviceId} IS DISTINCT FROM ${current.trustedDeviceId}`
-          : undefined,
-      ),
-    );
-  // Sign-in requests made with the old password die too: open ones are
-  // denied, and an approved one that hasn't collected its session yet must
-  // sign in again (with the new password).
-  await db
-    .update(trustedDevices)
-    .set({ status: "denied", approvalCode: null, expiresAt: null })
-    .where(and(eq(trustedDevices.userId, userId), eq(trustedDevices.status, "pending")));
-  await db
-    .update(trustedDevices)
-    .set({ loginReady: false })
-    .where(and(eq(trustedDevices.userId, userId), eq(trustedDevices.loginReady, true)));
+  const passwordHash = await argon2.hash(input.newPassword);
+  // All or nothing: a new password that leaves old sign-ins alive is the failure this prevents.
+  await db.transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({ passwordHash, failedLoginCount: 0, lockedUntil: null, updatedAt: now })
+      .where(eq(users.id, userId));
+    await tx
+      .update(deviceSessions)
+      .set({ revokedAt: now })
+      .where(
+        and(
+          eq(deviceSessions.userId, userId),
+          isNull(deviceSessions.revokedAt),
+          sql`${deviceSessions.id} <> ${currentSessionId}`,
+        ),
+      );
+    await tx
+      .delete(deviceKeys)
+      .where(
+        and(
+          eq(deviceKeys.userId, userId),
+          current?.trustedDeviceId
+            ? sql`${deviceKeys.trustedDeviceId} IS DISTINCT FROM ${current.trustedDeviceId}`
+            : undefined,
+        ),
+      );
+    // Sign-in requests made with the old password die too: open ones are
+    // denied, and an approved one that hasn't collected its session yet must
+    // sign in again (with the new password).
+    await tx
+      .update(trustedDevices)
+      .set({ status: "denied", approvalCode: null, expiresAt: null })
+      .where(and(eq(trustedDevices.userId, userId), eq(trustedDevices.status, "pending")));
+    await tx
+      .update(trustedDevices)
+      .set({ loginReady: false })
+      .where(and(eq(trustedDevices.userId, userId), eq(trustedDevices.loginReady, true)));
+  });
 }
 
 /** Days a device may go unused before its sign-in ends. */
