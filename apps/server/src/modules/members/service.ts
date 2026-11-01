@@ -73,7 +73,7 @@ async function assertEmailFree(db: Db, email: string): Promise<void> {
 
 export async function createInvite(
   db: Db,
-  input: { displayName: string; email: string; invitedByUserId: string },
+  input: { displayName: string | undefined; email: string; invitedByUserId: string },
 ): Promise<{ id: string; token: string; expiresAt: Date }> {
   const email = input.email.trim().toLowerCase();
   await assertEmailFree(db, email);
@@ -86,7 +86,8 @@ export async function createInvite(
     .insert(memberInvites)
     .values({
       email,
-      displayName: input.displayName.trim(),
+      // No name given: start from the address; they can change it when accepting.
+      displayName: input.displayName?.trim() || email.split("@")[0] || email,
       tokenHash: "pending",
       invitedByUserId: input.invitedByUserId,
       expiresAt,
@@ -176,6 +177,7 @@ export async function acceptInvite(
   db: Db,
   rawToken: string,
   password: string,
+  displayName?: string,
 ): Promise<void> {
   const invite = await loadValidInvite(db, rawToken);
   await assertEmailFree(db, invite.email);
@@ -183,7 +185,7 @@ export async function acceptInvite(
     await tx.insert(users).values({
       email: invite.email,
       passwordHash: await argon2.hash(password),
-      displayName: invite.displayName,
+      displayName: displayName ?? invite.displayName,
       avatarColor: "#9184d9",
       role: invite.role,
     });

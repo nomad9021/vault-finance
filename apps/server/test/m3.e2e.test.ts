@@ -509,4 +509,108 @@ describe("budgets", () => {
     });
     expect(del.statusCode).toBe(204);
   });
+
+  it("keeps budget amounts exact to the cent", async () => {
+    const month = "2031-03";
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/budgets",
+      headers: auth,
+      payload: { categoryId: groceriesId, amountCents: 60_037, month },
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json().amountCents).toBe(60_037);
+
+    await app.inject({
+      method: "POST",
+      url: "/api/v1/transactions",
+      headers: auth,
+      payload: { accountId: checkingId, categoryId: groceriesId, postedAt: `${month}-02`, amountCents: -12_345, merchantName: "Cents Market" },
+    });
+    await app.inject({
+      method: "POST",
+      url: "/api/v1/transactions",
+      headers: auth,
+      payload: { accountId: checkingId, categoryId: groceriesId, postedAt: `${month}-03`, amountCents: -1, merchantName: "Cents Market" },
+    });
+
+    const read = async () =>
+      (await app.inject({ method: "GET", url: `/api/v1/budgets?month=${month}`, headers: auth })).json();
+    let body = await read();
+    expect(body.budgets[0].amountCents).toBe(60_037);
+    expect(body.budgets[0].spentCents).toBe(12_346);
+    expect(body.totalBudgetedCents).toBe(60_037);
+    expect(body.totalSpentCents).toBe(12_346);
+
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/budgets/${created.json().id}`,
+      headers: auth,
+      payload: { amountCents: 60_001 },
+    });
+    expect(patched.json().amountCents).toBe(60_001);
+    body = await read();
+    expect(body.budgets[0].amountCents).toBe(60_001);
+
+    // A fraction of a cent is refused, never rounded.
+    const fractional = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/budgets/${created.json().id}`,
+      headers: auth,
+      payload: { amountCents: 600.5 },
+    });
+    expect(fractional.statusCode).toBe(400);
+    body = await read();
+    expect(body.budgets[0].amountCents).toBe(60_001);
+
+    await app.inject({ method: "DELETE", url: `/api/v1/budgets/${created.json().id}`, headers: auth });
+  });
+
+  it("keeps the planned income exact to the cent", async () => {
+    const put = await app.inject({
+      method: "PUT",
+      url: "/api/v1/budget-plan",
+      headers: auth,
+      payload: { plannedIncomeCents: 500_025 },
+    });
+    expect(put.statusCode).toBe(200);
+    const got = await app.inject({ method: "GET", url: "/api/v1/budget-plan", headers: auth });
+    expect(got.json().plannedIncomeCents).toBe(500_025);
+  });
+
+  it("reports spending with no budget separately, to the cent", async () => {
+    const month = "2031-04";
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/budgets",
+      headers: auth,
+      payload: { categoryId: groceriesId, amountCents: 10_050, month },
+    });
+    for (const payload of [
+      { categoryId: groceriesId, amountCents: -2_575 },
+      { categoryId: diningId, amountCents: -1_999 },
+      { amountCents: -333 },
+    ]) {
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/transactions",
+        headers: auth,
+        payload: { accountId: checkingId, postedAt: `${month}-05`, merchantName: "Somewhere", ...payload },
+      });
+    }
+
+    const res = await app.inject({ method: "GET", url: `/api/v1/budgets?month=${month}`, headers: auth });
+    const body = res.json();
+    // The budgeted totals stay what they were: budgeted categories only.
+    expect(body.totalSpentCents).toBe(2_575);
+    expect(body.unbudgetedSpending).toEqual(
+      expect.arrayContaining([
+        { categoryId: diningId, spentCents: 1_999 },
+        { categoryId: null, spentCents: 333 },
+      ]),
+    );
+    expect(body.unbudgetedSpending).toHaveLength(2);
+
+    await app.inject({ method: "DELETE", url: `/api/v1/budgets/${created.json().id}`, headers: auth });
+  });
 });

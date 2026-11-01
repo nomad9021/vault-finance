@@ -27,7 +27,11 @@ export const CreateFamilyRequest = z.object({
     .regex(/^[a-z][a-z0-9]{1,30}$/, "lowercase letters/digits, starts with a letter"),
   ownerEmail: z.string().email().optional(),
   mode: z.enum(["port", "proxy"]).default("port"),
-  domain: z.string().optional(),
+  domain: z
+    .string()
+    .max(253)
+    .regex(/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i, "a hostname like smith.vault.example.com")
+    .optional(),
   port: z.number().int().min(1).max(65535).optional(),
 });
 export type CreateFamilyRequest = z.infer<typeof CreateFamilyRequest>;

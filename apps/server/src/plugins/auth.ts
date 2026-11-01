@@ -2,7 +2,7 @@ import { AccessTokenClaims } from "@vault/shared";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import fp from "fastify-plugin";
 import { SignJWT, jwtVerify } from "jose";
-import { forbidden, tokenExpired, tokenInvalid } from "../errors.js";
+import { forbidden, sessionRevoked, tokenExpired, tokenInvalid } from "../errors.js";
 
 export interface AuthContext {
   userId: string;
@@ -60,10 +60,22 @@ export default fp(
       });
       if (!parsed.success) throw tokenInvalid();
 
+      // A valid signature isn't enough: the session behind the token must
+      // still be live, so signing out, revoking a device or removing a member
+      // takes effect at once rather than when the token expires. The role
+      // comes from the database too, never from the (possibly stale) token.
+      const [live] = await app.sql<{ role: "owner" | "member" }[]>`
+        SELECT u.role
+        FROM device_sessions s
+        JOIN users u ON u.id = s.user_id
+        WHERE s.id = ${parsed.data.sid} AND s.user_id = ${parsed.data.sub} AND s.revoked_at IS NULL
+      `;
+      if (!live) throw sessionRevoked();
+
       request.auth = {
         userId: parsed.data.sub,
         deviceSessionId: parsed.data.sid,
-        role: parsed.data.role,
+        role: live.role,
       };
     });
 

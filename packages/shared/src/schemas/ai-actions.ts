@@ -250,7 +250,7 @@ export function describeAiAction(a: AiAction): string {
     case "delete_rule":
       return `Remove the auto-categorization rule for "${a.keyword}"`;
     case "set_budget":
-      return `Set the monthly budget for "${a.category}" to $${a.amount.toLocaleString("en-US")}`;
+      return `Set the monthly budget for "${a.category}" to $${a.amount.toLocaleString("en-US", Number.isInteger(a.amount) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     case "remove_budget":
       return `Remove the budget for "${a.category}"`;
     case "set_planned_income":

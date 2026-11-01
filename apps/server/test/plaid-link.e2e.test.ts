@@ -1,9 +1,11 @@
 import { mkdtempSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import EmbeddedPostgres from "embedded-postgres";
+import { SignJWT, exportJWK, generateKeyPair, type JWK } from "jose";
 import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -37,7 +39,15 @@ describe("Plaid Hosted Link", () => {
     transaction_id: id, account_id: "acc-chk", date: "2026-10-01", amount, name, merchant_name: name, pending,
   });
 
+  // Plaid's webhook signing key, served from /webhook_verification_key/get.
+  let signingKey: CryptoKey;
+  let publicJwk: JWK;
+  const KID = "plaid-key-1";
+
   beforeAll(async () => {
+    const pair = await generateKeyPair("ES256", { extractable: true });
+    signingKey = pair.privateKey;
+    publicJwk = await exportJWK(pair.publicKey);
     plaid = createServer(async (req, res) => {
       let raw = "";
       for await (const c of req) raw += c;
@@ -91,6 +101,9 @@ describe("Plaid Hosted Link", () => {
         }
         case "/item/remove":
           return send({});
+        case "/webhook_verification_key/get":
+          if (body.key_id !== KID) return err("INVALID_WEBHOOK_VERIFICATION_KEY_ID");
+          return send({ key: { ...publicJwk, kid: KID, alg: "ES256", use: "sig", created_at: 1, expired_at: null } });
         default:
           return send({ error_code: "NOT_FOUND" }, 404);
       }
@@ -200,6 +213,48 @@ describe("Plaid Hosted Link", () => {
     const done = (await req("GET", `/api/v1/bank/link/${start.sessionId}`)).json();
     expect(done.status).toBe("reconnected");
     expect((await req("GET", "/api/v1/bank/status")).json().connections[0].needsReconnect).toBe(false);
+  });
+
+  describe("webhooks", () => {
+    const body = JSON.stringify({ webhook_type: "TRANSACTIONS", webhook_code: "SYNC_UPDATES_AVAILABLE", item_id: "item-1" });
+    const sign = (forBody: string, opts: { key?: CryptoKey; iat?: number } = {}) =>
+      new SignJWT({ request_body_sha256: createHash("sha256").update(forBody).digest("hex") })
+        .setProtectedHeader({ alg: "ES256", kid: KID, typ: "JWT" })
+        .setIssuedAt(opts.iat ?? Math.floor(Date.now() / 1000))
+        .sign(opts.key ?? signingKey);
+    const post = (headers: Record<string, string>, payload = body) =>
+      app.inject({
+        method: "POST",
+        url: "/api/v1/bank/webhook",
+        headers: { "content-type": "application/json", ...headers },
+        payload,
+      });
+    const syncs = () => calls.filter((c) => c.path === "/transactions/sync").length;
+
+    it("refuses webhooks without Plaid's signature, and doesn't sync", async () => {
+      const before = syncs();
+      expect((await post({})).statusCode).toBe(401);
+      expect((await post({ "plaid-verification": "not-a-jwt" })).statusCode).toBe(401);
+      expect(syncs()).toBe(before);
+    });
+
+    it("refuses a signature for a different body, a stale one, or one from another key", async () => {
+      const before = syncs();
+      const otherBody = JSON.stringify({ item_id: "item-1", webhook_code: "SOMETHING_ELSE" });
+      expect((await post({ "plaid-verification": await sign(otherBody) })).statusCode).toBe(401);
+      const stale = await sign(body, { iat: Math.floor(Date.now() / 1000) - 10 * 60 });
+      expect((await post({ "plaid-verification": stale })).statusCode).toBe(401);
+      const forger = await generateKeyPair("ES256");
+      expect((await post({ "plaid-verification": await sign(body, { key: forger.privateKey }) })).statusCode).toBe(401);
+      expect(syncs()).toBe(before);
+    });
+
+    it("syncs the bank on a genuine Plaid webhook", async () => {
+      const before = syncs();
+      const res = await post({ "plaid-verification": await sign(body) });
+      expect(res.statusCode).toBe(200);
+      expect(syncs()).toBeGreaterThan(before);
+    });
   });
 
   it("explains rejected Plaid keys in plain words", async () => {

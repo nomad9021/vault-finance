@@ -43,7 +43,7 @@ export function ConnectScreen({ error }: { error?: string }) {
           spellCheck={false}
           autoCapitalize="off"
           error={error}
-          hint="LAN IP, hostname, or Tailscale address of the machine running your server."
+          hint="LAN IP, hostname, or VPN address (Tailscale, NetBird and so on) of the machine running your server."
         />
         <Button variant="primary" block type="submit" disabled={busy || !address.trim()}>
           {busy ? <Spinner label="Connecting" /> : "Connect"}

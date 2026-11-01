@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import argon2 from "argon2";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Platform, User } from "@vault/shared";
-import { deviceKeys, deviceSessions, users } from "../../db/schema.js";
+import { deviceKeys, deviceSessions, trustedDevices, users } from "../../db/schema.js";
 import type { Db } from "../../plugins/db.js";
 import { AppError } from "../../errors.js";
 import {
@@ -16,7 +16,7 @@ import {
 } from "../../errors.js";
 import { decryptSecret, encryptSecret } from "../../secret-crypto.js";
 import { generateTotpSecret, otpauthUri, verifyTotp } from "./totp.js";
-import { adoptLegacySession, gateDevice } from "../devices/service.js";
+import { adoptLegacySession, findApprovedDevice, gateDevice } from "../devices/service.js";
 
 /**
  * Refresh tokens are `<sessionId>.<secret>`: the session id makes lookup O(1)
@@ -173,13 +173,30 @@ export async function startSession(
 
 // ── Device keys (biometric sign-in) ──
 // Same `<id>.<secret>` shape as refresh tokens (see mintRefreshToken): the id
-// makes lookup O(1), only the argon2 hash of the secret is stored.
+// makes lookup O(1), only the argon2 hash of the secret is stored. Each key is
+// bound to the approved device whose session enrolled it, so it only works
+// alongside that device's own identity and dies when the device is revoked.
 
 export async function createDeviceKey(
   db: Db,
   userId: string,
+  sessionId: string,
   device: { deviceName: string; platform: Platform },
 ): Promise<{ id: string; key: string }> {
+  const session = await db.query.deviceSessions.findFirst({
+    where: and(
+      eq(deviceSessions.id, sessionId),
+      eq(deviceSessions.userId, userId),
+      isNull(deviceSessions.revokedAt),
+    ),
+  });
+  const trusted = session?.trustedDeviceId
+    ? await db.query.trustedDevices.findFirst({ where: eq(trustedDevices.id, session.trustedDeviceId) })
+    : undefined;
+  if (!session || !trusted || trusted.status !== "approved" || trusted.revokedAt) {
+    throw sessionRevoked();
+  }
+
   const secret = randomBytes(32).toString("base64url");
   const [row] = await db
     .insert(deviceKeys)
@@ -188,6 +205,7 @@ export async function createDeviceKey(
       deviceName: device.deviceName,
       platform: device.platform,
       secretHash: await argon2.hash(secret),
+      trustedDeviceId: trusted.id,
     })
     .returning({ id: deviceKeys.id });
   if (!row) throw new Error("failed to create device key");
@@ -220,8 +238,10 @@ export async function revokeDeviceKey(db: Db, userId: string, id: string): Promi
  * Sign in with a device key. The client only sends it after the OS confirmed
  * the device owner (biometric), so it stands in for password + TOTP — the
  * same trade-off passkeys make: possession of the enrolled device plus a
- * local biometric. A wrong secret for a real key id deletes the key, since
- * the legitimate client can never get it wrong.
+ * local biometric. It must arrive with the identity of the approved device it
+ * is bound to, and it only reuses that approval — it never approves a device.
+ * Anything the legitimate client can never get wrong (the key's secret, the
+ * device it belongs to) deletes the key.
  */
 export async function loginWithDeviceKey(
   db: Db,
@@ -245,9 +265,22 @@ export async function loginWithDeviceKey(
   }
   const user = await db.query.users.findFirst({ where: eq(users.id, row.userId) });
   if (!user) throw invalidCredentials();
-  await db.update(deviceKeys).set({ lastUsedAt: new Date() }).where(eq(deviceKeys.id, row.id));
-  const trustedDeviceId = await gateDevice(db, user, input, { viaDeviceKey: true });
-  return startSession(db, user, { ...input, trustedDeviceId });
+  const device = await findApprovedDevice(db, user.id, input);
+  // Keys enrolled before binding have no device yet; they adopt the approved
+  // device they're presented with, which still has to prove its own secret.
+  if (!device || (row.trustedDeviceId && row.trustedDeviceId !== device.id)) {
+    await db.delete(deviceKeys).where(eq(deviceKeys.id, row.id));
+    throw invalidCredentials();
+  }
+  await db
+    .update(deviceKeys)
+    .set({ lastUsedAt: new Date(), trustedDeviceId: device.id })
+    .where(eq(deviceKeys.id, row.id));
+  await db
+    .update(trustedDevices)
+    .set({ lastSeenAt: new Date(), deviceName: input.deviceName })
+    .where(eq(trustedDevices.id, device.id));
+  return startSession(db, user, { ...input, trustedDeviceId: device.id });
 }
 
 // ── Two-factor authentication (TOTP) ──
@@ -296,6 +329,69 @@ export async function disableTotp(db: Db, userId: string, password: string): Pro
     .update(users)
     .set({ totpEnabled: false, totpSecret: null, updatedAt: new Date() })
     .where(eq(users.id, userId));
+}
+
+/**
+ * Change your own password. A leaked password is the reason to do this, so it
+ * also ends every other sign-in and deletes every other device's biometric
+ * key — whoever had the old password keeps nothing. Wrong current passwords
+ * count towards the account lockout like failed sign-ins.
+ */
+export async function changePassword(
+  db: Db,
+  userId: string,
+  currentSessionId: string,
+  input: { currentPassword: string; newPassword: string },
+): Promise<void> {
+  const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  if (!user) throw notFound("User");
+  if (user.lockedUntil && user.lockedUntil > new Date()) throw accountLocked(user.lockedUntil);
+  const ok = await argon2.verify(user.passwordHash, input.currentPassword).catch(() => false);
+  if (!ok) {
+    await recordFailedLogin(db, user);
+    throw invalidCredentials();
+  }
+  if (input.newPassword === input.currentPassword) {
+    throw new AppError("VALIDATION_ERROR", 400, "Choose a password you haven't been using.");
+  }
+
+  const current = await db.query.deviceSessions.findFirst({ where: eq(deviceSessions.id, currentSessionId) });
+  const now = new Date();
+  await db
+    .update(users)
+    .set({ passwordHash: await argon2.hash(input.newPassword), failedLoginCount: 0, lockedUntil: null, updatedAt: now })
+    .where(eq(users.id, userId));
+  await db
+    .update(deviceSessions)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(deviceSessions.userId, userId),
+        isNull(deviceSessions.revokedAt),
+        sql`${deviceSessions.id} <> ${currentSessionId}`,
+      ),
+    );
+  await db
+    .delete(deviceKeys)
+    .where(
+      and(
+        eq(deviceKeys.userId, userId),
+        current?.trustedDeviceId
+          ? sql`${deviceKeys.trustedDeviceId} IS DISTINCT FROM ${current.trustedDeviceId}`
+          : undefined,
+      ),
+    );
+  // Sign-in requests made with the old password die too: open ones are
+  // denied, and an approved one that hasn't collected its session yet must
+  // sign in again (with the new password).
+  await db
+    .update(trustedDevices)
+    .set({ status: "denied", approvalCode: null, expiresAt: null })
+    .where(and(eq(trustedDevices.userId, userId), eq(trustedDevices.status, "pending")));
+  await db
+    .update(trustedDevices)
+    .set({ loginReady: false })
+    .where(and(eq(trustedDevices.userId, userId), eq(trustedDevices.loginReady, true)));
 }
 
 /** Days a device may go unused before its sign-in ends. */
@@ -408,6 +504,9 @@ export async function revokeSession(
         isNull(deviceSessions.revokedAt),
       ),
     )
-    .returning({ id: deviceSessions.id });
+    .returning({ id: deviceSessions.trustedDeviceId });
   if (!updated) throw notFound("Session");
+  // Signing a device out remotely also turns off its biometric sign-in, so it
+  // needs the password again rather than a fingerprint.
+  if (updated.id) await db.delete(deviceKeys).where(eq(deviceKeys.trustedDeviceId, updated.id));
 }

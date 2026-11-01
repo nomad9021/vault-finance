@@ -1,10 +1,11 @@
 import { Button, Spinner } from "@vault/ui";
 import { useEffect, useState } from "react";
+import { getPrivateNetwork, PRIVATE_NETWORKS, usesTailscaleClient } from "../lib/privateNetwork.js";
 import { TAILSCALE_DOWNLOAD_URL } from "../lib/startupChecks.js";
 import type { TailscaleStatus } from "../platform/index.js";
 import { useApp } from "../state/store.js";
 
-function describe(s: TailscaleStatus): { text: string; color: string } {
+function describe(s: TailscaleStatus, label: string): { text: string; color: string } {
   switch (s.state) {
     case "Running": {
       const ip = s.ips.find((i) => !i.includes(":"));
@@ -13,7 +14,7 @@ function describe(s: TailscaleStatus): { text: string; color: string } {
     case "NeedsLogin":
       return { text: "Needs you to sign in", color: "var(--color-warning)" };
     case "NeedsMachineAuth":
-      return { text: "Waiting for approval in the Tailscale admin console", color: "var(--color-warning)" };
+      return { text: `Waiting for approval in the ${label} admin console`, color: "var(--color-warning)" };
     case "Starting":
       return { text: "Connecting…", color: "var(--color-warning)" };
     case "DaemonDown":
@@ -39,7 +40,9 @@ export function TailscaleControl({ compact = false }: { compact?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const supported = Boolean(platform?.tailscaleStatus);
+  const network = getPrivateNetwork();
+  const label = PRIVATE_NETWORKS[network].label;
+  const supported = Boolean(platform?.tailscaleStatus) && usesTailscaleClient(network);
   useEffect(() => {
     if (supported) void refresh();
   }, [supported, refresh]);
@@ -60,7 +63,7 @@ export function TailscaleControl({ compact = false }: { compact?: boolean }) {
     try {
       const r = await fn();
       if (r && !r.ok) setMessage(r.message ?? "That didn't work.");
-      else if (r?.status.authUrl) setMessage("Finish signing in to Tailscale in your browser.");
+      else if (r?.status.authUrl) setMessage(`Finish signing in to ${label} in your browser.`);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : String(err));
     } finally {
@@ -68,7 +71,7 @@ export function TailscaleControl({ compact = false }: { compact?: boolean }) {
     }
   };
 
-  const look = describe(status);
+  const look = describe(status, label);
   const running = status.state === "Running";
 
   return (
@@ -90,7 +93,7 @@ export function TailscaleControl({ compact = false }: { compact?: boolean }) {
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: "50%", background: look.color, flex: "none" }} />
         <span style={{ fontSize: "var(--text-sm)" }}>
-          <strong>Tailscale</strong> — {look.text}
+          <strong>{label}</strong> — {look.text}
         </span>
         <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           {status.state === "NotInstalled" ? (
@@ -126,7 +129,7 @@ export function TailscaleControl({ compact = false }: { compact?: boolean }) {
       )}
       {compact && (
         <div className="card-meta" style={{ fontSize: "var(--text-xs)" }}>
-          If your server is on Tailscale, turn it on before connecting.
+          Only needed if you're away from home and your server is on {label}.
         </div>
       )}
     </div>

@@ -1,4 +1,4 @@
-import { formatCentsWhole, type Insight, type InsightSeverity } from "@vault/shared";
+import { formatCents, formatCentsWhole, type Insight, type InsightSeverity } from "@vault/shared";
 import { Button, EmptyState, Icon, MetricCard, Panel, Spinner, type IconName } from "@vault/ui";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
@@ -137,7 +137,7 @@ function InsightRow({ insight, onNavigate }: { insight: Insight; onNavigate: Nav
       </div>
       {insight.amountCents !== null && (
         <div className="num" style={{ flex: "none", fontWeight: 600, color: style.color }}>
-          {formatCentsWhole(insight.amountCents)}
+          {insight.page === "budgets" ? formatCents(insight.amountCents) : formatCentsWhole(insight.amountCents)}
         </div>
       )}
       <Button

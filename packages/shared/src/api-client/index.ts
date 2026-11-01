@@ -13,6 +13,7 @@ import {
   TokenPair,
   TotpSetupResponse,
   TotpStatusResponse,
+  type ChangePasswordRequest,
   type CreateDeviceKeyRequest,
   type DeviceApprovalStatusRequest,
   type DeviceIdentity,
@@ -34,6 +35,9 @@ import {
   InvitePreviewResponse,
   type CreateMemberRequest,
   type InviteMemberRequest,
+  InviteMemberResponse,
+  EmailConnectionStatus,
+  type ConnectEmailRequest,
 } from "../schemas/members.js";
 import {
   Account,
@@ -315,6 +319,11 @@ export class ApiClient {
         (await this.refreshTokens())
       ) {
         res = await this.rawRequest(method, path, body, auth);
+      } else if (code === "SESSION_REVOKED") {
+        // Signed out from elsewhere (or the device was removed): the server
+        // refuses this session outright, so there's nothing to refresh.
+        this.opts.setTokens(null);
+        this.opts.onAuthLost?.(code);
       }
     }
 
@@ -375,12 +384,16 @@ export class ApiClient {
     return this.request(MemberListResponse, "GET", "/members");
   }
   inviteMember(body: InviteMemberRequest) {
-    return this.request(
-      z.object({ inviteUrl: z.string() }),
-      "POST",
-      "/members/invite",
-      body,
-    );
+    return this.request(InviteMemberResponse, "POST", "/members/invite", body);
+  }
+  emailConnection() {
+    return this.request(EmailConnectionStatus, "GET", "/members/email");
+  }
+  connectEmail(body: ConnectEmailRequest) {
+    return this.request(EmailConnectionStatus, "POST", "/members/email", body);
+  }
+  disconnectEmail() {
+    return this.request(EmailConnectionStatus, "POST", "/members/email/disconnect");
   }
   createMember(body: CreateMemberRequest) {
     return this.request(Member, "POST", "/members", body);
@@ -539,6 +552,10 @@ export class ApiClient {
   }
   totpDisable(password: string) {
     return this.request(z.undefined(), "POST", "/auth/2fa/disable", { password });
+  }
+  /** Signs out every other device and turns off their biometric sign-in. */
+  changePassword(body: ChangePasswordRequest) {
+    return this.request(z.undefined(), "POST", "/auth/password", body);
   }
 
   // ── Accounts ──

@@ -1,5 +1,6 @@
 import {
-  formatCentsWhole,
+  centsToAmountInput,
+  formatCents,
   parseAmountToCents,
   type BudgetWithSpend,
   type Category,
@@ -65,19 +66,29 @@ export function BudgetPlannerPage({ onNavigate }: { onNavigate: Navigate }) {
   useEffect(() => {
     if (hydrated.current || !planData) return;
     hydrated.current = true;
-    setIncome(planData.plannedIncomeCents ? (planData.plannedIncomeCents / 100).toFixed(0) : "");
+    setIncome(planData.plannedIncomeCents ? centsToAmountInput(planData.plannedIncomeCents) : "");
   }, [planData]);
-  const incomeCents = parseAmountToCents(income) ?? 0;
-  const incomeRef = useRef(incomeCents);
-  incomeRef.current = incomeCents;
+  // Something unreadable ("12.345") keeps the last good figure rather than
+  // saving a zero or a guess; the field says what's wrong.
+  const parsedIncome = income.trim() === "" ? 0 : parseAmountToCents(income);
+  const incomeInvalid = parsedIncome === null || parsedIncome < 0;
+  const incomeRef = useRef(0);
+  if (!incomeInvalid) incomeRef.current = parsedIncome;
+  const incomeCents = incomeRef.current;
+  const [incomeSaveFailed, setIncomeSaveFailed] = useState(false);
   useEffect(() => {
     if (!hydrated.current) return;
-    const t = setTimeout(() => void client.updateBudgetPlan({ plannedIncomeCents: incomeCents }), 500);
+    const t = setTimeout(() => {
+      client
+        .updateBudgetPlan({ plannedIncomeCents: incomeCents })
+        .then(() => setIncomeSaveFailed(false))
+        .catch(() => setIncomeSaveFailed(true));
+    }, 500);
     return () => clearTimeout(t);
   }, [client, incomeCents]);
   useEffect(() => {
     return () => {
-      if (hydrated.current) void client.updateBudgetPlan({ plannedIncomeCents: incomeRef.current });
+      if (hydrated.current) client.updateBudgetPlan({ plannedIncomeCents: incomeRef.current }).catch(() => undefined);
     };
   }, [client]);
 
@@ -143,13 +154,29 @@ export function BudgetPlannerPage({ onNavigate }: { onNavigate: Navigate }) {
                 onChange={(e) => setIncome(e.target.value)}
                 inputMode="decimal"
                 placeholder="5000"
-                style={{ width: 130, fontSize: "var(--text-xl)", fontWeight: 600 }}
+                aria-invalid={incomeInvalid}
+                style={{
+                  width: 160,
+                  fontSize: "var(--text-xl)",
+                  fontWeight: 600,
+                  ...(incomeInvalid ? { borderColor: "var(--color-negative)" } : {}),
+                }}
               />
             </div>
+            {incomeInvalid && (
+              <div role="alert" className="field-error">
+                Enter dollars and cents, like 5000.25. Still using ${centsToAmountInput(incomeCents)}.
+              </div>
+            )}
+            {incomeSaveFailed && (
+              <div role="alert" className="field-error">
+                Couldn't save your income. Check the connection and try again.
+              </div>
+            )}
           </div>
           <div>
             <div className="eyebrow" style={{ marginBottom: 4 }}>Allocated</div>
-            <div className="metric-value" style={{ fontSize: "var(--text-xl)" }}>{formatCentsWhole(allocated)}</div>
+            <div className="metric-value" style={{ fontSize: "var(--text-xl)" }}>{formatCents(allocated)}</div>
           </div>
           <div>
             <div className="eyebrow" style={{ marginBottom: 4 }}>{over ? "Over budget" : "Unallocated / savings"}</div>
@@ -157,7 +184,7 @@ export function BudgetPlannerPage({ onNavigate }: { onNavigate: Navigate }) {
               className="metric-value"
               style={{ fontSize: "var(--text-xl)", color: over ? "var(--color-negative)" : "var(--color-positive)" }}
             >
-              {over ? `-${formatCentsWhole(allocated - incomeCents)}` : formatCentsWhole(unallocated)}
+              {over ? `-${formatCents(allocated - incomeCents)}` : formatCents(unallocated)}
             </div>
           </div>
         </div>
@@ -170,6 +197,7 @@ export function BudgetPlannerPage({ onNavigate }: { onNavigate: Navigate }) {
           links={links}
           month={month}
           onNavigate={onNavigate}
+          precise
           title={gross ? "Budget plan, from gross pay" : "Budget plan"}
           hint="Click a category to see this month's actual spending"
         />
@@ -220,7 +248,7 @@ export function BudgetPlannerPage({ onNavigate }: { onNavigate: Navigate }) {
                 key={c.id}
                 category={c}
                 budget={budgetByCat.get(c.id)}
-                onSave={(cents) => void setAllocation(c.id, cents)}
+                onSave={(cents) => setAllocation(c.id, cents)}
               />
             ))}
             {expenseCats.length === 0 && (
@@ -242,16 +270,32 @@ function AllocationRow({
 }: {
   category: Category;
   budget: BudgetWithSpend | undefined;
-  onSave: (amountCents: number) => void;
+  onSave: (amountCents: number) => Promise<void>;
 }) {
-  const [val, setVal] = useState(budget ? (budget.amountCents / 100).toFixed(0) : "");
+  const stored = budget ? centsToAmountInput(budget.amountCents) : "";
+  const [val, setVal] = useState(stored);
+  const [invalid, setInvalid] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
   useEffect(() => {
-    setVal(budget ? (budget.amountCents / 100).toFixed(0) : "");
-  }, [budget?.amountCents]);
+    setVal(stored);
+    setInvalid(false);
+  }, [stored]);
 
   const commit = () => {
-    const cents = parseAmountToCents(val) ?? 0;
-    if (cents !== (budget?.amountCents ?? 0)) onSave(cents);
+    // Blank removes the allocation on purpose. A typo must not: it stays in the
+    // field, marked, with the saved amount untouched.
+    const cents = val.trim() === "" ? 0 : parseAmountToCents(val);
+    if (cents === null || cents < 0) {
+      setInvalid(true);
+      return;
+    }
+    setInvalid(false);
+    setSaveFailed(false);
+    setVal(cents > 0 ? centsToAmountInput(cents) : "");
+    if (cents !== (budget?.amountCents ?? 0)) {
+      // A failed save must not leave the unsaved figure looking saved.
+      onSave(cents).catch(() => setSaveFailed(true));
+    }
   };
 
   return (
@@ -273,9 +317,17 @@ function AllocationRow({
         onChange={(e) => setVal(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-        inputMode="numeric"
-        placeholder="0"
-        style={{ width: 96, textAlign: "right", padding: "5px 8px" }}
+        inputMode="decimal"
+        placeholder="0.00"
+        aria-label={`${category.name} monthly amount`}
+        aria-invalid={invalid || saveFailed}
+        title={invalid ? "Enter dollars and cents, like 212.37" : saveFailed ? "Couldn't save this amount. Try again." : undefined}
+        style={{
+          width: 112,
+          textAlign: "right",
+          padding: "5px 8px",
+          ...(invalid || saveFailed ? { borderColor: "var(--color-negative)" } : {}),
+        }}
       />
     </div>
   );

@@ -46,6 +46,7 @@ describe("household members", () => {
         VAULT_DATA_DIR: dataDir,
         LOG_LEVEL: "error",
         APP_PUBLIC_URL: "https://vault.test:8443",
+        SMTP_HOST: "smtp.vault.test",
         UPDATE_CHECK_ENABLED: "false",
       } as NodeJS.ProcessEnv),
     });
@@ -53,6 +54,7 @@ describe("household members", () => {
     app.mailer.send = async (m: MailMessage) => {
       sent.push(m);
     };
+    app.mailer.sendOrThrow = app.mailer.send;
 
     await app.inject({
       method: "POST",

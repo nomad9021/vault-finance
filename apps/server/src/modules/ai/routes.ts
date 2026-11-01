@@ -45,6 +45,26 @@ const HISTORY_LIMIT = 20;
 /** Model calls per chat message: the answer plus up to 3 rounds of look-ups. */
 const AGENT_MAX_STEPS = 4;
 
+/**
+ * The only AI changes auto mode may apply without a click: ones that add
+ * something new or are purely cosmetic. Anything that overwrites, moves or
+ * removes existing data (a budget, a salary, a balance, transaction
+ * categories, a rule that recategorizes future spending…) always waits for
+ * the user, because the model reads bank-supplied text an outsider can write.
+ */
+const AUTO_APPLY_OK = new Set([
+  "create_category",
+  "create_bucket",
+  "create_goal",
+  "create_bill",
+  "create_giving_fund",
+  "recolor_category",
+  "reorder_categories",
+  "autocategorize", // only fills in transactions that have no category yet
+]);
+/** Long-term memory notes kept from any one reply. */
+const MAX_NOTES_PER_REPLY = 3;
+
 export default async function aiRoutes(
   app: FastifyInstance,
   opts: { config: AppConfig },
@@ -572,18 +592,22 @@ export default async function aiRoutes(
         if (body.autoApply) {
           const applied = [];
           for (const row of rows) {
-            const isClient = CLIENT_ACTION_TYPES.has(toRecord(row).action.type);
-            applied.push(isClient ? row : await applyStoredAction(app, request, row));
+            const type = toRecord(row).action.type;
+            const hold = CLIENT_ACTION_TYPES.has(type) || !AUTO_APPLY_OK.has(type);
+            applied.push(hold ? row : await applyStoredAction(app, request, row));
           }
           rows = applied;
           if (rows.length) request.log.info({ count: rows.length }, "AI changes auto-applied");
         }
         if (rows.length) writeLine({ actions: rows.map(toRecord) });
 
-        if (blocks.remember.length) {
+        // A few notes per reply at most, so one reply (or text injected into
+        // it) can't flood the long-term memory every later chat reads.
+        const remember = blocks.remember.slice(0, MAX_NOTES_PER_REPLY);
+        if (remember.length) {
           try {
-            appendMemory(opts.config.dataDir, userId, blocks.remember);
-            writeLine({ remembered: blocks.remember });
+            appendMemory(opts.config.dataDir, userId, remember);
+            writeLine({ remembered: remember });
           } catch (err) {
             request.log.error({ err }, "couldn't write AI memory");
           }

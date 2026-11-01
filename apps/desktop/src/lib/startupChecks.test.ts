@@ -73,16 +73,27 @@ describe("describeProbeFailure", () => {
 });
 
 describe("tailscaleCheck", () => {
-  it("blocks when a Tailscale-only server is unreachable because Tailscale is off", () => {
+  it("points at Tailscale, without blocking, when a Tailscale-only server is unreachable", () => {
     const c = tailscaleCheck(ts({ state: "Stopped", ips: [] }), "https://100.70.0.1:8443", true);
-    expect(c).toMatchObject({ level: "error", action: "tailscale-up" });
+    expect(c).toMatchObject({ level: "warn", action: "tailscale-up" });
+  });
+  it("is just 'off' at home, even if the saved address is a Tailscale one that still answers", () => {
+    const c = tailscaleCheck(ts({ state: "Stopped", ips: [] }), "https://100.70.0.1:8443", false);
+    expect(c.level).toBe("off");
+  });
+  it("never blocks over being signed out or the service being down", () => {
+    for (const state of ["NeedsLogin", "NeedsMachineAuth", "DaemonDown"]) {
+      expect(tailscaleCheck(ts({ state, ips: [] }), "https://100.70.0.1:8443", false).level).toBe("off");
+      expect(tailscaleCheck(ts({ state, ips: [] }), "https://100.70.0.1:8443", true).level).toBe("warn");
+    }
   });
   it("is just 'off' when not needed and the server is fine", () => {
     expect(tailscaleCheck(ts({ state: "Stopped" }), "https://192.168.1.10:8443", false).level).toBe("off");
   });
-  it("suggests installing when the server is on a tailnet", () => {
-    const c = tailscaleCheck({ installed: false, state: "NotInstalled", ips: [], health: [] }, "https://x.ts.net", false);
-    expect(c).toMatchObject({ level: "error", action: "tailscale-install" });
+  it("suggests installing only when a tailnet server can't be reached", () => {
+    const missing = { installed: false, state: "NotInstalled", ips: [], health: [] };
+    expect(tailscaleCheck(missing, "https://x.ts.net", true)).toMatchObject({ level: "warn", action: "tailscale-install" });
+    expect(tailscaleCheck(missing, "https://x.ts.net", false).level).toBe("off");
   });
 });
 
@@ -108,9 +119,85 @@ describe("runChecks", () => {
     });
     const out = await runChecks(deps(f), () => {});
     expect(out.blocked).toBe(true);
-    expect(out.checks.find((c) => c.id === "tailscale")?.level).toBe("error");
+    expect(out.checks.find((c) => c.id === "tailscale")?.level).toBe("warn");
     expect(out.checks.find((c) => c.id === "server")?.level).toBe("error");
     expect(out.checks.some((c) => c.id === "version")).toBe(false);
+  });
+
+  it("isn't blocked by Tailscale being off when the server answers", async () => {
+    const f = fakes({ tailscale: ts({ state: "Stopped", ips: [] }) });
+    const out = await runChecks(deps(f, "https://100.70.0.1:8443"), () => {});
+    expect(out.blocked).toBe(false);
+    expect(out.checks.find((c) => c.id === "tailscale")?.level).toBe("off");
+  });
+
+  it("leaves other VPNs alone: no Tailscale row, and hints that name the chosen one", async () => {
+    let asked = false;
+    const f = fakes({
+      probe: { reachable: false, error: "operation timed out" },
+      tailscale: ts({ state: "Stopped", ips: [] }),
+    });
+    f.platform.tailscaleStatus = async () => {
+      asked = true;
+      return ts();
+    };
+    const out = await runChecks({ ...deps(f, "https://100.70.0.1:8443"), network: "netbird" }, () => {});
+    expect(asked).toBe(false);
+    expect(out.checks.some((c) => c.id === "tailscale")).toBe(false);
+    const server = out.checks.find((c) => c.id === "server");
+    expect(server?.hint).toContain("NetBird");
+    expect(server?.hint).not.toContain("Tailscale");
+  });
+
+  it("labels the row Headscale, which uses the Tailscale client", async () => {
+    const out = await runChecks({ ...deps(fakes({ tailscale: ts() })), network: "headscale" }, () => {});
+    expect(out.checks.find((c) => c.id === "tailscale")?.label).toBe("Headscale");
+  });
+
+  it("uses the second address when the first doesn't answer, and reports it before asking the server anything", async () => {
+    const f = fakes({});
+    const order: string[] = [];
+    f.platform.probeServer = async (a: string) =>
+      a === "https://100.70.0.1:8443"
+        ? { reachable: false, error: "operation timed out" }
+        : { reachable: true, fingerprint: "ab" };
+    const version = f.client.version.bind(f.client);
+    f.client.version = async () => {
+      order.push("version");
+      return version();
+    };
+    const out = await runChecks(
+      {
+        ...deps(f, "https://100.70.0.1:8443"),
+        alternateAddress: "https://192.168.1.10:8443",
+        onRoute: (a: string) => order.push(a),
+      },
+      () => {},
+    );
+    expect(out.blocked).toBe(false);
+    expect(order).toEqual(["https://192.168.1.10:8443", "version"]);
+    expect(out.checks.find((c) => c.id === "server")?.detail).toContain("192.168.1.10");
+  });
+
+  it("checks the certificate of whichever address answered", async () => {
+    const f = fakes({});
+    f.platform.probeServer = async (a: string) =>
+      a === "https://home:8443" ? { reachable: false } : { reachable: true, fingerprint: "evil" };
+    const out = await runChecks({ ...deps(f, "https://home:8443"), alternateAddress: "https://vpn:8443" }, () => {});
+    expect(out.blocked).toBe(true);
+    expect(out.checks.find((c) => c.id === "identity")?.level).toBe("error");
+  });
+
+  it("says both addresses were tried when neither answers", async () => {
+    const f = fakes({ probe: { reachable: false, error: "operation timed out" } });
+    const routed: string[] = [];
+    const out = await runChecks(
+      { ...deps(f, "https://home:8443"), alternateAddress: "https://vpn:8443", onRoute: (a: string) => routed.push(a) },
+      () => {},
+    );
+    expect(out.blocked).toBe(true);
+    expect(routed).toEqual([]);
+    expect(out.checks.find((c) => c.id === "server")?.detail).toContain("either address");
   });
 
   it("refuses a server whose certificate changed", async () => {

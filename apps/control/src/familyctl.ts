@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
+import https from "node:https";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { ControlFamily } from "@vault/shared";
@@ -41,7 +42,11 @@ function readEnvFile(slug: string): Record<string, string> {
     const out: Record<string, string> = {};
     for (const line of raw.split("\n")) {
       const eq = line.indexOf("=");
-      if (eq > 0) out[line.slice(0, eq).trim()] = line.slice(eq + 1).trim();
+      if (eq <= 0) continue;
+      // familyctl writes values with printf %q; inputs are validated to plain
+      // characters, so the only quoting that appears is '' for an empty value.
+      const value = line.slice(eq + 1).trim();
+      out[line.slice(0, eq).trim()] = value === "''" ? "" : value;
     }
     return out;
   } catch {
@@ -78,19 +83,40 @@ export async function listFamilies(): Promise<ControlFamily[]> {
 
 /**
  * Ask a running family server for its version over the shared docker network.
- * Family servers use self-signed certs by design (ADR-0004); the control
- * container sets NODE_TLS_REJECT_UNAUTHORIZED=0 because every host it talks to
- * is one of those internal servers (see docker/multi/docker-compose.base.yml).
+ * Family servers present self-signed certs (ADR-0004), so certificate checks
+ * are relaxed for this one unauthenticated read on vault-net — and only here:
+ * everything else this process talks to (SMTP, GitHub) keeps full
+ * verification.
  */
 export async function familyVersion(slug: string): Promise<string | null> {
-  try {
-    const res = await fetch(`https://vault-${slug}:8443/api/v1/version`, {
-      signal: AbortSignal.timeout(4000),
-    });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { apiVersion?: string };
-    return body.apiVersion ?? null;
-  } catch {
-    return null;
-  }
+  if (!/^[a-z][a-z0-9]{1,30}$/.test(slug)) return null; // the slug rule in @vault/shared
+  return new Promise((resolve) => {
+    let req: ReturnType<typeof https.get>;
+    try {
+      req = https.get(
+        `https://vault-${slug}:8443/api/v1/version`,
+        { rejectUnauthorized: false, timeout: 4000 },
+        (res) => {
+          let raw = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk: string) => {
+            raw += chunk;
+            if (raw.length > 64_000) req.destroy();
+          });
+          res.on("end", () => {
+            if (res.statusCode !== 200) return resolve(null);
+            try {
+              resolve((JSON.parse(raw) as { apiVersion?: string }).apiVersion ?? null);
+            } catch {
+              resolve(null);
+            }
+          });
+        },
+      );
+    } catch {
+      return resolve(null);
+    }
+    req.on("timeout", () => req.destroy());
+    req.on("error", () => resolve(null));
+  });
 }

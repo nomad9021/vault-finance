@@ -1,5 +1,6 @@
 import { useKeepUnlocked } from "../../lib/autoLock.js";
 import {
+  formatCents,
   formatCentsWhole,
   type Bill,
   type BudgetListResponse,
@@ -535,7 +536,7 @@ function BudgetsSlide({ budgets, categories, label, review }: SlideProps) {
   return (
     <SlideFrame kicker={review.period === "week" ? `${label} · ${monthName} budgets` : label} title="Budgets">
       <p style={{ marginTop: 0, color: "var(--content-secondary)" }}>
-        {formatCentsWhole(budgets.totalSpentCents)} spent of {formatCentsWhole(budgets.totalBudgetedCents)} budgeted
+        {formatCents(budgets.totalSpentCents)} spent of {formatCents(budgets.totalBudgetedCents)} budgeted
       </p>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "14px 28px" }}>
         {rows.slice(0, 10).map((b) => {
@@ -547,7 +548,7 @@ function BudgetsSlide({ budgets, categories, label, review }: SlideProps) {
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
                 <span>{cat?.name ?? "Category"}</span>
                 <span style={{ fontWeight: 600, color: over ? "var(--color-negative)" : undefined }}>
-                  {formatCentsWhole(b.spentCents)} / {formatCentsWhole(b.amountCents)}
+                  {formatCents(b.spentCents)} / {formatCents(b.amountCents)}
                   {over ? " · over" : ""}
                 </span>
               </div>

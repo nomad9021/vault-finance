@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { aiSettings, bankConnections, bankSettings, deviceKeys, deviceSessions, users } from "./db/schema.js";
+import { aiSettings, bankConnections, bankSettings, deviceKeys, deviceSessions, ownerEmail, users } from "./db/schema.js";
 import type { Db } from "./plugins/db.js";
 import { configureSecretCryptoWithKey, decryptSecret, encryptSecret } from "./secret-crypto.js";
 import { loadAllMemory, saveAllMemory } from "./lib/ai-memory.js";
@@ -63,11 +63,14 @@ export async function rotateDataKey(
     if (plain.aiKey !== null) {
       await tx.update(aiSettings).set({ apiKey: encryptSecret(plain.aiKey) }).where(eq(aiSettings.id, true));
     }
+    if (plain.mailPassword !== null) {
+      await tx.update(ownerEmail).set({ password: encryptSecret(plain.mailPassword) }).where(eq(ownerEmail.id, true));
+    }
   });
   const memoryNotes = saveAllMemory(memory);
   const rotated =
     memoryNotes +
-    plain.users.length + plain.connections.length + (plain.plaidSecret !== null ? 1 : 0) + (plain.aiKey !== null ? 1 : 0);
+    plain.users.length + plain.connections.length + (plain.plaidSecret !== null ? 1 : 0) + (plain.aiKey !== null ? 1 : 0) + (plain.mailPassword !== null ? 1 : 0);
 
   if (envKey) return { newKeyForEnv: newKey.toString("base64"), rotated };
   renameSync(nextPath, keyPath);
@@ -97,11 +100,13 @@ async function readAllSecrets(db: Db, keys: Buffer[]) {
     .where(isNotNull(bankConnections.accessToken));
   const bank = await db.query.bankSettings.findFirst();
   const ai = await db.query.aiSettings.findFirst();
+  const mail = await db.query.ownerEmail.findFirst();
   return {
     users: userRows.map((r) => ({ id: r.id, value: decrypt(r.v!) })),
     connections: connRows.map((r) => ({ id: r.id, value: decrypt(r.v!) })),
     plaidSecret: bank?.plaidSecret ? decrypt(bank.plaidSecret) : null,
     aiKey: ai?.apiKey ? decrypt(ai.apiKey) : null,
+    mailPassword: mail ? decrypt(mail.password) : null,
   };
 }
 

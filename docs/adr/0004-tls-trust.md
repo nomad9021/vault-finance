@@ -20,7 +20,9 @@ out-of-band the first time, same UX pattern as SSH host keys), then pins that
 fingerprint locally. Every subsequent connection compares against the pinned
 fingerprint; a mismatch is a hard error with an explicit "the server's
 certificate changed — verify this is expected before continuing" prompt, never
-a silent bypass.
+a silent bypass. The handshake signature is always verified as well: the
+certificate itself is public, so only the signature proves the server holds
+its private key.
 
 If the fingerprint validates against the OS trust store instead (proper CA,
 e.g. via Tailscale HTTPS or Let's Encrypt through a reverse proxy), TOFU pinning

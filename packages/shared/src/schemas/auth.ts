@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Platform } from "./common.js";
+import { NewPassword } from "./password.js";
 import { User } from "./user.js";
 
 /**
@@ -113,6 +114,13 @@ export const TotpDisableRequest = z.object({
   password: z.string().min(1),
 });
 export type TotpDisableRequest = z.infer<typeof TotpDisableRequest>;
+
+/** Change your own password: the current one proves it's you. */
+export const ChangePasswordRequest = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: NewPassword,
+});
+export type ChangePasswordRequest = z.infer<typeof ChangePasswordRequest>;
 
 /** Claims carried in the access JWT. */
 export const AccessTokenClaims = z.object({

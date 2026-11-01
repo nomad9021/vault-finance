@@ -1,4 +1,15 @@
-import type { Category, PreIncome, PreIncomeKind, SankeyLink, SankeyNode, TaxEstimate, TaxGroup } from "@vault/shared";
+import {
+  formatCents,
+  type BudgetListResponse,
+  type Category,
+  type PreIncome,
+  type PreIncomeKind,
+  type SankeyLink,
+  type SankeyNode,
+  type TaxEstimate,
+  type TaxGroup,
+} from "@vault/shared";
+import type { SankeyCardLink, SankeyCardNode } from "./SankeyCard.js";
 
 /**
  * Build the budget-planner Sankey with the same hierarchical structure as the
@@ -189,4 +200,145 @@ export function withGrossBranch(
     ...sankey.links,
   ];
   return { nodes, links };
+}
+
+/** One category's month, as compared on the budget-vs-actual Sankey. */
+export interface BudgetVsActualRow {
+  /** Null for uncategorized spending. */
+  categoryId: string | null;
+  label: string;
+  color: string;
+  budgetedCents: number;
+  actualCents: number;
+}
+
+export interface BudgetVsActual {
+  rows: BudgetVsActualRow[];
+  nodes: SankeyCardNode[];
+  links: SankeyCardLink[];
+  budgetedCents: number;
+  actualCents: number;
+  /** Spending beyond budgets, unbudgeted categories included. */
+  overCents: number;
+  /** Budget left unspent, added up per category. */
+  unspentCents: number;
+}
+
+const OVER_COLOR = "#ec6a6a";
+const UNSPENT_COLOR = "#43cfc0";
+const BUDGETED_COLOR = "#6f8ef2";
+const ACTUAL_COLOR = "#9397ab";
+
+/**
+ * Budget and actual on one Sankey, and it balances. The left column is where
+ * each category's money was supposed to come from: its budget, plus an "Over
+ * budget" stream for anything beyond it. The right column is what happened to
+ * it: spent, or still unspent. So a category's left ribbon is its budget and its
+ * right ribbon (to "Actual spent") is its spending, side by side at the same
+ * scale, and Budgeted + Over budget = Actual spent + Left unspent to the cent.
+ *
+ * Spending in a sub-category with no budget of its own counts against the
+ * nearest budgeted parent, because that is the budget meant to cover it. Income
+ * categories are left out unless they were given a budget.
+ */
+export function buildBudgetVsActual(
+  budgets: Pick<BudgetListResponse, "budgets" | "unbudgetedSpending">,
+  categories: Category[],
+): BudgetVsActual {
+  const catById = new Map(categories.map((c) => [c.id, c]));
+  const budgeted = new Map(budgets.budgets.map((b) => [b.categoryId, b.amountCents]));
+
+  const ownerOf = (categoryId: string): string => {
+    const seen = new Set<string>();
+    let id: string | null | undefined = categoryId;
+    while (id && !seen.has(id)) {
+      if (budgeted.has(id)) return id;
+      seen.add(id);
+      id = catById.get(id)?.parentCategoryId;
+    }
+    return categoryId;
+  };
+
+  const actual = new Map<string | null, number>();
+  const addSpend = (categoryId: string | null, cents: number) => {
+    const owner = categoryId ? ownerOf(categoryId) : null;
+    actual.set(owner, (actual.get(owner) ?? 0) + cents);
+  };
+  for (const b of budgets.budgets) addSpend(b.categoryId, b.spentCents);
+  for (const u of budgets.unbudgetedSpending ?? []) {
+    if (u.categoryId && catById.get(u.categoryId)?.kind === "income") continue;
+    addSpend(u.categoryId, u.spentCents);
+  }
+
+  const ids = new Set<string | null>([...budgeted.keys(), ...actual.keys()]);
+  const rows: BudgetVsActualRow[] = [...ids]
+    .map((id) => {
+      const cat = id ? catById.get(id) : undefined;
+      return {
+        categoryId: id,
+        label: id ? (cat?.name ?? "Unknown category") : "Uncategorized",
+        color: cat?.color ?? ACTUAL_COLOR,
+        budgetedCents: id ? (budgeted.get(id) ?? 0) : 0,
+        actualCents: actual.get(id) ?? 0,
+      };
+    })
+    .filter((r) => r.budgetedCents > 0 || r.actualCents > 0)
+    .sort(
+      (a, b) =>
+        Math.max(b.budgetedCents, b.actualCents) - Math.max(a.budgetedCents, a.actualCents) ||
+        a.label.localeCompare(b.label),
+    );
+
+  const nodes: SankeyCardNode[] = [];
+  const links: SankeyCardLink[] = [];
+  let budgetedCents = 0;
+  let actualCents = 0;
+  let overCents = 0;
+  let unspentCents = 0;
+  for (const r of rows) {
+    const id = `cat:${r.categoryId ?? "none"}`;
+    const over = Math.max(0, r.actualCents - r.budgetedCents);
+    const unspent = Math.max(0, r.budgetedCents - r.actualCents);
+    budgetedCents += r.budgetedCents;
+    actualCents += r.actualCents;
+    overCents += over;
+    unspentCents += unspent;
+    nodes.push({
+      id,
+      label: r.label,
+      valueCents: Math.max(r.budgetedCents, r.actualCents),
+      color: r.color,
+      depth: 1,
+      kind: "category",
+      categoryId: r.categoryId,
+      section: "spending",
+      caption: `${r.budgetedCents > 0 ? `${formatCents(r.budgetedCents)} budgeted` : "No budget"} · ${formatCents(r.actualCents)} actual`,
+      comparison: { budgetedCents: r.budgetedCents, actualCents: r.actualCents },
+    });
+    if (r.budgetedCents > 0) links.push({ from: "budgeted", to: id, valueCents: r.budgetedCents, color: r.color });
+    if (over > 0) links.push({ from: "over", to: id, valueCents: over, color: OVER_COLOR });
+    if (r.actualCents > 0) links.push({ from: id, to: "actual", valueCents: r.actualCents, color: r.color });
+    if (unspent > 0) links.push({ from: id, to: "unspent", valueCents: unspent, color: UNSPENT_COLOR });
+  }
+
+  const total = (id: string, label: string, valueCents: number, color: string, depth: number, note: string): void => {
+    if (valueCents <= 0) return;
+    nodes.push({
+      id,
+      label,
+      valueCents,
+      color,
+      depth,
+      kind: "category",
+      categoryId: null,
+      caption: formatCents(valueCents),
+      note,
+    });
+  };
+  total("budgeted", "Budgeted", budgetedCents, BUDGETED_COLOR, 0, "Everything you budgeted this month, across all categories.");
+  total("over", "Over budget", overCents, OVER_COLOR, 0, "Spending beyond each category's budget, including categories with no budget at all.");
+  total("actual", "Actual spent", actualCents, ACTUAL_COLOR, 2, "Everything spent this month, across all categories.");
+  total("unspent", "Left unspent", unspentCents, UNSPENT_COLOR, 2, "Budget not spent yet, added up across the categories still under budget.");
+
+  return { rows, nodes, links, budgetedCents, actualCents, overCents, unspentCents };
 }

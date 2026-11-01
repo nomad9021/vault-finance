@@ -59,6 +59,28 @@ const api = async (method: "GET" | "POST", url: string, payload?: unknown) => {
   return res.json();
 };
 
+type ActionRow = { id: string; action: { type: string }; status: string; error: string | null; client?: boolean };
+
+/**
+ * The changes from one auto-mode reply, after the user clicks every one auto
+ * mode held back (it only applies new or cosmetic things on its own). Returns
+ * them in order, with what auto mode did first in `held`.
+ */
+const clickThrough = async (out: Array<Record<string, unknown>>) => {
+  const actions = out.find((l) => "actions" in l)!["actions"] as ActionRow[];
+  const held = actions.map((a) => a.status === "pending" && !a.client);
+  const done: ActionRow[] = [];
+  for (const a of actions) {
+    if (a.status !== "pending" || a.client) {
+      done.push(a);
+      continue;
+    }
+    const res = await app.inject({ method: "POST", url: `/api/v1/ai/actions/${a.id}/approve`, headers: auth, payload: {} });
+    done.push(res.json() as ActionRow);
+  }
+  return { actions: done, held };
+};
+
 beforeAll(async () => {
   dataDir = mkdtempSync(path.join(tmpdir(), "vault-agent-data-"));
   pgDir = mkdtempSync(path.join(tmpdir(), "vault-agent-pg-"));
@@ -131,8 +153,9 @@ describe("finance agent", () => {
     expect(calls[0]![0]!.content).toContain("reorder_categories");
     expect(calls[0]![0]!.content).toContain("Uncategorized transactions (all time): 3.");
 
-    // Auto mode applied both changes.
-    const actions = out.find((l) => "actions" in l)!["actions"] as Array<{ status: string; error: string | null }>;
+    // Auto mode reordered on its own; recategorizing waited for a click.
+    const { actions, held } = await clickThrough(out);
+    expect(held).toEqual([true, false]);
     expect(actions.map((a) => a.status)).toEqual(["applied", "applied"]);
     const dining = (await api("GET", "/categories")).categories.find((c: { name: string }) => c.name === "Dining Out");
     const kettle = (await api("GET", "/transactions?search=blue")).transactions;
@@ -180,7 +203,7 @@ describe("finance agent", () => {
     const out = lines(
       (await app.inject({ method: "POST", url: "/api/v1/ai/chat", headers: auth, payload: { message: "y", autoApply: true } })).payload,
     );
-    const [action] = out.find((l) => "actions" in l)!["actions"] as Array<{ status: string; error: string }>;
+    const [action] = (await clickThrough(out)).actions;
     expect(action!.status).toBe("failed");
     expect(action!.error).toMatch(/No transactions matched/);
   });
@@ -258,7 +281,8 @@ describe("specialist agents", () => {
         '<vault-action>{"type":"set_pretax","earner":"Alex","retirementPct":0}</vault-action>',
     ];
     const out = await chat("My salary is $100k and I live in Colorado", { autoApply: true });
-    const actions = out.find((l) => "actions" in l)!["actions"] as Array<{ status: string; error: string | null }>;
+    const { actions, held } = await clickThrough(out);
+    expect(held).toEqual([true, true, true]); // salary and taxes always wait for a click
     expect(actions.map((a) => a.status)).toEqual(["applied", "applied", "applied"]);
     const { estimate } = await api("GET", "/tax-profile");
     expect(estimate.takeHomeCents).toBe(7_548_840);
@@ -285,7 +309,8 @@ describe("specialist agents", () => {
       "Netflix isn't a bill yet, so I left it.",
     ];
     const out = await chat("Set up my bills, an emergency fund goal, and a snowball debt plan", { autoApply: true });
-    const actions = out.find((l) => "actions" in l)!["actions"] as Array<{ action: { type: string }; status: string }>;
+    const { actions, held } = await clickThrough(out);
+    expect(held).toEqual([false, false, true]); // new bill + goal applied; the debt plan waited
     expect(actions.map((a) => [a.action.type, a.status])).toEqual([
       ["create_bill", "applied"],
       ["create_goal", "applied"],
@@ -375,7 +400,9 @@ describe("savings buckets through the assistant", () => {
       "That account doesn't exist, so I skipped it.",
     ];
     const out = lines((await app.inject({ method: "POST", url: "/api/v1/ai/chat", headers: auth, payload: { message: "Split my savings into vacation and emergency buckets", autoApply: true } })).payload);
-    const actions = out.find((l) => "actions" in l)!["actions"] as Array<{ action: { type: string }; status: string }>;
+    const { actions, held } = await clickThrough(out);
+    // Moving money always waits for a click, even in auto mode.
+    expect(held).toEqual([false, false, true]);
     expect(actions.map((a) => a.status)).toEqual(["applied", "applied", "applied"]);
     const acct = (await api("GET", "/buckets")).accounts.find((a: { accountName: string }) => a.accountName === "Ally Savings");
     expect(acct.buckets.map((b: { name: string; allocatedCents: number }) => [b.name, b.allocatedCents])).toEqual([["Vacation", 200_000], ["Emergency", 150_000]]);
@@ -398,7 +425,7 @@ describe("before income through the assistant", () => {
     const system = calls[0]![0]!.content;
     expect(system).toContain("BEFORE-INCOME ITEMS");
     expect(system).toContain("=== WHAT YOU CAN AND CAN'T DO ===");
-    const actions = out.find((l) => "actions" in l)!["actions"] as Array<{ action: { type: string }; status: string }>;
+    const { actions } = await clickThrough(out);
     expect(actions.map((a) => [a.action.type, a.status])).toEqual([
       ["set_pre_income_item", "applied"],
       ["set_pre_income_item", "applied"],

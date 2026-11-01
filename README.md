@@ -116,6 +116,10 @@ It asks:
 - **Where to store your files** (`VAULT_DISK`) — put this on your big or
   dedicated drive if you have one (e.g. `/mnt/data/vault`). Holds the database,
   uploaded receipts, the TLS certificate, and any AI models.
+- **Lock it with a passphrase?** — default yes (Linux). Everything in that
+  folder goes into an encrypted volume nobody can read without your
+  passphrase; after a restart, run `bash installers/server/vault-storage.sh
+  unlock` to start the server again.
 - **HTTPS port** (default `8443`).
 - **Database password** — press Enter for a strong random one.
 - **Local AI?** — default no; you can turn it on later in the app.
@@ -182,8 +186,9 @@ screen, the system check, or **Settings → Tailscale**.
 The setup wizard asks for a **household name** (e.g. "The Carters") — it's
 optional and the owner can change it any time in **Settings → Household**.
 Everyone who signs in to your server is in that one household and shares its
-accounts; add the other adults from **Settings → Family members** (invite by
-email, or create them a login with a temporary password). The household name
+accounts; add the other adults from **Settings → Family members** (connect your
+email once and invite them by address, or create them a login with a temporary
+password). The household name
 shows on the sign-in screen and in the sidebar for all of you.
 
 ### 5. Approving new devices

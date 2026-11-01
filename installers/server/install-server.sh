@@ -22,6 +22,8 @@ REPO_DIR="$(cd -- "$SCRIPT_DIR/../.." &>/dev/null && pwd)"
 COMPOSE_DIR="$REPO_DIR/docker"
 COMPOSE_FILE="$COMPOSE_DIR/docker-compose.yml"
 ENV_FILE="$COMPOSE_DIR/.env"
+# Written by vault-storage.sh when the data is passphrase-locked.
+STORAGE_CONF="${VAULT_STORAGE_CONF:-/etc/vault-finance-storage.conf}"
 
 DRY_RUN=0
 ASSUME_YES=0
@@ -157,6 +159,40 @@ case "$VAULT_DISK" in
   *)  VAULT_DISK="$COMPOSE_DIR/$VAULT_DISK" ;;
 esac
 
+# True when PATH (or the nearest folder above it that exists) sits on an
+# encrypted block device — LUKS full-disk encryption, or our own vault volume.
+on_encrypted_disk() {
+  local p="$1" src
+  while [ ! -e "$p" ] && [ "$p" != / ]; do p="$(dirname "$p")"; done
+  src="$(findmnt -no SOURCE --target "$p" 2>/dev/null | sed 's/\[.*//')" || return 1
+  [ -n "$src" ] && lsblk -nso TYPE "$src" 2>/dev/null | grep -qx crypt
+}
+
+hdr "1b. Lock your data with a passphrase"
+STORAGE_SETUP=0
+if [ -f "$STORAGE_CONF" ]; then
+  # Locked: writing into the empty mountpoint would put data on the plain disk.
+  mountpoint -q "$VAULT_DISK" 2>/dev/null \
+    || die "Your data is locked. Unlock it first: bash installers/server/vault-storage.sh unlock"
+  ok "Passphrase-locked storage is already set up (installers/server/vault-storage.sh)."
+elif [ "$(uname -s)" != Linux ]; then
+  warn "Passphrase-locked storage needs Linux. Put $VAULT_DISK on an encrypted disk (FileVault on macOS)."
+elif on_encrypted_disk "$VAULT_DISK"; then
+  ok "$VAULT_DISK is on an encrypted disk."
+else
+  say "${DIM}Your finances are stored unencrypted on this disk unless you lock them away.${RST}"
+  say "${DIM}With this on, everything in $VAULT_DISK lives in an encrypted volume: nobody can${RST}"
+  say "${DIM}read it without your passphrase, and after a restart the server waits until you${RST}"
+  say "${DIM}unlock it (bash installers/server/vault-storage.sh unlock).${RST}"
+  if [ "$ASSUME_YES" = "1" ]; then
+    warn "Skipped in --yes mode (it needs you to type a passphrase). Set it up later: bash installers/server/vault-storage.sh create"
+  elif yesno "Lock your data with a passphrase? (recommended)" "y"; then
+    STORAGE_SETUP=1
+  else
+    warn "Your data will be readable by anyone who can read this disk."
+  fi
+fi
+
 hdr "2. Which HTTPS port should the app listen on?"
 DEF_PORT="$(envget VAULT_PORT)"; DEF_PORT="${DEF_PORT:-8443}"
 ask VAULT_PORT "Port:" "$DEF_PORT"
@@ -241,9 +277,16 @@ fi
 echo
 yesno "Write this config and start the server?" "y" || die "Aborted — nothing changed."
 
-mkdir -p "$VAULT_DISK"/{postgres,vault,redis,ollama}
-printf '%s' "$ENV_CONTENT" > "$ENV_FILE"
-ok "Wrote $ENV_FILE"
+if [ "$STORAGE_SETUP" = "1" ]; then
+  hdr "Creating your passphrase-locked storage"
+  bash "$SCRIPT_DIR/vault-storage.sh" create --mount "$VAULT_DISK" \
+    || die "Encrypted storage wasn't set up — nothing else was changed. Re-run the installer to try again."
+fi
+mkdir -p "$VAULT_DISK"/{postgres,vault,redis,ollama,update}
+# Holds the database password: readable by you alone.
+( umask 077; printf '%s' "$ENV_CONTENT" > "$ENV_FILE" )
+chmod 600 "$ENV_FILE"
+ok "Wrote $ENV_FILE (readable only by you)"
 ok "Created data directories under $VAULT_DISK"
 
 # ---- bring up the stack -----------------------------------------------------
@@ -252,7 +295,7 @@ say "${DIM}First run compiles the server image and pulls Postgres/Redis/Ollama �
 ( cd "$COMPOSE_DIR" && $DC up -d --build )
 # The server runs as the image's unprivileged `vault` user, but mkdir above
 # made its bind-mounted data dir owned by whoever ran this script.
-( cd "$COMPOSE_DIR" && $DC run --rm --no-deps --user root --entrypoint chown server -R vault:vault /data \
+( cd "$COMPOSE_DIR" && $DC run --rm --no-deps --user root --entrypoint sh server -c 'chown -R vault:vault /data && chmod 700 /data' \
     && $DC restart server >/dev/null ) \
   || warn "Couldn't hand $VAULT_DISK/vault to the container's vault user — the server may not be able to write there."
 ok "Containers are up."
@@ -310,3 +353,7 @@ say "  ${DIM}$DC ps${RST}          # status"
 say "  ${DIM}$DC logs -f server${RST}  # logs"
 say "  ${DIM}$DC down${RST}         # stop"
 say "\nData lives in ${B}$VAULT_DISK${RST} — back that up. See docs/self-hosting.md."
+if [ -f "$STORAGE_CONF" ]; then
+  say "\n${B}Your data is passphrase-locked.${RST} After this machine restarts, the server stays"
+  say "off until you run:  ${B}bash installers/server/vault-storage.sh unlock${RST}"
+fi

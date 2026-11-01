@@ -18,16 +18,27 @@ import {
   type DeviceApprovalSettings,
   type DeviceKey,
   type DeviceSession,
+  type EmailConnectionStatus,
+  type InviteMemberResponse,
+  mailServerFor,
   type PendingApproval,
   type TrustedDevice,
   type MemberListResponse,
   type UpdateStatusResponse,
   ApiRequestError,
+  passwordProblem,
   type PlaidEnv,
 } from "@vault/shared";
 import { THEMES, THEME_LABELS } from "@vault/design-tokens";
 import { Avatar, Button, Card, Dialog, Field, Segmented, Select, Spinner, Tabs, Tag } from "@vault/ui";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  getPrivateNetwork,
+  PRIVATE_NETWORKS,
+  type PrivateNetworkId,
+  setPrivateNetwork,
+  usesTailscaleClient,
+} from "../../lib/privateNetwork.js";
 import { REVIEW_SLIDE_LABELS, type ReviewPrefs } from "../../lib/reviewPrefs.js";
 import { runChecks, type UiCheck } from "../../lib/startupChecks.js";
 import { useCheckActions } from "../../lib/useCheckActions.js";
@@ -105,6 +116,7 @@ export function SettingsPage({ initialTab }: { initialTab?: string } = {}) {
         <>
           <AutoLockSection />
           <BiometricSection />
+          <PasswordSection />
           <TwoFactorSection />
           <TrustedDevicesSection />
           <SessionsSection />
@@ -575,11 +587,14 @@ function MembersSection() {
   const client = useApp((s) => s.client);
   const user = useApp((s) => s.user);
   const [data, setData] = useState<MemberListResponse | null>(null);
-  const [mode, setMode] = useState<"none" | "invite" | "create">("none");
+  const platform = useApp((s) => s.platform);
+  const [mode, setMode] = useState<"none" | "connect" | "invite" | "create">("none");
   const [form, setForm] = useState({ displayName: "", email: "", tempPassword: "" });
+  const [emailStatus, setEmailStatus] = useState<EmailConnectionStatus | null>(null);
+  const [connect, setConnect] = useState({ email: "", password: "", host: "", port: "587" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [inviteResult, setInviteResult] = useState<(InviteMemberResponse & { to: string }) | null>(null);
   const [removing, setRemoving] = useState<{ id: string; label: string } | null>(null);
 
   const reload = useCallback(() => {
@@ -587,14 +602,48 @@ function MembersSection() {
       .members()
       .then(setData)
       .catch(() => setData(null));
+    client
+      .emailConnection()
+      .then(setEmailStatus)
+      .catch(() => setEmailStatus(null));
   }, [client]);
   useEffect(reload, [reload]);
 
   if (user?.role !== "owner") return null;
 
+  const canSendEmail = Boolean(emailStatus?.connected || emailStatus?.serverMailAvailable);
+  const connectDomain = connect.email.trim().toLowerCase().split("@")[1] ?? "";
+  const isGmail = connectDomain === "gmail.com" || connectDomain === "googlemail.com";
+  const needsMailServer = connect.email.includes("@") && !mailServerFor(connect.email);
+
+  const startInvite = () => {
+    setError(null);
+    if (canSendEmail) {
+      setMode("invite");
+    } else {
+      setConnect({ email: user.email ?? "", password: "", host: "", port: "587" });
+      setMode("connect");
+    }
+  };
+
+  const openInBrowser = (url: string) => {
+    if (platform.openExternal) void platform.openExternal(url);
+    else window.open(url, "_blank", "noopener");
+  };
+
+  const disconnect = async () => {
+    setError(null);
+    try {
+      setEmailStatus(await client.disconnectEmail());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't disconnect your email.");
+    }
+  };
+
   const reset = () => {
     setMode("none");
     setForm({ displayName: "", email: "", tempPassword: "" });
+    setConnect({ email: "", password: "", host: "", port: "587" });
     setError(null);
     setBusy(false);
   };
@@ -603,12 +652,27 @@ function MembersSection() {
     setBusy(true);
     setError(null);
     try {
+      if (mode === "connect") {
+        const port = Number(connect.port);
+        setEmailStatus(
+          await client.connectEmail({
+            email: connect.email.trim(),
+            password: connect.password,
+            ...(needsMailServer
+              ? { host: connect.host.trim(), port: Number.isInteger(port) ? port : 587 }
+              : {}),
+          }),
+        );
+        // Connected: go straight on to the thing they came here to do.
+        setConnect({ email: "", password: "", host: "", port: "587" });
+        setMode("invite");
+        setBusy(false);
+        return;
+      }
       if (mode === "invite") {
-        const { inviteUrl } = await client.inviteMember({
-          displayName: form.displayName.trim(),
-          email: form.email.trim(),
-        });
-        setInviteLink(inviteUrl);
+        const to = form.email.trim();
+        const result = await client.inviteMember({ email: to, serverUrl: client.baseUrl });
+        setInviteResult({ ...result, to });
       } else {
         await client.createMember({
           displayName: form.displayName.trim(),
@@ -637,6 +701,25 @@ function MembersSection() {
         Everyone here shares the same accounts and transactions. Invite people by
         email, or create an account with a temporary password you hand to them.
       </p>
+
+      {emailStatus?.connected && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+            flexWrap: "wrap",
+            marginBottom: 8,
+            fontSize: "var(--text-sm)",
+          }}
+        >
+          <span>Invites send from {emailStatus.fromEmail}</span>
+          <Button variant="ghost" onClick={() => void disconnect()}>
+            Disconnect email
+          </Button>
+        </div>
+      )}
 
       {data === null ? (
         <Spinner label="Loading members" />
@@ -696,7 +779,7 @@ function MembersSection() {
 
       {mode === "none" ? (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-          <Button variant="secondary" onClick={() => setMode("invite")}>
+          <Button variant="secondary" onClick={startInvite}>
             Invite by email
           </Button>
           <Button variant="ghost" onClick={() => setMode("create")}>
@@ -705,18 +788,75 @@ function MembersSection() {
         </div>
       ) : (
         <div style={{ display: "grid", gap: 10, marginTop: 12, maxWidth: 360 }}>
-          <Field
-            label="Name"
-            value={form.displayName}
-            onChange={(e) => setForm({ ...form, displayName: e.target.value })}
-            autoFocus
-          />
-          <Field
-            label="Email"
-            type="email"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-          />
+          {mode === "connect" && (
+            <>
+              <p className="card-body" style={{ margin: 0 }}>
+                Connect your email once, and invites will come from your address. Use an app
+                password, not your normal password. It's stored encrypted on your server.
+              </p>
+              <Field
+                label="Your email"
+                type="email"
+                value={connect.email}
+                onChange={(e) => setConnect({ ...connect, email: e.target.value })}
+                autoFocus
+              />
+              {isGmail && (
+                <div>
+                  <Button
+                    variant="ghost"
+                    onClick={() => openInBrowser("https://myaccount.google.com/apppasswords")}
+                  >
+                    Create a Google app password
+                  </Button>
+                  <p className="card-body" style={{ margin: "4px 0 0" }}>
+                    Google requires 2-Step Verification to be on first.
+                  </p>
+                </div>
+              )}
+              <Field
+                label="App password"
+                type="password"
+                autoComplete="off"
+                value={connect.password}
+                onChange={(e) => setConnect({ ...connect, password: e.target.value })}
+              />
+              {needsMailServer && (
+                <>
+                  <Field
+                    label="Mail server"
+                    placeholder="smtp.example.com"
+                    hint="Your email provider lists this in its help pages. Outlook and Hotmail may not allow app-password sign-in."
+                    value={connect.host}
+                    onChange={(e) => setConnect({ ...connect, host: e.target.value })}
+                  />
+                  <Field
+                    label="Port"
+                    inputMode="numeric"
+                    value={connect.port}
+                    onChange={(e) => setConnect({ ...connect, port: e.target.value })}
+                  />
+                </>
+              )}
+            </>
+          )}
+          {mode === "create" && (
+            <Field
+              label="Name"
+              value={form.displayName}
+              onChange={(e) => setForm({ ...form, displayName: e.target.value })}
+              autoFocus
+            />
+          )}
+          {mode !== "connect" && (
+            <Field
+              label={mode === "invite" ? "Their email" : "Email"}
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              autoFocus={mode === "invite"}
+            />
+          )}
           {mode === "create" && (
             <Field
               label="Temporary password (min 12 characters)"
@@ -732,7 +872,15 @@ function MembersSection() {
           )}
           <div style={{ display: "flex", gap: 8 }}>
             <Button variant="primary" onClick={() => void submit()} disabled={busy}>
-              {busy ? <Spinner label="Working" /> : mode === "invite" ? "Send invite" : "Create account"}
+              {busy ? (
+                <Spinner label="Working" />
+              ) : mode === "connect" ? (
+                "Connect email"
+              ) : mode === "invite" ? (
+                "Send invite"
+              ) : (
+                "Create account"
+              )}
             </Button>
             <Button variant="ghost" onClick={reset} disabled={busy}>
               Cancel
@@ -742,47 +890,39 @@ function MembersSection() {
       )}
 
       <Dialog
-        open={inviteLink !== null}
-        title="Invitation ready"
-        onClose={() => setInviteLink(null)}
+        open={inviteResult !== null}
+        title={inviteResult?.emailed ? "Invite sent" : "Invite not emailed"}
+        onClose={() => setInviteResult(null)}
         actions={
-          <Button variant="primary" onClick={() => setInviteLink(null)}>
+          <Button variant="primary" onClick={() => setInviteResult(null)}>
             Done
           </Button>
         }
       >
-        {inviteLink?.startsWith("http") ? (
+        {inviteResult?.emailed ? (
           <>
-            An email is on its way. You can also share this one-time link directly:
-            <div
-              style={{
-                fontFamily: "ui-monospace, monospace",
-                fontSize: "var(--text-xs)",
-                wordBreak: "break-all",
-                marginTop: 8,
-                userSelect: "all",
-              }}
-            >
-              {inviteLink}
-            </div>
+            Sent to {inviteResult.to}
+            {inviteResult.sentFrom ? ` from ${inviteResult.sentFrom}` : ""}. It can take a minute to
+            arrive, so ask them to check spam too. They'll need to be on the same home Wi-Fi or
+            private network (VPN) as this server to open it. You can also share this one-time link:
           </>
         ) : (
           <>
-            No public server address is configured, so no email was sent. Share
-            this one-time link (they'll need to reach your server to open it):
-            <div
-              style={{
-                fontFamily: "ui-monospace, monospace",
-                fontSize: "var(--text-xs)",
-                wordBreak: "break-all",
-                marginTop: 8,
-                userSelect: "all",
-              }}
-            >
-              {inviteLink}
-            </div>
+            {inviteResult?.emailProblem ?? "The email couldn't be sent."} The invite is still
+            valid, so you can share this one-time link yourself:
           </>
         )}
+        <div
+          style={{
+            fontFamily: "ui-monospace, monospace",
+            fontSize: "var(--text-xs)",
+            wordBreak: "break-all",
+            marginTop: 8,
+            userSelect: "all",
+          }}
+        >
+          {inviteResult?.inviteUrl}
+        </div>
       </Dialog>
 
       <Dialog
@@ -2208,7 +2348,16 @@ function SystemStatusSection() {
     setRunning(true);
     try {
       const outcome = await runChecks(
-        { platform, client, address, appVersion: APP_VERSION, keychainOk, hasSession: true },
+        {
+          platform,
+          client,
+          address,
+          appVersion: APP_VERSION,
+          keychainOk,
+          hasSession: true,
+          alternateAddress: useApp.getState().alternateAddress,
+          onRoute: useApp.getState().setActiveAddress,
+        },
         setChecks,
       );
       setChecks(outcome.checks);
@@ -2254,17 +2403,63 @@ function SystemStatusSection() {
   );
 }
 
-/** Settings → Network: Tailscale on/off for reaching the server from anywhere. */
+/** Settings → Network: which private network this computer uses to reach the server from anywhere. */
 function NetworkSection() {
   const platform = useApp((s) => s.platform);
-  if (!platform.tailscaleStatus) return null;
+  const refreshTailscale = useApp((s) => s.refreshTailscale);
+  const [network, setNetwork] = useState<PrivateNetworkId>(getPrivateNetwork);
+  const info = PRIVATE_NETWORKS[network];
+  const managed = usesTailscaleClient(network);
+
+  const choose = (id: PrivateNetworkId) => {
+    setPrivateNetwork(id);
+    setNetwork(id);
+    void refreshTailscale();
+  };
+
   return (
-    <Card kicker="Network" title="Tailscale">
+    <Card kicker="Network" title="Private network">
       <p className="card-body">
-        Tailscale lets this computer reach your Vault server securely from anywhere, without opening
-        ports to the internet. Turn it on here; sign-in happens in your browser.
+        A private network lets this computer reach your Vault server securely when you're away from
+        home, without opening ports to the internet. It's fine for it to be off at home.
       </p>
-      <TailscaleControl />
+      <div style={{ display: "grid", gap: 10, maxWidth: 360, marginBottom: 12 }}>
+        <Select
+          label="What do you use?"
+          value={network}
+          onChange={(e) => choose(e.target.value as PrivateNetworkId)}
+        >
+          {(Object.keys(PRIVATE_NETWORKS) as PrivateNetworkId[]).map((id) => (
+            <option key={id} value={id}>
+              {PRIVATE_NETWORKS[id].label}
+            </option>
+          ))}
+        </Select>
+      </div>
+      {network === "headscale" && (
+        <p className="card-body">
+          Headscale uses the Tailscale app. Join your server once in a terminal with{" "}
+          <code>tailscale up --login-server=https://your-headscale-address</code>, then control it here.
+        </p>
+      )}
+      {managed && <TailscaleControl key={network} />}
+      {!managed && network !== "none" && (
+        <p className="card-body">
+          Turn it on from {network === "other" ? "your VPN's" : `the ${info.label}`} app when you're away
+          from home, then connect using the server's address on that network (Settings → Connection).
+        </p>
+      )}
+      {!managed && info.url && (
+        <Button
+          variant="ghost"
+          onClick={() => {
+            if (platform.openExternal) void platform.openExternal(info.url!);
+            else window.open(info.url, "_blank", "noopener");
+          }}
+        >
+          Get {info.label}
+        </Button>
+      )}
     </Card>
   );
 }
@@ -2704,6 +2899,117 @@ function BiometricSection() {
         “{revoking?.deviceName}” will need your password next time. It stays
         signed in until then — revoke its session below too if it's lost.
       </Dialog>
+    </Card>
+  );
+}
+
+function PasswordSection() {
+  const client = useApp((s) => s.client);
+  const [open, setOpen] = useState(false);
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  const problem = next ? passwordProblem(next) : null;
+  const mismatch = confirm.length > 0 && confirm !== next;
+  const close = () => {
+    setOpen(false);
+    setCurrent("");
+    setNext("");
+    setConfirm("");
+    setError(null);
+  };
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await client.changePassword({ currentPassword: current, newPassword: next });
+      close();
+      setDone(true);
+    } catch (err) {
+      setError(
+        err instanceof ApiRequestError && err.code === "INVALID_CREDENTIALS"
+          ? "Your current password isn't right."
+          : err instanceof ApiRequestError
+            ? err.message
+            : "Couldn't change your password. Is the server reachable?",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card kicker="Security" title="Password">
+      <p className="card-body">
+        Changing your password signs out every other device and turns off their
+        biometric sign-in, so anyone who knew the old one is locked out.
+      </p>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {done && (
+          <span role="status" style={{ fontSize: "var(--text-sm)", color: "var(--color-positive)" }}>
+            Password changed. Other devices were signed out.
+          </span>
+        )}
+        <div style={{ marginLeft: "auto" }}>
+          <Button variant="secondary" onClick={() => { setDone(false); setOpen(true); }}>
+            Change password
+          </Button>
+        </div>
+      </div>
+
+      {open && (
+        <Dialog
+          open
+          title="Change password"
+          onClose={close}
+          actions={
+            <>
+              <Button variant="secondary" onClick={close} disabled={busy}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={() => void save()}
+                disabled={busy || !current || !next || Boolean(problem) || confirm !== next}
+              >
+                {busy ? <Spinner label="Saving" /> : "Change password"}
+              </Button>
+            </>
+          }
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <Field
+              label="Current password"
+              type="password"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+              autoComplete="current-password"
+              autoFocus
+            />
+            <Field
+              label="New password"
+              type="password"
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+              autoComplete="new-password"
+              {...(problem ? { error: problem } : {})}
+            />
+            <Field
+              label="Confirm new password"
+              type="password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              autoComplete="new-password"
+              {...(mismatch ? { error: "The passwords don't match." } : {})}
+            />
+            {error && (
+              <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>{error}</div>
+            )}
+          </div>
+        </Dialog>
+      )}
     </Card>
   );
 }
@@ -3157,13 +3463,116 @@ function SessionsSection() {
   );
 }
 
+/** The server's other address, so home and away both just work. */
+function AlternateAddressControl() {
+  const alternate = useApp((s) => s.alternateAddress);
+  const active = useApp((s) => s.activeAddress);
+  const save = useApp((s) => s.saveAlternateAddress);
+  const remove = useApp((s) => s.removeAlternateAddress);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ address: string; fingerprint: string } | null>(null);
+
+  const submit = async (raw: string, confirmed?: string) => {
+    setBusy(true);
+    setError(null);
+    setConfirm(null);
+    try {
+      const result = await save(raw, confirmed);
+      if (result.status === "error") setError(result.message);
+      else if (result.status === "confirm") setConfirm(result);
+      else setDraft("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save that address.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ display: "grid", gap: 8, marginTop: 16 }}>
+      <div style={{ fontWeight: 600, fontSize: "var(--text-sm)" }}>Second address</div>
+      <p className="card-meta" style={{ margin: 0 }}>
+        Add your server's other address, like its home address and its VPN address. The app uses
+        whichever one answers, so it works at home and away without changing anything.
+      </p>
+      {alternate ? (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: "ui-monospace, monospace", fontSize: "var(--text-sm)" }}>{alternate}</span>
+            <Button variant="ghost" onClick={() => void remove()}>
+              Remove
+            </Button>
+          </div>
+          <p className="card-meta" style={{ margin: 0 }}>
+            Connected through {active}
+          </p>
+        </>
+      ) : (
+        <div style={{ display: "grid", gap: 8, maxWidth: 360 }}>
+          <Field
+            label="Other address"
+            placeholder="https://100.64.0.5:8443"
+            value={draft}
+            spellCheck={false}
+            autoCapitalize="off"
+            onChange={(e) => setDraft(e.target.value)}
+          />
+          <div>
+            <Button variant="secondary" onClick={() => void submit(draft)} disabled={busy || !draft.trim()}>
+              {busy ? <Spinner label="Checking" /> : "Add address"}
+            </Button>
+          </div>
+        </div>
+      )}
+      {error && (
+        <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
+          {error}
+        </div>
+      )}
+      <Dialog
+        open={confirm !== null}
+        title="Trust this address?"
+        onClose={() => setConfirm(null)}
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setConfirm(null)}>
+              Cancel
+            </Button>
+            <Button variant="primary" onClick={() => confirm && void submit(confirm.address, confirm.fingerprint)}>
+              The fingerprints match
+            </Button>
+          </>
+        }
+      >
+        Only trust {confirm?.address} if this fingerprint matches the one your server shows:
+        <div
+          style={{
+            fontFamily: "ui-monospace, monospace",
+            fontSize: "var(--text-xs)",
+            wordBreak: "break-all",
+            marginTop: 8,
+            userSelect: "all",
+          }}
+        >
+          {confirm?.fingerprint}
+        </div>
+      </Dialog>
+    </div>
+  );
+}
+
 function ServerSection() {
   const serverAddress = useApp((s) => s.serverAddress);
   const platform = useApp((s) => s.platform);
   const changeServer = useApp((s) => s.changeServer);
+  const removeAlternateAddress = useApp((s) => s.removeAlternateAddress);
   const [confirmingChange, setConfirmingChange] = useState(false);
 
   const rePin = async () => {
+    // The certificate changed, so the second address needs checking again too.
+    await removeAlternateAddress();
     if (serverAddress) await platform.forgetPin(serverAddress);
     await changeServer();
   };
@@ -3187,6 +3596,7 @@ function ServerSection() {
         Re-verify after rotating your server's TLS certificate — the stored
         fingerprint pin is cleared and confirmed again on the next connect.
       </p>
+      <AlternateAddressControl />
       <Dialog
         open={confirmingChange}
         title="Disconnect from this server?"

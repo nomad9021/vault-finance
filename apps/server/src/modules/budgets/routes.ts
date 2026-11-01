@@ -82,6 +82,9 @@ export default async function budgetRoutes(app: FastifyInstance) {
       budgets: result,
       totalBudgetedCents: result.reduce((sum, b) => sum + b.amountCents, 0),
       totalSpentCents: result.reduce((sum, b) => sum + b.spentCents, 0),
+      unbudgetedSpending: spentRows
+        .filter((r) => Number(r.spent) > 0 && !(r.categoryId && latest.has(r.categoryId)))
+        .map((r) => ({ categoryId: r.categoryId, spentCents: Number(r.spent) })),
     };
   });
 

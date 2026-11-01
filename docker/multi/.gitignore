@@ -4,3 +4,6 @@ families/
 data/
 # Backup + destroyed-family archives.
 backups/
+# Generated secrets.
+control.token
+postgres-admin.password
