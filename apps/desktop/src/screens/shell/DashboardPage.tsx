@@ -1,4 +1,5 @@
 import {
+  formatCents,
   formatCentsWhole,
   type Account,
   type Bill,
@@ -27,7 +28,7 @@ import { availableCents, shownBalance, useShowActualBalances } from "../../lib/b
 import { moveWidget, placeWidget, resolveLayout, SPANS, type ResolvedWidget, type Span } from "../../lib/dashboardLayout.js";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
-import { buildBudgetSankey, preIncomeBranches, withGrossBranch, withTaxBranch } from "./budgetSankey.js";
+import { buildBudgetSankey, buildBudgetVsActual, preIncomeBranches, withGrossBranch, withTaxBranch } from "./budgetSankey.js";
 import type { Navigate, PageId } from "./nav.js";
 import { PreIncomeDialog } from "./PreIncomeDialog.js";
 import { SankeyCard } from "./SankeyCard.js";
@@ -84,12 +85,13 @@ function dueLabel(days: number): { text: string; tone: "over" | "soon" | "ok" } 
  * both side by side — the last being the interesting one, since the gap
  * between the two diagrams *is* the story.
  */
-type SankeyView = "actual" | "planned" | "both";
+type SankeyView = "actual" | "planned" | "both" | "combined";
 const SANKEY_VIEW_KEY = "dashboard-sankey-view";
 const SANKEY_VIEWS = [
   { value: "actual" as const, label: "Actual" },
   { value: "planned" as const, label: "Planned" },
   { value: "both" as const, label: "Both" },
+  { value: "combined" as const, label: "Budget vs actual" },
 ];
 const FROM_GROSS_KEY = "vault.dashboard.from-gross";
 function loadFromGross(): boolean {
@@ -103,7 +105,7 @@ function loadFromGross(): boolean {
 function loadSankeyView(): SankeyView {
   try {
     const v = localStorage.getItem(SANKEY_VIEW_KEY);
-    if (v === "actual" || v === "planned" || v === "both") return v;
+    if (v === "actual" || v === "planned" || v === "both" || v === "combined") return v;
   } catch {
     /* ignore */
   }
@@ -222,11 +224,12 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
   const planSankey = { ...planBase, ...(gross && plannedIncome > 0 ? withTaxBranch(planBase, branches) : planBase) };
   const actualSankey = sankeyData ? (gross ? withGrossBranch(sankeyData, branches) : sankeyData) : null;
   const hasPlan = plannedIncome > 0 || planSankey.allocated > 0;
+  const budgetVsActual = buildBudgetVsActual(budgetData ?? { budgets: [] }, categories);
 
   // Don't offer a view there's no data for — and fall back rather than render
   // an empty card if the remembered choice is currently unavailable.
   const availableViews = SANKEY_VIEWS.filter(
-    (v) => (v.value === "actual" && hasData) || (v.value === "planned" && hasPlan) || (v.value === "both" && hasData && hasPlan),
+    (v) => (v.value === "actual" && hasData) || (v.value === "planned" && hasPlan) || (v.value === "both" && hasData && hasPlan) || (v.value === "combined" && budgetVsActual.rows.length > 0),
   );
   const effectiveView: SankeyView = availableViews.some((v) => v.value === sankeyView)
     ? sankeyView
@@ -319,6 +322,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
               <div className="col-6">
                 <SankeyCard
                   compact
+                  precise
                   title="Actual"
                   nodes={actualSankey!.nodes}
                   links={actualSankey!.links}
@@ -330,6 +334,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
               <div className="col-6">
                 <SankeyCard
                   compact
+                  precise
                   title="Planned"
                   nodes={planSankey.nodes}
                   links={planSankey.links}
@@ -338,8 +343,20 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
                 />
               </div>
             </div>
+          ) : effectiveView === "combined" ? (
+            <SankeyCard
+              precise
+              singlePeriod
+              title="Budget vs actual"
+              hint="Budget flows in on the left, spending out on the right"
+              nodes={budgetVsActual.nodes}
+              links={budgetVsActual.links}
+              month={month}
+              onNavigate={onNavigate}
+            />
           ) : effectiveView === "planned" ? (
             <SankeyCard
+              precise
               title="Budget plan"
               hint="Click a category to see this month's actual spending"
               nodes={planSankey.nodes}
@@ -596,8 +613,8 @@ function ThisMonth({
           </div>
           {budgetedCents > 0 && (
             <div className="t-xs t-tertiary" style={{ marginTop: "var(--space-2)" }}>
-              Budget left: <b style={{ color: leftToSpend < 0 ? "var(--color-negative)" : "var(--content-primary)" }}>{formatCentsWhole(leftToSpend)}</b>
-              {perDay !== null && ` · ${formatCentsWhole(perDay)}/day`}
+              Budget left: <b style={{ color: leftToSpend < 0 ? "var(--color-negative)" : "var(--content-primary)" }}>{formatCents(leftToSpend)}</b>
+              {perDay !== null && ` · ${formatCents(perDay)}/day`}
             </div>
           )}
         </div>
@@ -615,8 +632,8 @@ function ThisMonth({
                 <div className="row-between t-sm" style={{ marginBottom: "var(--space-1)" }}>
                   <span className="t-medium">{r.label}</span>
                   <span className="num t-tertiary">
-                    {formatCentsWhole(r.actual)}
-                    {r.planned > 0 && ` / ${formatCentsWhole(r.planned)}`}
+                    {formatCents(r.actual)}
+                    {r.planned > 0 && ` / ${formatCents(r.planned)}`}
                   </span>
                 </div>
                 {r.planned > 0 ? (
@@ -630,7 +647,7 @@ function ThisMonth({
                 )}
                 {r.planned > 0 && (
                   <div className="t-2xs" style={{ marginTop: 2, color: good ? "var(--content-tertiary)" : "var(--color-negative)" }}>
-                    {off === 0 ? "On plan" : `${formatCentsWhole(Math.abs(off))} ${off > 0 ? "over" : "under"} plan`}
+                    {off === 0 ? "On plan" : `${formatCents(Math.abs(off))} ${off > 0 ? "over" : "under"} plan`}
                   </div>
                 )}
               </button>
@@ -791,9 +808,9 @@ function BudgetOverview({
         <>
           <div className="row-baseline" style={{ marginBottom: "var(--space-2)" }}>
             <span className="stat-value" style={{ fontSize: "var(--text-xl)" }}>
-              {formatCentsWhole(spent)}
+              {formatCents(spent)}
             </span>
-            <span className="t-xs t-tertiary">of {formatCentsWhole(budgeted)}</span>
+            <span className="t-xs t-tertiary">of {formatCents(budgeted)}</span>
           </div>
           <ProgressBar value={spent / budgeted} over={over} label="Total budget used" />
           <div className="stack" style={{ marginTop: "var(--space-4)" }}>
@@ -818,7 +835,7 @@ function BudgetOverview({
                         flex: "none",
                       }}
                     >
-                      {formatCentsWhole(b.spentCents)} / {formatCentsWhole(b.amountCents)}
+                      {formatCents(b.spentCents)} / {formatCents(b.amountCents)}
                     </span>
                   </div>
                   <ProgressBar

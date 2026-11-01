@@ -6,10 +6,18 @@ import {
   type StatusLevel,
 } from "@vault/shared";
 import type { HostPlatform, ProbeResult, TailscaleStatus } from "../platform/index.js";
+import { pickAddress } from "./serverRoute.js";
+import {
+  getPrivateNetwork,
+  networkName,
+  PRIVATE_NETWORKS,
+  type PrivateNetworkId,
+  usesTailscaleClient,
+} from "./privateNetwork.js";
 
 /**
  * The startup screen's health checks, in the order a connection actually
- * depends on them: this computer → Tailscale → reaching the server → its
+ * depends on them: this computer → private network → reaching the server → its
  * identity → version compatibility → the server's own components → (signed
  * in) AI, bank sync, server updates. Each check is phrased for the person
  * using the app, with what to do next. Settings → System status reuses this.
@@ -40,6 +48,12 @@ export interface CheckDeps {
   keychainOk: boolean;
   /** A saved session exists, so the signed-in checks can run. */
   hasSession: boolean;
+  /** How this computer reaches the server away from home; defaults to the saved choice. */
+  network?: PrivateNetworkId;
+  /** The server's other address; the first of the two to answer gets used. */
+  alternateAddress?: string | null;
+  /** Told which address answered, before any request that depends on it. */
+  onRoute?: (address: string) => void;
 }
 
 export interface CheckOutcome {
@@ -79,8 +93,10 @@ function hostPort(address: string): { host: string; port: string } {
 export function describeProbeFailure(
   probe: ProbeResult,
   address: string,
+  network: PrivateNetworkId = getPrivateNetwork(),
 ): { detail: string; hint: string } {
   const { host, port } = hostPort(address);
+  const vpn = networkName(network);
   if (probe.httpStatus !== undefined) {
     return {
       detail: `Something answered at ${host}:${port}, but it isn't a Vault Finance server (HTTP ${probe.httpStatus}).`,
@@ -91,7 +107,7 @@ export function describeProbeFailure(
   if (/dns error|failed to lookup|name or service not known|no such host|nodename nor servname|name resolution/.test(e)) {
     return {
       detail: `Couldn't find a computer called “${host}”.`,
-      hint: "Check the spelling, or use the server's IP address. If it's a Tailscale name, Tailscale has to be on.",
+      hint: `Check the spelling, or use the server's IP address.${vpn ? ` If it's a name on ${vpn}, ${vpn} has to be on.` : ""}`,
     };
   }
   if (/connection refused|actively refused/.test(e)) {
@@ -103,7 +119,9 @@ export function describeProbeFailure(
   if (/timed out|timeout|deadline|no route to host|network is unreachable|host is unreachable/.test(e)) {
     return {
       detail: `No answer from ${host}.`,
-      hint: "Make sure the server machine is switched on and that you're on the same network as it — or connected to Tailscale.",
+      hint: looksLikeTailnet(address)
+        ? `This address only works through ${vpn ?? "a VPN"}. Turn it on, or choose Change server and use the server's home network address.`
+        : `Make sure the server machine is switched on.${vpn ? ` If you reach it through ${vpn}, make sure that's connected.` : ""}`,
     };
   }
   if (/certificate|tls|handshake|ssl/.test(e)) {
@@ -118,21 +136,25 @@ export function describeProbeFailure(
   };
 }
 
-/** The Tailscale row. `serverDown` raises an "off" Tailscale to the likely culprit. */
-export function tailscaleCheck(ts: TailscaleStatus, address: string, serverDown: boolean): UiCheck {
-  const label = "Tailscale";
+/**
+ * The Tailscale row. Being off is normal (at home, say), so this row never
+ * blocks anything: whether the server answers is the only test that matters,
+ * and `serverDown` just raises Tailscale to a likely culprit worth fixing.
+ */
+export function tailscaleCheck(ts: TailscaleStatus, address: string, serverDown: boolean, label = "Tailscale"): UiCheck {
   const needed = looksLikeTailnet(address);
+  const notNeeded = "Not needed right now: the server is reachable.";
   if (!ts.installed) {
-    return needed
+    return serverDown && needed
       ? {
           id: "tailscale",
           label,
-          level: "error",
-          detail: "This server is on Tailscale, but Tailscale isn't installed on this computer.",
+          level: "warn",
+          detail: `This server's address is on ${label}, but Tailscale isn't installed on this computer.`,
           hint: "Install Tailscale and sign in with the same account as the server.",
           action: "tailscale-install",
         }
-      : { id: "tailscale", label, level: "off", detail: "Not installed — not needed for this server." };
+      : { id: "tailscale", label, level: "off", detail: "Not installed." };
   }
   switch (ts.state) {
     case "Running": {
@@ -151,39 +173,41 @@ export function tailscaleCheck(ts: TailscaleStatus, address: string, serverDown:
     }
     case "NeedsLogin":
     case "NeedsMachineAuth":
+      if (!serverDown) return { id: "tailscale", label, level: "off", detail: `Signed out. ${notNeeded}` };
       return {
         id: "tailscale",
         label,
-        level: needed || serverDown ? "error" : "warn",
+        level: "warn",
         detail:
           ts.state === "NeedsMachineAuth"
-            ? "This computer is waiting for approval in your Tailscale admin console."
-            : "Tailscale needs you to sign in.",
-        hint: "Sign in with the same Tailscale account as your server.",
+            ? `This computer is waiting for approval in your ${label} admin console.`
+            : `${label} needs you to sign in.`,
+        hint: `Sign in with the same ${label} account as your server.`,
         ...(ts.state === "NeedsLogin" ? { action: "tailscale-login" as const } : {}),
       };
     case "DaemonDown":
+      if (!serverDown) return { id: "tailscale", label, level: "off", detail: `Service not running. ${notNeeded}` };
       return {
         id: "tailscale",
         label,
-        level: needed || serverDown ? "error" : "warn",
+        level: "warn",
         detail: ts.error ?? "The Tailscale service isn't running.",
         hint: "Start the Tailscale app (or the tailscaled service), then retry.",
       };
     case "Starting":
-      return { id: "tailscale", label, level: "warn", detail: "Connecting…" };
+      return { id: "tailscale", label, level: serverDown ? "warn" : "off", detail: "Connecting…" };
     default:
-      return needed || serverDown
+      return serverDown
         ? {
             id: "tailscale",
             label,
-            level: "error",
+            level: "warn",
             detail: needed
-              ? "Tailscale is off — this server can only be reached through it."
-              : "Tailscale is off. If your server is on Tailscale, that's why it can't be reached.",
+              ? `${label} is off, and this server's address only works through it.`
+              : `${label} is off. If your server is on ${label}, that's why it can't be reached.`,
             action: "tailscale-up",
           }
-        : { id: "tailscale", label, level: "off", detail: "Off.", action: "tailscale-up" };
+        : { id: "tailscale", label, level: "off", detail: `Off. ${notNeeded}`, action: "tailscale-up" };
   }
 }
 
@@ -203,7 +227,10 @@ function fromServer(c: StatusCheck): UiCheck {
  * rest meaningless (can't reach the server, identity changed…).
  */
 export async function runChecks(deps: CheckDeps, onUpdate: (checks: UiCheck[]) => void): Promise<CheckOutcome> {
-  const { platform, client, address } = deps;
+  const { platform, client, address: primary, alternateAddress: alternate } = deps;
+  const network = deps.network ?? getPrivateNetwork();
+  const canReadNetwork = usesTailscaleClient(network) && platform.tailscaleStatus !== undefined;
+  const networkLabel = PRIVATE_NETWORKS[network].label;
   const checks: UiCheck[] = [];
   const put = (c: UiCheck) => {
     const i = checks.findIndex((x) => x.id === c.id);
@@ -233,19 +260,35 @@ export async function runChecks(deps: CheckDeps, onUpdate: (checks: UiCheck[]) =
   // Tailscale status and the server probe run side by side; the Tailscale row
   // is finalised once we know whether the server answered.
   let tailscale: TailscaleStatus | null = null;
-  const tsPromise = platform.tailscaleStatus
-    ? (put({ id: "tailscale", label: "Tailscale", level: "pending" }),
-      platform.tailscaleStatus().catch(() => null))
+  const tsPromise = canReadNetwork
+    ? (put({ id: "tailscale", label: networkLabel, level: "pending" }),
+      platform.tailscaleStatus!().catch(() => null))
     : Promise.resolve(null);
-  put({ id: "server", label: "Server connection", level: "pending", detail: hostPort(address).host });
-  const [ts, probe] = await Promise.all([tsPromise, platform.probeServer(address)]);
+  put({ id: "server", label: "Server connection", level: "pending", detail: hostPort(primary).host });
+  const [ts, picked] = await Promise.all([tsPromise, pickAddress(platform, primary, alternate)]);
+  const { address, probe } = picked;
   tailscale = ts;
+  if (probe.reachable) deps.onRoute?.(address);
 
-  if (tailscale) put(tailscaleCheck(tailscale, address, !probe.reachable));
-  else if (platform.tailscaleStatus) checks.splice(checks.findIndex((c) => c.id === "tailscale"), 1);
+  const vpnAddress = alternate && looksLikeTailnet(alternate) ? alternate : primary;
+  if (tailscale) put(tailscaleCheck(tailscale, vpnAddress, !probe.reachable, networkLabel));
+  else if (canReadNetwork) checks.splice(checks.findIndex((c) => c.id === "tailscale"), 1);
 
   if (!probe.reachable) {
-    put({ id: "server", label: "Server connection", level: "error", ...describeProbeFailure(probe, address), action: "change-server" });
+    const failure = describeProbeFailure(probe, primary, network);
+    put({
+      id: "server",
+      label: "Server connection",
+      level: "error",
+      ...failure,
+      ...(alternate
+        ? {
+            detail: `No answer from either address (${hostPort(primary).host}, ${hostPort(alternate).host}).`,
+            hint: `Make sure the server machine is switched on, and that you're at home${networkName(network) ? ` or connected to ${networkName(network)}` : ""}.`,
+          }
+        : {}),
+      action: "change-server",
+    });
     return done(probe, tailscale);
   }
   put({ id: "server", label: "Server connection", level: "ok", detail: `Reachable at ${hostPort(address).host}.` });

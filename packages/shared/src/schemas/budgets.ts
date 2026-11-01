@@ -41,6 +41,14 @@ export const BudgetListResponse = z.object({
   /** Whole-month totals across all categories (budgeted vs spent). */
   totalBudgetedCents: z.number().int(),
   totalSpentCents: z.number().int(),
+  /**
+   * The month's spending in categories with no budget (null = uncategorized),
+   * so budget-vs-actual can account for all of it. The totals above leave it
+   * out. Absent on older servers.
+   */
+  unbudgetedSpending: z
+    .array(z.object({ categoryId: z.string().uuid().nullable(), spentCents: z.number().int() }))
+    .optional(),
 });
 export type BudgetListResponse = z.infer<typeof BudgetListResponse>;
 

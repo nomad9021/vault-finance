@@ -127,6 +127,10 @@ export function updateAvailable(input: {
   };
 }
 
+/** The link points at a private server, so say what to do when it won't open. */
+const REACH_NOTE = (inviterName: string) =>
+  `This link opens a private server. If it won't load, connect to the same home Wi-Fi or private network (VPN) as ${inviterName} and try again. Your browser may show a security warning because the server uses its own certificate; ask ${inviterName} if you're unsure.`;
+
 export function memberInvite(input: {
   inviterName: string;
   inviteUrl: string;
@@ -138,6 +142,7 @@ export function memberInvite(input: {
     `Open this link to set your password and finish creating your account:`,
     input.inviteUrl,
     `The link expires ${expires}.`,
+    REACH_NOTE(input.inviterName),
   ];
   return {
     subject: `${input.inviterName} invited you to ${BRAND}`,
@@ -147,6 +152,7 @@ export function memberInvite(input: {
       [
         `<strong>${escapeHtml(input.inviterName)}</strong> invited you to join their household.`,
         `Use the button below to set your password and finish creating your account. The link expires ${escapeHtml(expires)}.`,
+        escapeHtml(REACH_NOTE(input.inviterName)),
       ],
       { label: "Accept the invitation", url: input.inviteUrl },
     ),

@@ -2,7 +2,7 @@ import { randomInt, timingSafeEqual } from "node:crypto";
 import argon2 from "argon2";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import type { ApprovedVia, Platform, PendingApproval, TrustedDevice, UserRole } from "@vault/shared";
-import { deviceSessions, trustedDevices, users } from "../../db/schema.js";
+import { deviceKeys, deviceSessions, trustedDevices, users } from "../../db/schema.js";
 import type { Db } from "../../plugins/db.js";
 import {
   AppError,
@@ -140,6 +140,24 @@ const approved = (via: ApprovedVia, by: string | null = null) => ({
 });
 
 /**
+ * The approved, unrevoked device this identity proves, or null. Used by
+ * biometric sign-in, which may only ever reuse an existing approval — never
+ * create one.
+ */
+export async function findApprovedDevice(
+  db: Db,
+  userId: string,
+  input: { deviceId?: string | undefined; deviceSecret?: string | undefined },
+): Promise<Row | null> {
+  if (!input.deviceId || !input.deviceSecret) return null;
+  const row = await db.query.trustedDevices.findFirst({
+    where: and(eq(trustedDevices.userId, userId), eq(trustedDevices.deviceId, input.deviceId)),
+  });
+  if (!row || row.status !== "approved" || row.revokedAt) return null;
+  return (await verifySecret(row, input.deviceSecret)) ? row : null;
+}
+
+/**
  * The gate every sign-in passes after the user is authenticated. Returns the
  * trusted-device id to bind the new session to, or throws
  * DEVICE_APPROVAL_REQUIRED with a code for the device to show.
@@ -148,7 +166,6 @@ export async function gateDevice(
   db: Db,
   user: { id: string; role: UserRole },
   input: DeviceInput,
-  opts: { viaDeviceKey?: boolean } = {},
 ): Promise<string> {
   if (!input.deviceId || !input.deviceSecret) {
     throw deviceNotTrusted(
@@ -172,10 +189,6 @@ export async function gateDevice(
       .where(eq(trustedDevices.id, row.id));
     return row.id;
   }
-
-  // A biometric device key can only have been created on a device that was
-  // already signed in, so it carries that device's trust forward.
-  if (opts.viaDeviceKey) return (await upsertDevice(db, user.id, identity, approved("device-key"))).id;
 
   // First device on a server with no approved devices at all: the owner's,
   // straight after setup (or after an upgrade with nobody signed in).
@@ -299,7 +312,7 @@ function codesMatch(a: string, b: string): boolean {
 }
 
 async function markApproved(db: Db, row: Row, via: ApprovedVia, by: string | null): Promise<void> {
-  await db
+  const [done] = await db
     .update(trustedDevices)
     .set({
       ...approved(via, by),
@@ -308,7 +321,11 @@ async function markApproved(db: Db, row: Row, via: ApprovedVia, by: string | nul
       // Window for the waiting device to collect its session.
       expiresAt: new Date(Date.now() + PENDING_TTL_MS),
     })
-    .where(eq(trustedDevices.id, row.id));
+    // Only while still pending: a request denied meanwhile (say, by a password
+    // change) must not be revived by an approval that read it just before.
+    .where(and(eq(trustedDevices.id, row.id), eq(trustedDevices.status, "pending")))
+    .returning({ id: trustedDevices.id });
+  if (!done) throw notFound("Approval request");
 }
 
 export interface Approver {
@@ -331,7 +348,7 @@ export async function approveFromDevice(db: Db, approver: Approver, id: string, 
     await db
       .update(trustedDevices)
       .set(attempts >= MAX_CODE_ATTEMPTS ? { codeAttempts: attempts, status: "denied" } : { codeAttempts: attempts })
-      .where(eq(trustedDevices.id, row.id));
+      .where(and(eq(trustedDevices.id, row.id), eq(trustedDevices.status, "pending")));
     throw new AppError(
       "VALIDATION_ERROR",
       400,
@@ -439,7 +456,7 @@ export async function listTrusted(
     }));
 }
 
-/** Remove a device's approval and sign it out everywhere. */
+/** Remove a device's approval, sign it out everywhere, and delete its biometric keys. */
 export async function revokeDevice(db: Db, viewer: Approver | null, id: string): Promise<void> {
   const row = await db.query.trustedDevices.findFirst({ where: eq(trustedDevices.id, id) });
   if (!row || row.revokedAt || row.status !== "approved" || (viewer && !canActOn(viewer, row))) {
@@ -451,4 +468,5 @@ export async function revokeDevice(db: Db, viewer: Approver | null, id: string):
     .update(deviceSessions)
     .set({ revokedAt: now })
     .where(and(eq(deviceSessions.trustedDeviceId, id), isNull(deviceSessions.revokedAt)));
+  await db.delete(deviceKeys).where(eq(deviceKeys.trustedDeviceId, id));
 }

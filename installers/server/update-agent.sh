@@ -9,25 +9,44 @@
 # that acts on a request, and it only ever does one thing: run
 # update-server.sh (latest release). Nothing in the request is executed.
 #
+# The shared folder is writable by the container, so this script never opens
+# a path there that the container could have planted (a symlink to one of your
+# files, say): its lock and working log live in a private folder, files it
+# publishes are written to a fresh mktemp name and renamed into place — a
+# rename replaces a planted link instead of following it — and the folder is
+# sticky, so the container can't swap that temp file for a link mid-write.
+#
 # Wrapped in main() so `git pull` rewriting this file mid-run is harmless.
 set -uo pipefail
 
 main() {
-  local script_dir repo_dir dir req log lock target started port
+  local script_dir repo_dir dir private req log lock target started port
   script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
   repo_dir="$(cd -- "$script_dir/../.." &>/dev/null && pwd)"
   dir="${VAULT_UPDATE_DIR:?VAULT_UPDATE_DIR is set by vault-update.service}"
+  private="${XDG_STATE_HOME:-$HOME/.local/state}/vault-finance-update"
+  mkdir -p "$private" && chmod 700 "$private" || return 1
+  # Sticky: the container (group member, not owner) can't remove or swap the
+  # files this agent creates here, so nothing it publishes can be raced into
+  # a symlink. Folders set up before this was added get the bit now.
+  [ -k "$dir" ] || chmod +t "$dir" || return 1
   req="$dir/request.json"
-  log="$dir/last-update.log"
-  lock="$dir/.agent.lock"
+  log="$private/last-update.log"
+  lock="$private/agent.lock"
 
-  [ -e "$req" ] || return 0
+  [ -f "$req" ] && [ ! -L "$req" ] || { rm -f "$req"; return 0; }
   exec 9>"$lock"
   flock -n 9 || return 0
 
+  # Take the request out of the shared folder first (rename doesn't follow
+  # links), then read it only if what we took is a plain file — so nothing
+  # swapped in after the check above is ever opened.
+  local taken="$private/request.json"
+  mv -fT "$req" "$taken" 2>/dev/null || return 0
+  if [ -L "$taken" ] || [ ! -f "$taken" ]; then rm -f "$taken"; return 0; fi
   # Only digits and dots survive; the version is just echoed back to the app.
-  target="$(grep -o '"targetVersion":"[0-9.]*"' "$req" 2>/dev/null | head -1 | grep -o '[0-9][0-9.]*' || true)"
-  rm -f "$req"
+  target="$(head -c 4096 "$taken" | grep -o '"targetVersion":"[0-9.]*"' | head -1 | grep -o '[0-9][0-9.]*' || true)"
+  rm -f "$taken"
   started="$(date -u +%FT%TZ)"
   write_status "$dir" running "Downloading and installing the update…" "$target" "$started" ""
 
@@ -39,6 +58,8 @@ main() {
     bash "$repo_dir/installers/server/update-server.sh"
   } >"$log" 2>&1
   local rc=$?
+
+  publish "$dir" last-update.log 644 <"$log"
 
   if [ "$rc" -ne 0 ]; then
     write_status "$dir" failed "The update failed: $(last_line "$log" | sed 's/[.]*$//'). Your server is still running the old version. Details: last-update.log in the server's data folder." "$target" "$started" "$(date -u +%FT%TZ)"
@@ -58,6 +79,7 @@ main() {
     return 1
   fi
   echo "== server is up on $version" >>"$log"
+  publish "$dir" last-update.log 644 <"$log"
   write_status "$dir" succeeded "Updated to $version." "$target" "$started" "$(date -u +%FT%TZ)"
 }
 
@@ -68,13 +90,20 @@ last_line() {
 
 json_or_null() { if [ -n "$1" ]; then printf '"%s"' "$1"; else printf 'null'; fi; }
 
+# publish DIR NAME MODE < content — write stdin to DIR/NAME without following
+# anything planted there: mktemp creates a brand-new file (O_EXCL), and the
+# rename swaps it in for whatever NAME was, link or not.
+publish() {
+  local tmp
+  tmp="$(mktemp "$1/.agent.XXXXXXXX")" || return 1
+  cat >"$tmp" && chmod "$3" "$tmp" && mv -fT "$tmp" "$1/$2" || { rm -f "$tmp"; return 1; }
+}
+
 # write_status DIR STATE MESSAGE TARGET STARTED FINISHED — atomic replace.
 write_status() {
-  local tmp="$1/.status.json.tmp"
   printf '{"state":"%s","message":"%s","targetVersion":%s,"startedAt":%s,"finishedAt":%s}\n' \
-    "$2" "$3" "$(json_or_null "$4")" "$(json_or_null "$5")" "$(json_or_null "$6")" >"$tmp"
-  chmod 644 "$tmp"
-  mv -f "$tmp" "$1/status.json"
+    "$2" "$3" "$(json_or_null "$4")" "$(json_or_null "$5")" "$(json_or_null "$6")" \
+    | publish "$1" status.json 644
 }
 
 main "$@"; exit $?

@@ -176,6 +176,20 @@
       "when": 1785374400000,
       "tag": "0024_subscription_dismissals",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1785460800000,
+      "tag": "0025_device_key_binding",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1785547200000,
+      "tag": "0026_owner_email",
+      "breakpoints": true
     }
   ]
 }

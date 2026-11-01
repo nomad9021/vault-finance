@@ -69,9 +69,15 @@ VAULT_GID="$($DC run --rm --no-deps --entrypoint id server -g vault 2>/dev/null 
 [ -n "$VAULT_GID" ] || die "Couldn't read the server image's vault group. Is the image pulled? Try: $DC pull server"
 sudo mkdir -p "$UPDATE_DIR"
 sudo chown "$ME:$VAULT_GID" "$UPDATE_DIR"
-sudo chmod 2770 "$UPDATE_DIR"
-printf '{"agent":1,"installedAt":"%s"}\n' "$(date -u +%FT%TZ)" >"$UPDATE_DIR/agent.json"
-chmod 644 "$UPDATE_DIR/agent.json"
+# setgid keeps new files in the vault group; sticky stops the container
+# deleting or swapping files the agent writes there (update-agent.sh).
+sudo chmod 3770 "$UPDATE_DIR"
+# Fresh temp file + rename, never a write through whatever is at agent.json:
+# the container can create names in this folder (see update-agent.sh).
+tmp="$(mktemp "$UPDATE_DIR/.agent.XXXXXXXX")"
+printf '{"agent":1,"installedAt":"%s"}\n' "$(date -u +%FT%TZ)" >"$tmp"
+chmod 644 "$tmp"
+mv -fT "$tmp" "$UPDATE_DIR/agent.json"
 ok "Shared folder: $UPDATE_DIR"
 
 sudo tee "$UNIT_DIR/vault-update.service" >/dev/null <<EOF

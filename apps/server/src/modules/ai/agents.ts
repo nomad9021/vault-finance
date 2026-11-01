@@ -78,12 +78,13 @@ export const AGENTS: AgentDef[] = [
     name: "Budget",
     keywords: /budg|buj|budj|bugdet|sankey|spend|overspen|limit|allocat|planned income|plan my|save money|afford|envelope/i,
     actions: [
-      "  set_budget {category, amount: monthly dollars}   remove_budget {category}",
-      "  set_planned_income {amount: monthly dollars}   (skip if the tax profile keeps it in sync)",
+      "  set_budget {category, amount: monthly dollars and cents, like 512.37}   remove_budget {category}",
+      "  set_planned_income {amount: monthly dollars and cents}   (skip if the tax profile keeps it in sync)",
     ],
     queries: ["  budgets {}   (this month's budgets vs. spending)", "  category_totals {days? or months?: last N}"],
     tips: [
-      "Base budgets on the last few months' category totals, rounded; leave room for savings.",
+      "Base budgets on the last few months' category totals; leave room for savings.",
+      "Use exactly the amount the user gives, cents included. Never round it.",
       "\"Budget Sankey like the actual one\" = set_budget for each spending category from its",
       "category_totals monthly average (and set_planned_income if there's no tax profile).",
     ],

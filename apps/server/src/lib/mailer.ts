@@ -18,6 +18,8 @@ export interface Mailer {
    * a notification, never part of a request's success path.
    */
   send(msg: MailMessage): Promise<void>;
+  /** Like `send`, but throws on failure, for callers that report the result. */
+  sendOrThrow(msg: MailMessage): Promise<void>;
 }
 
 /** No-op mailer used when SMTP_HOST is unset (and in tests). */
@@ -33,6 +35,9 @@ class NullMailer implements Mailer {
       this.warned = true;
     }
     this.log.info({ to: msg.to, subject: msg.subject }, "email dropped (no SMTP relay)");
+  }
+  async sendOrThrow(): Promise<void> {
+    throw new Error("SMTP is not configured");
   }
 }
 
@@ -56,17 +61,20 @@ class SmtpMailer implements Mailer {
   }
   async send(msg: MailMessage): Promise<void> {
     try {
-      await this.transport.sendMail({
-        from: this.cfg.from,
-        to: msg.to,
-        subject: msg.subject,
-        text: msg.text,
-        html: msg.html,
-      });
-      this.log.info({ to: msg.to, subject: msg.subject }, "email sent");
+      await this.sendOrThrow(msg);
     } catch (err) {
       this.log.error({ err, to: msg.to, subject: msg.subject }, "email send failed");
     }
+  }
+  async sendOrThrow(msg: MailMessage): Promise<void> {
+    await this.transport.sendMail({
+      from: this.cfg.from,
+      to: msg.to,
+      subject: msg.subject,
+      text: msg.text,
+      html: msg.html,
+    });
+    this.log.info({ to: msg.to, subject: msg.subject }, "email sent");
   }
 }
 

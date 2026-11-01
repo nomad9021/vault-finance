@@ -140,10 +140,12 @@ const INVITE_PAGE = /* html */ `<!doctype html>
   <h1>Join the household</h1>
   <p class="sub" id="intro">Checking your invitation…</p>
   <div id="form" hidden>
+    <label for="name">Your name</label>
+    <input id="name" type="text" autocomplete="name" maxlength="100">
     <label for="pw">Choose a password</label>
-    <input id="pw" type="password" autocomplete="new-password" minlength="10" placeholder="At least 10 characters">
+    <input id="pw" type="password" autocomplete="new-password" minlength="12" placeholder="At least 12 characters">
     <label for="pw2">Confirm password</label>
-    <input id="pw2" type="password" autocomplete="new-password" minlength="10">
+    <input id="pw2" type="password" autocomplete="new-password" minlength="12">
     <button id="go">Create my account</button>
     <div class="msg" id="msg" role="status"></div>
   </div>
@@ -164,7 +166,8 @@ const INVITE_PAGE = /* html */ `<!doctype html>
       return r.json();
     }).then(function(d){
       intro.textContent = (d.invitedByName ? d.invitedByName + " invited " : "You were invited as ")
-        + d.displayName + " (" + d.email + "). Set a password to finish.";
+        + d.email + ". Set a password to finish.";
+      document.getElementById("name").value = d.displayName;
       form.hidden = false;
     }).catch(function(){
       fail("This invitation is invalid or has expired. Ask the household owner to send a new one.");
@@ -173,14 +176,16 @@ const INVITE_PAGE = /* html */ `<!doctype html>
 
   document.getElementById("go").addEventListener("click", function(){
     var pw = document.getElementById("pw").value, pw2 = document.getElementById("pw2").value;
+    var name = document.getElementById("name").value.trim();
+    if (!name) { msg.textContent = "Please enter your name."; msg.className = "msg err"; return; }
     msg.textContent = ""; msg.className = "msg";
-    if (pw.length < 10) { msg.textContent = "Password must be at least 10 characters."; msg.className = "msg err"; return; }
+    if (pw.length < 12) { msg.textContent = "Password must be at least 12 characters."; msg.className = "msg err"; return; }
     if (pw !== pw2) { msg.textContent = "Passwords don't match."; msg.className = "msg err"; return; }
     var btn = document.getElementById("go"); btn.disabled = true;
     fetch(api + "/accept", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ password: pw })
+      body: JSON.stringify({ password: pw, displayName: name })
     }).then(function(r){
       if (r.status === 204) {
         form.hidden = true;
@@ -1091,12 +1096,12 @@ const PAGE = /* html */ `<!doctype html>
     var over=ts>tb, left=tb-ts;
     var p=panel("This month",pct(Math.min(1,ts/tb))+" of budget used");
     var headline=el("div","row-baseline");
-    headline.appendChild(el("div","stat-value",fmt(ts)));
-    headline.appendChild(el("div","t-sm t-tertiary","of "+fmt(tb)));
+    headline.appendChild(el("div","stat-value",fmt2(ts)));
+    headline.appendChild(el("div","t-sm t-tertiary","of "+fmt2(tb)));
     p.appendChild(headline);
     p.appendChild(bar(ts/tb, over?"var(--color-negative)":null));
     p.appendChild(el("div","t-xs "+(over?"neg":"t-tertiary"),
-      over? fmt(-left)+" over budget" : fmt(left)+" left"));
+      over? fmt2(-left)+" over budget" : fmt2(left)+" left"));
     root.appendChild(p);
 
     var rows=(b.budgets||[]).slice().sort(function(x,y){return y.spentCents-x.spentCents});
@@ -1106,7 +1111,7 @@ const PAGE = /* html */ `<!doctype html>
         var cat=byId[r.categoryId]||{};
         var o=r.spentCents>r.amountCents;
         d.appendChild(barBlock(cat.name||"Category",
-          fmt(r.spentCents)+" / "+fmt(r.amountCents),
+          fmt2(r.spentCents)+" / "+fmt2(r.amountCents),
           r.amountCents>0?r.spentCents/r.amountCents:0, cat.color, o));
       });
       root.appendChild(d);

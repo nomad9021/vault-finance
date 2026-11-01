@@ -75,6 +75,20 @@ die()  { printf '%s✗ %s%s\n' "$RED" "$*" "$RST" >&2; exit 1; }
 command -v docker >/dev/null || die "docker not found"
 docker compose version >/dev/null 2>&1 || die "docker compose plugin not found"
 
+# The shared Postgres superuser's password: random, generated once into a
+# 0600 file next to control.token, never the old built-in default. Every
+# family container can reach this Postgres over vault-net, so a guessable
+# admin password would let one family read all the others.
+PG_ADMIN_PW_FILE="$MULTI_DIR/postgres-admin.password"
+if [ -z "${POSTGRES_ADMIN_PASSWORD:-}" ]; then
+  if [ ! -s "$PG_ADMIN_PW_FILE" ]; then
+    command -v openssl >/dev/null || die "openssl not found (needed to generate the Postgres admin password)"
+    ( umask 077; openssl rand -hex 32 >"$PG_ADMIN_PW_FILE" )
+  fi
+  POSTGRES_ADMIN_PASSWORD="$(cat "$PG_ADMIN_PW_FILE")"
+fi
+export POSTGRES_ADMIN_PASSWORD
+
 base() { docker compose -p "$BASE_PROJECT" -f "$BASE_COMPOSE" "$@"; }
 fam()  { local s="$1"; shift; docker compose -p "vault-fam-$s" -f "$FAMILIES_DIR/$s/compose.yml" "$@"; }
 psql_admin() { base exec -T postgres psql -v ON_ERROR_STOP=1 -U "$PG_ADMIN_USER" -d postgres "$@"; }
@@ -90,7 +104,7 @@ wait_pg() {
   hdr "Waiting for shared Postgres…"
   for _ in $(seq 1 30); do
     if base exec -T postgres pg_isready -U "$PG_ADMIN_USER" -d postgres >/dev/null 2>&1; then
-      ok "Postgres ready"; return 0
+      ok "Postgres ready"; sync_admin_password; return 0
     fi
     sleep 1
   done
@@ -200,6 +214,18 @@ cmd_up() {
   start_control
 }
 
+# POSTGRES_PASSWORD only applies when the data dir is first created, so set it
+# explicitly too, every time Postgres is waited on (wait_pg) — this replaces
+# the old default on existing installs before any family work happens.
+# (Runs over the container's local socket, which needs no password.)
+sync_admin_password() {
+  [[ "$POSTGRES_ADMIN_PASSWORD" =~ ^[A-Za-z0-9._~+/=-]+$ ]] \
+    || die "POSTGRES_ADMIN_PASSWORD may only contain letters, digits and . _ ~ + / = -"
+  # On stdin, not -c, so the password never shows up in `ps`.
+  printf 'ALTER ROLE "%s" PASSWORD %s;\n' "$PG_ADMIN_USER" "'$POSTGRES_ADMIN_PASSWORD'" | psql_admin -q >/dev/null \
+    || die "couldn't set the Postgres admin password"
+}
+
 # The admin control-plane (Docker-socket privileged) — opt-in. Started when a
 # token exists or has been generated into control.token.
 start_control() {
@@ -246,6 +272,13 @@ cmd_create() {
   valid_slug "$slug" || die "slug must match ^[a-z][a-z0-9]{1,30}$ (used as the DB name)"
   family_exists "$slug" && die "family '$slug' already exists"
   [ "$mode" = proxy ] && [ -z "$domain" ] && die "--proxy requires --domain HOST"
+  # These land in family.env (sourced later) and in HAProxy's map, so only
+  # plain values get through.
+  [ -z "$port" ] || [[ "$port" =~ ^[0-9]{1,5}$ ]] || die "--port must be a number"
+  [ -z "$domain" ] || [[ "$domain" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]] \
+    || die "--domain must be a hostname like smith.vault.example.com"
+  [ -z "$owner_email" ] || [[ "$owner_email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,63}$ ]] \
+    || die "--owner-email doesn't look like an email address"
 
   ensure_image
   base up -d postgres ollama >/dev/null
@@ -305,16 +338,11 @@ SQL
       -e "s|__UPDATE_OPERATOR_MANAGED__|$(sed_rhs "$UPDATE_OPERATOR_MANAGED")|g" \
       "$SERVICE_TMPL" >"$FAMILIES_DIR/$slug/compose.yml"
 
-  cat >"$FAMILIES_DIR/$slug/family.env" <<ENV
-SLUG=$slug
-PORT=$port
-DOMAIN=$domain
-MODE=$mode
-DB_PASSWORD=$db_password
-OWNER_EMAIL=$owner_email
-APP_PUBLIC_URL=$app_public_url
-CREATED=$(date -u +%FT%TZ)
-ENV
+  # %q-quoted: this file is `source`d by load_family.
+  ( umask 077
+    printf 'SLUG=%q\nPORT=%q\nDOMAIN=%q\nMODE=%q\nDB_PASSWORD=%q\nOWNER_EMAIL=%q\nAPP_PUBLIC_URL=%q\nCREATED=%q\n' \
+      "$slug" "$port" "$domain" "$mode" "$db_password" "$owner_email" "$app_public_url" "$(date -u +%FT%TZ)" \
+      >"$FAMILIES_DIR/$slug/family.env" )
   chmod 600 "$FAMILIES_DIR/$slug/family.env"
 
   if [ "$start" = 0 ]; then
@@ -390,6 +418,7 @@ cmd_update() {
   base pull
   base up -d postgres ollama
   if any_proxy_family; then base --profile proxy up -d haproxy; fi
+  wait_pg
 
   local slugs=()
   if [ "$target" = "--all" ]; then

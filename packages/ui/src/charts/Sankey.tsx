@@ -20,12 +20,16 @@ export interface SankeyNodeDatum {
   /** Column index: income=0, hub=1, top categories=2, subcategories 3+. */
   depth: number;
   kind: "income" | "hub" | "category" | "saved";
+  /** Replaces the usual "amount (share)" line under the label. */
+  caption?: string;
 }
 
 export interface SankeyLinkDatum {
   from: string;
   to: string;
   value: number;
+  /** A flat ribbon colour, for flows whose colour carries meaning of its own. */
+  color?: string;
 }
 
 export interface SankeyProps {
@@ -68,6 +72,7 @@ interface PlacedLink {
   tx: number;
   ty: number;
   t: number;
+  color?: string;
 }
 
 function rgba(hex: string, alpha: number): string {
@@ -179,7 +184,7 @@ function layout(nodes: SankeyNodeDatum[], links: SankeyLinkDatum[]) {
     const h = l.value > 0 ? l.value * scale : MIN_LINK;
     const sy = outCursor.get(l.from) ?? s.y;
     const ty = inCursor.get(l.to) ?? t.y;
-    placedLinks.push({ from: l.from, to: l.to, sx: s.x + NW, sy, tx: t.x, ty, t: h });
+    placedLinks.push({ from: l.from, to: l.to, sx: s.x + NW, sy, tx: t.x, ty, t: h, ...(l.color ? { color: l.color } : {}) });
     outCursor.set(l.from, sy + h);
     inCursor.set(l.to, ty + h);
   }
@@ -268,8 +273,8 @@ export function Sankey({
       <defs>
         {geo.links.map((l, i) => {
           const key = flowKey(l);
-          const c1 = l.from === key ? linkColor(key) : hubColor;
-          const c2 = l.to === key ? linkColor(key) : hubColor;
+          const c1 = l.color ?? (l.from === key ? linkColor(key) : hubColor);
+          const c2 = l.color ?? (l.to === key ? linkColor(key) : hubColor);
           return (
             <linearGradient
               key={i}
@@ -313,7 +318,7 @@ export function Sankey({
         const lx = right ? n.x + NW + 10 : n.x - 10;
         const cy = n.y + n.h / 2;
         const pct = rootTotal > 0 ? (n.value / rootTotal) * 100 : 0;
-        const caption = rootTotal > 0 ? `${format(n.value)} (${pct.toFixed(1)}%)` : format(n.value);
+        const caption = n.caption ?? (rootTotal > 0 ? `${format(n.value)} (${pct.toFixed(1)}%)` : format(n.value));
         return (
           <g
             key={n.id}

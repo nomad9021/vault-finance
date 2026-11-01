@@ -6,6 +6,11 @@
 # All persistent data lives under a single directory, VAULT_DISK (default
 # ./data, i.e. docker/data). To keep everything on a dedicated drive, mount it
 # and set VAULT_DISK=/mnt/your-drive/vault before `docker compose up`.
+#
+# The data folders are mounted with create_host_path: false — if a folder is
+# missing (e.g. the passphrase-locked volume from installers/server/
+# vault-storage.sh isn't unlocked yet), the container refuses to start rather
+# than quietly creating a fresh, unencrypted database in its place.
 
 name: vault-finance
 
@@ -28,7 +33,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in docker/.env - installers/server/install-server.sh generates one}
       POSTGRES_DB: ${POSTGRES_DB:-vault}
     volumes:
-      - ${VAULT_DISK:-./data}/postgres:/var/lib/postgresql/data
+      - type: bind
+        source: ${VAULT_DISK:-./data}/postgres
+        target: /var/lib/postgresql/data
+        bind:
+          create_host_path: false
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vault} -d ${POSTGRES_DB:-vault}"]
       interval: 10s
@@ -42,7 +51,11 @@ services:
     # Optional: the server runs fine without Redis (in-memory fallbacks).
     # Remove this service if you want the smallest possible stack.
     volumes:
-      - ${VAULT_DISK:-./data}/redis:/data
+      - type: bind
+        source: ${VAULT_DISK:-./data}/redis
+        target: /data
+        bind:
+          create_host_path: false
 
   server:
     logging: *logging
@@ -100,7 +113,11 @@ services:
       # installers/server/enable-app-updates.sh, which sets up the agent.
       UPDATE_AGENT_DIR: /update
     volumes:
-      - ${VAULT_DISK:-./data}/vault:/data
+      - type: bind
+        source: ${VAULT_DISK:-./data}/vault
+        target: /data
+        bind:
+          create_host_path: false
       - ${VAULT_DISK:-./data}/update:/update
     ports:
       - "${VAULT_PORT:-8443}:8443"
@@ -112,7 +129,11 @@ services:
     # Local AI runtime. Optional: comment this service out (or set
     # OLLAMA_HOST to another machine) and every non-AI feature keeps working.
     volumes:
-      - ${VAULT_DISK:-./data}/ollama:/root/.ollama
+      - type: bind
+        source: ${VAULT_DISK:-./data}/ollama
+        target: /root/.ollama
+        bind:
+          create_host_path: false
     # Uncomment to expose Ollama to other machines on your network:
     # ports:
     #   - "11434:11434"

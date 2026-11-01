@@ -31,7 +31,8 @@ services:
       # This is the ADMIN role. familyctl uses it to create the per-family
       # `vault_<slug>` databases and roles; family servers never use it.
       POSTGRES_USER: ${POSTGRES_ADMIN_USER:-vault}
-      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-vault}
+      # Required: familyctl.sh generates one into postgres-admin.password.
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Run docker/multi/familyctl.sh - it generates POSTGRES_ADMIN_PASSWORD}
       POSTGRES_DB: postgres
     volumes:
       - ${VAULT_MULTI_DISK:-./data}/postgres:/var/lib/postgresql/data
@@ -88,9 +89,6 @@ services:
       MAIL_FROM: ${MAIL_FROM:-}
       # familyctl also reads these to thread into new family servers.
       UPDATE_OPERATOR_MANAGED: ${UPDATE_OPERATOR_MANAGED:-true}
-      # Family servers on vault-net present self-signed certs (ADR-0004); the
-      # only hosts this container ever contacts are those internal servers.
-      NODE_TLS_REJECT_UNAUTHORIZED: "0"
     ports:
       - "${CONTROL_PORT:-9443}:9443"
     volumes:

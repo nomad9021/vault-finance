@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { BankConnection, BankLinkStartResponse, BankLinkStatus, BankStatus, BankSyncResponse } from "@vault/shared";
 import { BankLinkStartRequest, UpdateBankSettingsRequest } from "@vault/shared";
 import { eq, sql } from "drizzle-orm";
@@ -8,6 +8,7 @@ import { accounts, bankConnections, bankSettings, users } from "../../db/schema.
 import { AppError, notFound } from "../../errors.js";
 import { aiCategorizeUncategorized } from "../categorize/service.js";
 import { describePlaidError, getPlaid, isConfigured } from "./providers/index.js";
+import { cachedKeyFetcher, verifyPlaidWebhook, type FetchKey } from "./webhook-verify.js";
 import { decryptSecret, encryptSecret } from "../../secret-crypto.js";
 import { META_KEYS, readMeta } from "../../lib/app-meta.js";
 import {
@@ -61,37 +62,60 @@ export default async function bankRoutes(
     },
   );
 
-  // Plaid calls this (unauthenticated) when new data is ready — the real-time
-  // push path. We only act on item_ids we already hold, so an unknown/forged
-  // payload just no-ops. Production should additionally verify Plaid's JWT
-  // (Plaid-Verification header); that's a hardening follow-up.
-  app.post("/bank/webhook", async (request, reply) => {
-    const body = (request.body ?? {}) as { item_id?: string };
-    const itemId = body.item_id;
-    if (itemId) {
-      const [connection] = await app.db
-        .select()
-        .from(bankConnections)
-        .where(eq(bankConnections.externalItemId, itemId))
-        .limit(1);
+  // Plaid calls this when new data is ready — the real-time push path. It has
+  // no session, so it must prove it's Plaid: the signed Plaid-Verification
+  // JWT is checked against the exact body bytes (webhook-verify.ts). Only
+  // then do we act, and only on item_ids we already hold.
+  const webhookKeys = new Map<string, FetchKey>();
+  await app.register(async (scope) => {
+    scope.removeContentTypeParser("application/json");
+    scope.addContentTypeParser("application/json", { parseAs: "buffer" }, (_req, body, done) => done(null, body));
+
+    scope.post("/bank/webhook", async (request, reply) => {
+      const raw = Buffer.isBuffer(request.body) ? request.body : Buffer.alloc(0);
       const settings = await loadBankSettings(app.db);
-      const owner = await app.db.query.users.findFirst({ where: eq(users.role, "owner") });
-      if (connection && settings.enabled && owner) {
-        try {
-          await syncConnection(
-            app.db,
-            providerConfig(settings, opts.config.plaidBaseUrl),
-            connection,
-            owner.id,
-          );
-          await aiCategorizeUncategorized(app, opts.config);
-        } catch (err) {
-          app.log.error({ err, itemId }, "webhook-triggered sync failed");
+      const cfg = providerConfig(settings, opts.config.plaidBaseUrl);
+      if (!settings.enabled || settings.provider !== "plaid" || !isConfigured(cfg)) {
+        return reply.status(401).send({ received: false });
+      }
+      // Keyed on the credentials too, so rotating the Plaid secret takes effect at once.
+      const keysFor = createHash("sha256").update(`${cfg.plaidEnv}:${cfg.plaidClientId}:${cfg.plaidSecret}`).digest("hex");
+      let fetchKey = webhookKeys.get(keysFor);
+      if (!fetchKey) {
+        fetchKey = cachedKeyFetcher((kid) => getPlaid(cfg).webhookVerificationKey(kid));
+        webhookKeys.set(keysFor, fetchKey);
+      }
+      const header = request.headers["plaid-verification"];
+      if (!(await verifyPlaidWebhook(raw, typeof header === "string" ? header : undefined, fetchKey))) {
+        return reply.status(401).send({ received: false });
+      }
+
+      let body: { item_id?: unknown } = {};
+      try {
+        body = JSON.parse(raw.toString("utf8")) as typeof body;
+      } catch {
+        /* signed but not JSON — nothing to do */
+      }
+      const itemId = typeof body.item_id === "string" ? body.item_id : undefined;
+      if (itemId) {
+        const [connection] = await app.db
+          .select()
+          .from(bankConnections)
+          .where(eq(bankConnections.externalItemId, itemId))
+          .limit(1);
+        const owner = await app.db.query.users.findFirst({ where: eq(users.role, "owner") });
+        if (connection && owner) {
+          try {
+            await syncConnection(app.db, cfg, connection, owner.id);
+            await aiCategorizeUncategorized(app, opts.config);
+          } catch (err) {
+            app.log.error({ err, itemId }, "webhook-triggered sync failed");
+          }
         }
       }
-    }
-    // Always 200 so Plaid doesn't retry-storm us.
-    return reply.status(200).send({ received: true });
+      // Always 200 once verified so Plaid doesn't retry-storm us.
+      return reply.status(200).send({ received: true });
+    });
   });
 
   app.patch(

@@ -41,6 +41,23 @@ const SECTION_TARGET: Record<
   taxes: { page: "taxes", label: "Salary & taxes" },
 };
 
+/** A node's budget and actual, for the budget-vs-actual diagram. */
+export interface SankeyComparison {
+  budgetedCents: number;
+  actualCents: number;
+}
+
+export interface SankeyCardNode extends SankeyNode {
+  /** Replaces the usual "amount (share)" line under the label. */
+  caption?: string;
+  /** Shows the amounts side by side in the drill-in panel. */
+  comparison?: SankeyComparison;
+  /** Explains a total that has no transactions of its own. */
+  note?: string;
+}
+
+export type SankeyCardLink = SankeyLink & { color?: string };
+
 /**
  * The one Sankey presentation used across the app: a card with a title, a
  * weekly/monthly/yearly period toggle, and click-to-drill focus panels (opening
@@ -57,9 +74,11 @@ export function SankeyCard({
   title = "Cash flow",
   hint = "Click any node to drill in",
   compact = false,
+  precise = false,
+  singlePeriod = false,
 }: {
-  nodes: SankeyNode[];
-  links: SankeyLink[];
+  nodes: SankeyCardNode[];
+  links: SankeyCardLink[];
   month: string;
   onNavigate: Navigate;
   /** Called after an inline edit so the page can refetch the diagram. */
@@ -68,10 +87,15 @@ export function SankeyCard({
   hint?: string;
   /** Side-by-side mode: drop the period toggle and hint so the card can halve. */
   compact?: boolean;
+  /** Show dollars and cents. Budget figures always do. */
+  precise?: boolean;
+  /** Month-only figures: no weekly or yearly scaling to offer. */
+  singlePeriod?: boolean;
 }) {
   const [focus, setFocus] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>("monthly");
-  const pf = PERIOD_FACTOR[period];
+  const pf = singlePeriod ? 1 : PERIOD_FACTOR[period];
+  const money = precise ? (cents: number) => formatCents(cents) : (cents: number) => formatCentsWhole(cents);
 
   const focusNode = focus ? (nodes.find((n) => n.id === focus) ?? null) : null;
   const isIncomeSide = !!focusNode && (focusNode.kind === "income" || focusNode.kind === "hub");
@@ -87,7 +111,7 @@ export function SankeyCard({
         {!compact && (
           <div className="row" style={{ gap: "var(--space-4)" }}>
             <span className="t-xs t-tertiary">{hint}</span>
-            <div className="seg">
+            {!singlePeriod && <div className="seg">
               {(["weekly", "monthly", "yearly"] as const).map((p) => (
                 <button
                   key={p}
@@ -99,16 +123,16 @@ export function SankeyCard({
                   {p}
                 </button>
               ))}
-            </div>
+            </div>}
           </div>
         )}
       </div>
 
       <div style={{ padding: "0 var(--space-1) var(--space-2)" }}>
         <Sankey
-          nodes={nodes.map((n) => ({ id: n.id, label: n.label, value: n.valueCents, color: n.color, depth: n.depth, kind: n.kind }))}
-          links={links.map((l) => ({ from: l.from, to: l.to, value: l.valueCents }))}
-          format={(v) => formatCentsWhole(v * pf)}
+          nodes={nodes.map((n) => ({ id: n.id, label: n.label, value: n.valueCents, color: n.color, depth: n.depth, kind: n.kind, ...(n.caption ? { caption: n.caption } : {}) }))}
+          links={links.map((l) => ({ from: l.from, to: l.to, value: l.valueCents, ...(l.color ? { color: l.color } : {}) }))}
+          format={(v) => money(v * pf)}
           focus={focus}
           onFocus={setFocus}
           ariaLabel={`${title} Sankey diagram for ${month}`}
@@ -122,6 +146,7 @@ export function SankeyCard({
           node={focusNode}
           isIncome={isIncomeSide}
           periodFactor={pf}
+          money={money}
           onClose={() => setFocus(null)}
           onNavigate={onNavigate}
           {...(onChanged ? { onChanged } : {})}
@@ -137,15 +162,17 @@ function FocusPanel({
   node,
   isIncome,
   periodFactor,
+  money,
   onClose,
   onNavigate,
   onChanged,
 }: {
   side: "left" | "right";
   month: string;
-  node: SankeyNode;
+  node: SankeyCardNode;
   isIncome: boolean;
   periodFactor: number;
+  money: (cents: number) => string;
   onClose: () => void;
   onNavigate: Navigate;
   onChanged?: () => void;
@@ -230,7 +257,11 @@ function FocusPanel({
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span aria-hidden="true" style={{ width: 10, height: 10, borderRadius: "var(--radius-sm)", background: node.color, flex: "none" }} />
           <span style={{ fontSize: "var(--text-2xs)", letterSpacing: ".05em", textTransform: "uppercase", color: "var(--content-tertiary)", fontWeight: 600 }}>
-            {node.kind === "saved"
+            {node.comparison
+              ? "actual spending"
+              : node.note
+                ? "total"
+                : node.kind === "saved"
               ? "left over"
               : isIncome
                 ? "money in"
@@ -241,8 +272,9 @@ function FocusPanel({
         </div>
         <h3 style={{ margin: "6px 0 2px", fontSize: "var(--text-xl)", fontWeight: 600 }}>{node.label}</h3>
         <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: "var(--text-3xl)", letterSpacing: "-.02em" }}>
-          {formatCentsWhole(node.valueCents * periodFactor)}
+          {node.comparison ? money(node.comparison.actualCents) : money(node.valueCents * periodFactor)}
         </div>
+        {node.comparison && <ComparisonLines comparison={node.comparison} money={money} />}
 
         {node.section && node.entityId && (
           <SectionEditor
@@ -291,7 +323,9 @@ function FocusPanel({
           </>
         ) : (
           <p style={{ fontSize: "var(--text-sm)", color: "var(--content-tertiary)", lineHeight: 1.6 }}>
-            {node.kind === "saved"
+            {node.note
+              ? node.note
+              : node.kind === "saved"
               ? "Income that no plan has claimed yet — after spending, bills, debt, savings and giving. This is what's genuinely free to assign."
               : node.kind === "hub"
                 ? "Everything that flowed in this month, before spending."
@@ -301,6 +335,20 @@ function FocusPanel({
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+function ComparisonLines({ comparison, money }: { comparison: SankeyComparison; money: (cents: number) => string }) {
+  const { budgetedCents, actualCents } = comparison;
+  const left = budgetedCents - actualCents;
+  return (
+    <div className="t-sm t-tertiary" style={{ marginTop: "var(--space-1)" }}>
+      {budgetedCents > 0 ? `${money(budgetedCents)} budgeted` : "No budget"}
+      {" · "}
+      <span style={left < 0 ? { color: "var(--color-negative)" } : undefined}>
+        {left < 0 ? `${money(-left)} over` : `${money(left)} left`}
+      </span>
     </div>
   );
 }

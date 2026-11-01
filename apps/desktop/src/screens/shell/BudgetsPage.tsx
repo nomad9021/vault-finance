@@ -1,6 +1,6 @@
 import {
+  centsToAmountInput,
   formatCents,
-  formatCentsWhole,
   parseAmountToCents,
   type BudgetWithSpend,
   type Category,
@@ -22,9 +22,11 @@ import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 import type { Navigate } from "./AppShell.js";
 import { BudgetPlannerPage } from "./BudgetPlannerPage.js";
+import { BudgetVsActualPage } from "./BudgetVsActualPage.js";
 
 const TABS = [
   { value: "budgets" as const, label: "This month" },
+  { value: "compare" as const, label: "Budget vs actual" },
   { value: "planner" as const, label: "Planner" },
 ];
 type BudgetTab = (typeof TABS)[number]["value"];
@@ -33,7 +35,7 @@ type BudgetTab = (typeof TABS)[number]["value"];
  * Budgets and the budget planner were two sidebar entries that nobody could
  * tell apart. They're the same subject at two time horizons — what you've spent
  * this month, and how you intend to divide a month's income — so they're one
- * destination with two tabs.
+ * destination with tabs, plus the two laid over each other on one Sankey.
  */
 export function BudgetsPage({
   onNavigate,
@@ -42,12 +44,16 @@ export function BudgetsPage({
   onNavigate: Navigate;
   initialTab?: string;
 }) {
-  const [tab, setTab] = useState<BudgetTab>(initialTab === "planner" ? "planner" : "budgets");
+  const [tab, setTab] = useState<BudgetTab>(
+    initialTab === "planner" ? "planner" : initialTab === "compare" ? "compare" : "budgets",
+  );
   return (
     <div className="page">
       <Tabs items={TABS} value={tab} onChange={setTab} aria-label="Budget views" />
       {tab === "budgets" ? (
         <BudgetsTab onNavigate={onNavigate} />
+      ) : tab === "compare" ? (
+        <BudgetVsActualPage onNavigate={onNavigate} />
       ) : (
         <BudgetPlannerPage onNavigate={onNavigate} />
       )}
@@ -123,9 +129,9 @@ function BudgetsTab({ onNavigate }: { onNavigate: Navigate }) {
         <div className="stat">
           <div className="stat-label">{monthLabel(month)} total</div>
           <div className="stat-value">
-            {formatCentsWhole(totalSpent)}{" "}
+            {formatCents(totalSpent)}{" "}
             <span className="t-base t-tertiary" style={{ fontWeight: 500 }}>
-              of {formatCentsWhole(totalBudgeted)}
+              of {formatCents(totalBudgeted)}
             </span>
           </div>
         </div>
@@ -133,8 +139,8 @@ function BudgetsTab({ onNavigate }: { onNavigate: Navigate }) {
           <Tag variant={leftCents < 0 ? "negative" : "accent"}>
             {pctUsed}% used ·{" "}
             {leftCents < 0
-              ? `${formatCentsWhole(-leftCents)} over`
-              : `${formatCentsWhole(leftCents)} left`}
+              ? `${formatCents(-leftCents)} over`
+              : `${formatCents(leftCents)} left`}
           </Tag>
         )}
       </div>
@@ -316,7 +322,7 @@ function BudgetDialog({
   );
   const [categoryId, setCategoryId] = useState(budget?.categoryId ?? available[0]?.id ?? "");
   const [amount, setAmount] = useState(
-    budget ? (budget.amountCents / 100).toFixed(2) : "",
+    budget ? centsToAmountInput(budget.amountCents) : "",
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

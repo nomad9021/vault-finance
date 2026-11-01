@@ -125,8 +125,8 @@ describe("bank linking (mock provider)", () => {
     expect(accts.json().accounts.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("accepts Plaid webhooks unauthenticated and no-ops on unknown items", async () => {
-    // No auth header — Plaid calls this endpoint from the outside.
+  it("refuses webhooks that aren't signed by Plaid", async () => {
+    // No session, and no Plaid-Verification signature: not from Plaid.
     const res = await app.inject({
       method: "POST",
       url: "/api/v1/bank/webhook",
@@ -136,7 +136,6 @@ describe("bank linking (mock provider)", () => {
         item_id: "nonexistent-item",
       },
     });
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({ received: true });
+    expect(res.statusCode).toBe(401);
   });
 });

@@ -1,3 +1,4 @@
+import type { JWK } from "jose";
 import type {
   BankAccountData,
   BankProviderClient,
@@ -239,6 +240,15 @@ export class PlaidBankProvider implements BankProviderClient {
     } catch {
       return null;
     }
+  }
+
+  /** The public key Plaid signed a webhook with (see bank/webhook-verify.ts). */
+  async webhookVerificationKey(keyId: string): Promise<JWK & { expired_at: number | null }> {
+    const res = await this.call<{ key: JWK & { expired_at: number | null } }>(
+      "/webhook_verification_key/get",
+      { key_id: keyId },
+    );
+    return res.key;
   }
 
   /** Tell Plaid to forget the item (stops billing and data access). */

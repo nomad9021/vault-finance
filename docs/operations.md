@@ -179,12 +179,36 @@ shred -u ../database.sql ../server-data.tar           # don't leave plaintext be
 ```
 
 > **Encryption at rest.** Secrets inside the database (2FA secrets, bank tokens,
-> API keys) are always encrypted with the data key. The rest of the live
-> database (transactions, balances) is protected by the disk it sits on, so run
-> the server on an **encrypted disk**: choose "Encrypt the new Ubuntu
-> installation" (LUKS) when installing Ubuntu, or keep the VM on encrypted
-> Proxmox storage. The backup script warns when the data folder is on an
-> unencrypted disk.
+> API keys) are always encrypted with the data key. Everything else
+> (transactions, balances, and the data key itself) is only as private as the
+> disk it sits on, so lock it with a passphrase — see below — or run the server
+> on an encrypted disk (LUKS, or encrypted Proxmox storage).
+
+### Passphrase-locked storage
+
+`installers/server/vault-storage.sh` keeps everything in `VAULT_DISK` — the
+database, its keys, receipts, AI memory — inside one LUKS2 volume (a file,
+`/var/lib/vault-finance/vault.img` by default; no repartitioning). The
+installer offers it; to add it to an existing server:
+
+```bash
+bash installers/server/vault-storage.sh create --size 20G   # moves your data in
+bash installers/server/vault-storage.sh unlock              # after every restart
+bash installers/server/vault-storage.sh lock                # stop + seal by hand
+bash installers/server/vault-storage.sh status
+```
+
+- While **locked**, nothing in it can be read without the passphrase — not
+  from a stolen disk, not by another account on the machine.
+- After a restart the server **stays off** until you unlock it. The compose
+  file mounts the data folders with `create_host_path: false`, so a locked
+  volume makes the containers refuse to start instead of creating a fresh,
+  unencrypted database.
+- While **unlocked**, root and members of the `docker` group can read it (the
+  server has to). Keep those accounts to yourself, and lock when in doubt.
+- There's no recovery without the passphrase. Keep it, and a header backup
+  (`sudo cryptsetup luksHeaderBackup …`), somewhere safe.
+- Size it for AI models too if you use the bundled Ollama (4–20 GB each).
 
 ---
 

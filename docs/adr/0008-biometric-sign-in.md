@@ -22,8 +22,11 @@ they don't fit.
 - **Server:** a `device_keys` table. `POST /auth/device-keys` (signed-in)
   issues a random key `<id>.<secret>` — same shape and argon2 hashing as
   refresh tokens (ADR-0003). `POST /auth/login/device-key` exchanges it for a
-  normal session. Keys are listed and revocable per user; a wrong secret for a
-  real key id deletes the key.
+  normal session. Each key is bound to the approved device whose session
+  enrolled it: sign-in needs that device's own identity (id + secret) too, and
+  revoking the device or signing it out remotely deletes its keys. Keys are
+  listed and revocable per user; a wrong secret, or the wrong device, deletes
+  the key.
 - **Desktop:** turning it on in Settings runs the OS prompt, then stores the key
   in the OS keychain (`device-key:<server>:<userId>`). While enrolled, the app
   opens **locked** on the sign-in screen and prompts immediately; on success it

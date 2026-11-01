@@ -78,7 +78,8 @@ export const deviceSessions = pgTable(
 // Biometric sign-in keys: one per enrolled device. The desktop app keeps the
 // raw `<id>.<secret>` in the OS keychain and only sends it after a local
 // Windows Hello / Touch ID / fingerprint check; only the argon2 hash lives
-// here. Revocable from Settings, and gone with the user.
+// here. Bound to the approved device that enrolled it. Revocable from
+// Settings, and gone with the user or the device.
 export const deviceKeys = pgTable(
   "device_keys",
   {
@@ -91,6 +92,10 @@ export const deviceKeys = pgTable(
       enum: ["windows", "macos", "linux", "ios"],
     }).notNull(),
     secretHash: text("secret_hash").notNull(),
+    /** Null only for keys enrolled before binding; bound on their next use. */
+    trustedDeviceId: uuid("trusted_device_id").references(() => trustedDevices.id, {
+      onDelete: "cascade",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
   },
@@ -152,6 +157,20 @@ export const memberInvites = pgTable(
   },
   (t) => [index("member_invites_email_idx").on(t.email)],
 );
+
+// The owner's own mailbox, so invitations come from their address. Singleton
+// (like ai_settings). `password` is encrypted and never returned by any endpoint.
+export const ownerEmail = pgTable("owner_email", {
+  id: boolean("id")
+    .primaryKey()
+    .default(true)
+    .$type<true>(),
+  fromEmail: text("from_email").notNull(),
+  host: text("host").notNull(),
+  port: integer("port").notNull(),
+  password: text("password").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 // Tiny key/value store for server-scoped state that isn't user data — e.g. the
 // last software version we've already emailed the owner about.

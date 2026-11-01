@@ -20,9 +20,20 @@ import {
   type TailscaleActionResult,
   type TailscaleStatus,
 } from "../platform/index.js";
+import { getPrivateNetwork, usesTailscaleClient } from "../lib/privateNetwork.js";
+import {
+  alternateAddressKey,
+  alternateTrust,
+  downgradesTransport,
+  makeReselect,
+  newRoute,
+  routedFetch,
+  routedStreamFetch,
+  type ServerRoute,
+} from "../lib/serverRoute.js";
 import { describeProbeFailure, runChecks, type UiCheck } from "../lib/startupChecks.js";
 
-export const APP_VERSION = "0.1.16";
+export const APP_VERSION = "0.1.17";
 
 export type Screen =
   | { name: "boot" }
@@ -63,6 +74,10 @@ interface AppState {
   /** The server to return to if the user backs out of the connect flow; null
    *  on first-ever launch (nothing to go back to). */
   priorAddress: string | null;
+  /** The server's other address (say, home and VPN), if one has been added. */
+  alternateAddress: string | null;
+  /** Whichever address requests are going to right now. */
+  activeAddress: string | null;
   connection: ConnectionStatus;
   user: User | null;
   theme: Theme;
@@ -128,6 +143,15 @@ interface AppState {
   setAutoLockMinutes(minutes: number): Promise<void>;
   setAiLevel(level: AiLevel): Promise<void>;
   changeServer(): Promise<void>;
+  /** Move requests to this address once a check has found it answering. */
+  setActiveAddress(address: string): void;
+  /**
+   * Add the server's other address after checking it's the same server.
+   * `confirmed` is the fingerprint the person has just approved, for a server
+   * whose certificate there's no pin to compare with.
+   */
+  saveAlternateAddress(raw: string, confirmed?: string): Promise<SaveAlternateResult>;
+  removeAlternateAddress(): Promise<void>;
   /** Back out of the connect screen, restoring the prior server. No-op (and no
    *  button shown) when there's no prior server to return to. */
   cancelConnect(): Promise<void>;
@@ -148,6 +172,11 @@ interface AppState {
 
 const TOKENS_KEY = "refresh-tokens";
 const ADDRESS_KEY = "server-address";
+
+export type SaveAlternateResult =
+  | { status: "saved" }
+  | { status: "confirm"; address: string; fingerprint: string }
+  | { status: "error"; message: string };
 const THEME_KEY = "theme";
 const REVIEW_PREFS_KEY = "review-prefs";
 const AI_AUTO_APPLY_KEY = "ai-auto-apply";
@@ -217,6 +246,8 @@ async function loadDeviceIdentity(platform: HostPlatform, address: string): Prom
 // Tokens live outside React state: the ApiClient reads them synchronously and
 // they must never trigger re-renders. Persisted to the platform secret store.
 let tokens: TokenPair | null = null;
+let route: ServerRoute = newRoute("");
+const getRoute = () => route;
 let platformRef: HostPlatform | null = null;
 
 function persistTokens(next: TokenPair | null) {
@@ -239,6 +270,8 @@ export const useApp = create<AppState>((set, get) => ({
   screen: { name: "boot" },
   serverAddress: null,
   priorAddress: null,
+  alternateAddress: null,
+  activeAddress: null,
   connection: "online",
   user: null,
   theme: "light",
@@ -291,6 +324,8 @@ export const useApp = create<AppState>((set, get) => ({
         appVersion: APP_VERSION,
         keychainOk,
         hasSession: tokens !== null,
+        alternateAddress: get().alternateAddress,
+        onRoute: get().setActiveAddress,
       },
       (checks) => set({ startup: { phase: "running", checks, canContinue: false } }),
     );
@@ -319,7 +354,10 @@ export const useApp = create<AppState>((set, get) => ({
 
   async refreshTailscale() {
     const { platform } = get();
-    if (!platform.tailscaleStatus) return null;
+    if (!platform.tailscaleStatus || !usesTailscaleClient(getPrivateNetwork())) {
+      set({ tailscale: null });
+      return null;
+    }
     const status = await platform.tailscaleStatus().catch(() => null);
     set({ tailscale: status });
     return status;
@@ -366,6 +404,7 @@ export const useApp = create<AppState>((set, get) => ({
     set({ serverAddress: address });
     await platform.saveValue(ADDRESS_KEY, address);
     rebuildClient(set, get, address);
+    await loadAlternateAddress(set, get, address);
     await get().ensureDeviceIdentity();
 
     if (needsTrust) {
@@ -634,12 +673,65 @@ export const useApp = create<AppState>((set, get) => ({
     set({ priorAddress: get().serverAddress, screen: { name: "connect" } });
   },
 
+  setActiveAddress(address) {
+    route.active = address;
+    set({ activeAddress: address });
+  },
+
+  async saveAlternateAddress(raw, confirmed) {
+    const { platform, serverAddress } = get();
+    const address = normalizeAddress(raw);
+    if (!serverAddress) return { status: "error", message: "Connect to a server first." };
+    if (!address) return { status: "error", message: "Enter an address, e.g. https://100.64.0.5:8443" };
+    if (address === serverAddress) {
+      return { status: "error", message: "That's the address you're already using. Enter the server's other address." };
+    }
+    if (downgradesTransport(serverAddress, address)) {
+      return { status: "error", message: "The second address has to start with https://, so your sign-in stays encrypted." };
+    }
+    const probe = await platform.probeServer(address);
+    if (!probe.reachable) {
+      return {
+        status: "error",
+        message:
+          "That address didn't answer. It has to answer once so the app can check it's your server. If it's a VPN address, turn the VPN on and try again.",
+      };
+    }
+    const trust = alternateTrust(platform.kind, await platform.getPin(serverAddress), probe);
+    if (trust.kind === "mismatch") {
+      return {
+        status: "error",
+        message:
+          "That address has a different security certificate from your server, so it wasn't added. Check that it's the same server.",
+      };
+    }
+    if (trust.kind === "confirm" && trust.fingerprint !== confirmed) {
+      return { status: "confirm", address, fingerprint: trust.fingerprint };
+    }
+    if (trust.kind !== "os") await platform.trustServer(address, trust.fingerprint);
+    await platform.saveValue(alternateAddressKey(serverAddress), address);
+    route.alternate = address;
+    set({ alternateAddress: address });
+    return { status: "saved" };
+  },
+
+  async removeAlternateAddress() {
+    const { platform, serverAddress, alternateAddress } = get();
+    if (!serverAddress || !alternateAddress) return;
+    await platform.deleteValue(alternateAddressKey(serverAddress));
+    await platform.forgetPin(alternateAddress);
+    route.alternate = null;
+    route.active = serverAddress;
+    set({ alternateAddress: null, activeAddress: serverAddress });
+  },
+
   async cancelConnect() {
     const prior = get().priorAddress;
     if (!prior) return;
     set({ priorAddress: null, serverAddress: prior });
     await get().platform.saveValue(ADDRESS_KEY, prior);
     rebuildClient(set, get, prior);
+    await loadAlternateAddress(set, get, prior);
     await get().ensureDeviceIdentity();
     await get().routeForServer();
   },
@@ -698,17 +790,35 @@ function normalizeAddress(raw: string): string | null {
   }
 }
 
+/** Saved per server, so a different server never inherits this one's second address. */
+async function loadAlternateAddress(
+  set: (partial: Partial<AppState>) => void,
+  get: () => AppState,
+  address: string,
+) {
+  const alternate = await get().platform.loadValue(alternateAddressKey(address)).catch(() => null);
+  route.alternate = alternate;
+  set({ alternateAddress: alternate });
+}
+
 function rebuildClient(
   set: (partial: Partial<AppState>) => void,
   get: () => AppState,
   address: string,
 ) {
   const { platform } = get();
+  route = newRoute(address);
+  set({ alternateAddress: null, activeAddress: address });
+  const findAddress = makeReselect(platform, getRoute);
+  const reselect = async () => {
+    await findAddress();
+    set({ activeAddress: route.active });
+  };
   const client = new ApiClient({
     baseUrl: address,
     clientVersion: APP_VERSION,
-    fetchImpl: platform.fetchImpl,
-    streamFetchImpl: platform.streamFetchImpl,
+    fetchImpl: routedFetch(platform.fetchImpl, getRoute, reselect),
+    streamFetchImpl: routedStreamFetch(platform.streamFetchImpl, getRoute),
     getTokens: () => tokens,
     setTokens: persistTokens,
     getDeviceIdentity: () => deviceIdentity,
@@ -817,6 +927,7 @@ export async function bootstrap(): Promise<void> {
 
   useApp.setState({ serverAddress: address });
   rebuildClient((p) => useApp.setState(p), useApp.getState, address);
+  await loadAlternateAddress((p) => useApp.setState(p), useApp.getState, address);
   await useApp.getState().ensureDeviceIdentity();
   try {
     await useApp.getState().runStartup();

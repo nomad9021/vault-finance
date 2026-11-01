@@ -51,7 +51,10 @@ that the household controls without any third party.
     approved automatically ("bootstrap") — the same trust as completing setup.
   - Sessions created before this change are adopted on their next refresh:
     the device is recorded as approved ("existing-session").
-  - Biometric device keys carry their device's earlier trust ("device-key").
+  - Biometric device keys never approve a device: they only work alongside the
+    approved device they're bound to (ADR-0008). Keys enrolled before binding
+    adopt the approved device they're next used on. "device-key" remains only
+    on rows approved that way before this change.
 - **Old apps** that send no identity get `403 DEVICE_NOT_TRUSTED` with a
   message to update.
 

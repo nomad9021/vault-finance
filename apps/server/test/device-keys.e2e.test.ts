@@ -4,8 +4,12 @@ import path from "node:path";
 import EmbeddedPostgres from "embedded-postgres";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { buildTestApp as buildApp } from "./helpers/test-app.js";
+import argon2 from "argon2";
+import { eq } from "drizzle-orm";
+import { buildTestApp as buildApp, TEST_DEVICE } from "./helpers/test-app.js";
 import { loadConfig } from "../src/config.js";
+import { deviceKeys, trustedDevices } from "../src/db/schema.js";
+import { approveFromConsole } from "../src/modules/devices/service.js";
 
 /**
  * Biometric sign-in (device keys) and the household name. The biometric check
@@ -220,6 +224,147 @@ describe("device keys + household name", () => {
         payload: { key: "nope", deviceName: "x", platform: "linux" },
       });
       expect(res.statusCode).toBe(401);
+    });
+  });
+
+  // A key is bound to the approved device that enrolled it: it must never
+  // approve a device on its own, and it dies with that device's approval.
+  describe("device keys are bound to their device", () => {
+    const LAPTOP = {
+      deviceId: "00000000-0000-4000-8000-00000000d1d1",
+      deviceSecret: "laptop-device-secret-laptop-device-secret",
+    };
+    const THIEF = {
+      deviceId: "00000000-0000-4000-8000-00000000dbad",
+      deviceSecret: "thief-device-secret-thief-device-secret-00",
+    };
+
+    /** Password sign-in as Sam on `device`, approving it from the console if asked. */
+    const signInOn = async (device: typeof LAPTOP) => {
+      const payload = {
+        email: "sam@vault.test",
+        password: "temporary-pass-1",
+        deviceName: "Sam's laptop",
+        platform: "windows",
+        ...device,
+      };
+      let res = await app.inject({ method: "POST", url: "/api/v1/auth/login", payload });
+      if (res.statusCode === 403 && res.json().error.code === "DEVICE_APPROVAL_REQUIRED") {
+        await approveFromConsole(app.db, res.json().error.fields.code, { override: true });
+        res = await app.inject({ method: "POST", url: "/api/v1/auth/login", payload });
+      }
+      expect(res.statusCode).toBe(200);
+      return { authorization: `Bearer ${res.json().accessToken}` };
+    };
+
+    const enroll = async (auth: { authorization: string }) => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/device-keys",
+        headers: auth,
+        payload: { deviceName: "Sam's laptop", platform: "windows" },
+      });
+      expect(res.statusCode).toBe(201);
+      return res.json() as { id: string; key: string };
+    };
+
+    const keyLogin = (key: string, device: typeof LAPTOP) =>
+      app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login/device-key",
+        payload: { key, deviceName: "Sam's laptop", platform: "windows", ...device },
+      });
+
+    const keyExists = async (id: string) =>
+      Boolean(await app.db.query.deviceKeys.findFirst({ where: eq(deviceKeys.id, id) }));
+
+    it("works on the device that enrolled it", async () => {
+      const { key } = await enroll(await signInOn(LAPTOP));
+      expect((await keyLogin(key, LAPTOP)).statusCode).toBe(200);
+    });
+
+    it("a stolen key can't sign in, or get approved, from an unknown device", async () => {
+      const { id, key } = await enroll(await signInOn(LAPTOP));
+      const stolen = await keyLogin(key, THIEF);
+      expect(stolen.statusCode).toBe(401);
+      const thiefDevice = await app.db.query.trustedDevices.findFirst({
+        where: eq(trustedDevices.deviceId, THIEF.deviceId),
+      });
+      expect(thiefDevice?.status).not.toBe("approved");
+      // The key is burned, so the legitimate device needs its password too.
+      expect(await keyExists(id)).toBe(false);
+      expect((await keyLogin(key, LAPTOP)).statusCode).toBe(401);
+    });
+
+    it("doesn't work from another of the user's approved devices", async () => {
+      const { key } = await enroll(await signInOn(LAPTOP));
+      expect((await keyLogin(key, TEST_DEVICE)).statusCode).toBe(401);
+    });
+
+    it("revoking the device deletes its keys", async () => {
+      const laptopAuth = await signInOn(LAPTOP);
+      const { id, key } = await enroll(laptopAuth);
+      const list = await app.inject({ method: "GET", url: "/api/v1/devices", headers: laptopAuth });
+      const laptop = list.json().devices.find((d: { current: boolean }) => d.current);
+      const del = await app.inject({ method: "DELETE", url: `/api/v1/devices/${laptop.id}`, headers: memberAuth });
+      expect(del.statusCode).toBe(204);
+
+      expect(await keyExists(id)).toBe(false);
+      expect((await keyLogin(key, LAPTOP)).statusCode).toBe(401);
+      const device = await app.db.query.trustedDevices.findFirst({ where: eq(trustedDevices.id, laptop.id) });
+      expect(device?.revokedAt).not.toBeNull();
+    });
+
+    it("signing the device out remotely deletes its keys", async () => {
+      const { id, key } = await enroll(await signInOn(LAPTOP));
+      const list = await app.inject({ method: "GET", url: "/api/v1/auth/sessions", headers: memberAuth });
+      const laptopSessions = list
+        .json()
+        .sessions.filter((s: { deviceName: string; isCurrent: boolean }) => s.deviceName === "Sam's laptop");
+      for (const session of laptopSessions) {
+        await app.inject({ method: "DELETE", url: `/api/v1/auth/sessions/${session.id}`, headers: memberAuth });
+      }
+      expect(await keyExists(id)).toBe(false);
+      expect((await keyLogin(key, LAPTOP)).statusCode).toBe(401);
+    });
+
+    it("a signed-out session can't enroll a key with its leftover access token", async () => {
+      const laptopAuth = await signInOn(LAPTOP);
+      const list = await app.inject({ method: "GET", url: "/api/v1/auth/sessions", headers: laptopAuth });
+      const current = list.json().sessions.find((s: { isCurrent: boolean }) => s.isCurrent);
+      await app.inject({ method: "DELETE", url: `/api/v1/auth/sessions/${current.id}`, headers: memberAuth });
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/device-keys",
+        headers: laptopAuth,
+        payload: { deviceName: "Sam's laptop", platform: "windows" },
+      });
+      expect(res.statusCode).toBe(401);
+    });
+
+    it("a key enrolled before binding adopts the approved device it's first used on", async () => {
+      // LAPTOP is approved again from the tests above (session sign-out keeps the approval).
+      const sam = (await app.inject({ method: "GET", url: "/api/v1/me", headers: memberAuth })).json();
+      const secret = "legacy-device-key-secret-legacy-device-key";
+      const [legacy] = await app.db
+        .insert(deviceKeys)
+        .values({ userId: sam.id, deviceName: "Old key", platform: "windows", secretHash: await argon2.hash(secret) })
+        .returning();
+      const key = `${legacy!.id}.${secret}`;
+
+      expect((await keyLogin(key, THIEF)).statusCode).toBe(401);
+      const [again] = await app.db
+        .insert(deviceKeys)
+        .values({ userId: sam.id, deviceName: "Old key", platform: "windows", secretHash: await argon2.hash(secret) })
+        .returning();
+      const key2 = `${again!.id}.${secret}`;
+      expect((await keyLogin(key2, LAPTOP)).statusCode).toBe(200);
+      const bound = await app.db.query.deviceKeys.findFirst({ where: eq(deviceKeys.id, again!.id) });
+      const laptop = await app.db.query.trustedDevices.findFirst({
+        where: eq(trustedDevices.deviceId, LAPTOP.deviceId),
+      });
+      expect(bound?.trustedDeviceId).toBe(laptop!.id);
+      expect((await keyLogin(key2, TEST_DEVICE)).statusCode).toBe(401);
     });
   });
 });

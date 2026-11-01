@@ -1,4 +1,5 @@
 import {
+  ChangePasswordRequest,
   CreateDeviceKeyRequest,
   DeviceKeyLoginRequest,
   LoginByIdRequest,
@@ -182,6 +183,7 @@ export default async function authRoutes(app: FastifyInstance) {
     const created: CreateDeviceKeyResponse = await authService.createDeviceKey(
       app.db,
       request.auth!.userId,
+      request.auth!.deviceSessionId,
       body,
     );
     return reply.status(201).send(created);
@@ -218,6 +220,14 @@ export default async function authRoutes(app: FastifyInstance) {
   app.post("/auth/2fa/disable", { preHandler: [app.requireAuth] }, async (request, reply) => {
     const body = TotpDisableRequest.parse(request.body);
     await authService.disableTotp(app.db, request.auth!.userId, body.password);
+    return reply.status(204).send();
+  });
+
+  app.post("/auth/password", { preHandler: [app.requireAuth] }, async (request, reply) => {
+    const auth = request.auth!;
+    if (!allowLogin(`${request.ip}:password:${auth.userId}`)) throw rateLimited();
+    const body = ChangePasswordRequest.parse(request.body);
+    await authService.changePassword(app.db, auth.userId, auth.deviceSessionId, body);
     return reply.status(204).send();
   });
 

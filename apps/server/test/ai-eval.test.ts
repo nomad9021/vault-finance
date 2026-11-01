@@ -202,7 +202,15 @@ describe.skipIf(!ON)("AI quality evaluation", () => {
             const res = await app.inject({ method: "POST", url: "/api/v1/ai/chat", headers: auth, payload: { message: s.message, autoApply: true } });
             const out = res.payload.split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l) as Record<string, unknown>);
             const reply = out.filter((l) => "token" in l).map((l) => l["token"]).join("").replace(/<vault-[a-z]+>[\s\S]*?<\/vault-[a-z]+>/g, "").trim();
-            const actions = (out.find((l) => "actions" in l)?.["actions"] ?? []) as Array<{ summary: string; status: string; error: string | null }>;
+            const proposed = (out.find((l) => "actions" in l)?.["actions"] ?? []) as Array<{ id: string; summary: string; status: string; error: string | null; client?: boolean }>;
+            // Auto mode holds back changes to existing data; click them through
+            // so the scorecard measures the model, not that safeguard.
+            const actions = [];
+            for (const a of proposed) {
+              if (a.status !== "pending" || a.client) { actions.push(a); continue; }
+              const done = await app.inject({ method: "POST", url: `/api/v1/ai/actions/${a.id}/approve`, headers: auth, payload: {} });
+              actions.push(done.json() as typeof a);
+            }
             const why = await s.check(api, reply).catch((e) => `check crashed: ${e}`);
             const steps = out.filter((l) => "status" in l).map((l) => l["status"]).slice(1).join(" / ");
             const raw = out.filter((l) => "token" in l).map((l) => l["token"]).join("");

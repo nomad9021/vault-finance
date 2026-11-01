@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatCents, formatCentsWhole, parseAmountToCents } from "./money.js";
+import { centsToAmountInput, formatCents, formatCentsWhole, parseAmountToCents } from "./money.js";
 
 /**
  * Everything over the wire is integer cents. These are the only places cents
@@ -39,9 +39,51 @@ describe("parseAmountToCents", () => {
     expect(parseAmountToCents("8.87")).toBe(887);
   });
 
+  it("reads every cent value from 0.00 to 99.99 exactly", () => {
+    for (let cents = 0; cents < 10_000; cents++) {
+      const text = `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, "0")}`;
+      expect(parseAmountToCents(text)).toBe(cents);
+    }
+  });
+
+  it("stays exact on large amounts", () => {
+    expect(parseAmountToCents("1234567.89")).toBe(123_456_789);
+    expect(parseAmountToCents("4503599627370.49")).toBe(450_359_962_737_049);
+  });
+
+  it("accepts the half-typed forms people really enter", () => {
+    expect(parseAmountToCents(".5")).toBe(50);
+    expect(parseAmountToCents(".05")).toBe(5);
+    expect(parseAmountToCents("12.")).toBe(1200);
+    expect(parseAmountToCents("12.5")).toBe(1250);
+    expect(parseAmountToCents("-.5")).toBe(-50);
+    expect(parseAmountToCents(".")).toBeNull();
+    expect(parseAmountToCents("-")).toBeNull();
+  });
+
+  it("refuses an amount too large to hold exactly", () => {
+    expect(parseAmountToCents("999999999999999999.99")).toBeNull();
+  });
+
   it("round-trips through formatCents", () => {
     for (const cents of [0, 5, 100, 123456, -4200]) {
       expect(parseAmountToCents(formatCents(cents))).toBe(cents);
+    }
+  });
+});
+
+describe("centsToAmountInput", () => {
+  it("shows every cent", () => {
+    expect(centsToAmountInput(0)).toBe("0.00");
+    expect(centsToAmountInput(5)).toBe("0.05");
+    expect(centsToAmountInput(60_005)).toBe("600.05");
+    expect(centsToAmountInput(123_456_789)).toBe("1234567.89");
+    expect(centsToAmountInput(-350)).toBe("-3.50");
+  });
+
+  it("reads back to the value it came from", () => {
+    for (const cents of [0, 1, 99, 100, 101, 1_115, 887, 60_005, 123_456_789, -4_201]) {
+      expect(parseAmountToCents(centsToAmountInput(cents))).toBe(cents);
     }
   });
 });

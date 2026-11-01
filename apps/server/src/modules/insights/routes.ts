@@ -32,6 +32,11 @@ function money(cents: number): string {
   return `$${(Math.abs(cents) / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
+/** Budget figures are exact: rounding could say "$400 of $400" when it's over. */
+function exactMoney(cents: number): string {
+  return `$${(Math.abs(cents) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 const SEVERITY_RANK = { critical: 0, warning: 1, info: 2, good: 3 } as const;
 
 export default async function insightRoutes(app: FastifyInstance) {
@@ -118,7 +123,7 @@ export default async function insightRoutes(app: FastifyInstance) {
           id: `budget-over-${categoryId}`,
           severity: "warning",
           title: `${name} is over budget`,
-          detail: `${money(spent)} spent against a ${money(budget.amountCents)} budget — ${money(spent - budget.amountCents)} over with the month still running.`,
+          detail: `${exactMoney(spent)} spent against a ${exactMoney(budget.amountCents)} budget — ${exactMoney(spent - budget.amountCents)} over with the month still running.`,
           page: "budgets",
           categoryId,
           accountId: null,
@@ -129,7 +134,7 @@ export default async function insightRoutes(app: FastifyInstance) {
           id: `budget-near-${categoryId}`,
           severity: "info",
           title: `${name} is nearly spent`,
-          detail: `${money(spent)} of ${money(budget.amountCents)} used — ${money(budget.amountCents - spent)} left this month.`,
+          detail: `${exactMoney(spent)} of ${exactMoney(budget.amountCents)} used — ${exactMoney(budget.amountCents - spent)} left this month.`,
           page: "budgets",
           categoryId,
           accountId: null,

@@ -62,6 +62,8 @@ If you'd rather configure by hand:
 git clone <your-fork-or-release-tarball> vault-finance
 cd vault-finance/docker
 cp .env.example .env        # defaults work; edit if you want
+mkdir -p data/{postgres,vault,redis,ollama}
+docker compose run --rm --no-deps --user root --entrypoint chown server -R vault:vault /data
 docker compose up -d
 ```
 
@@ -106,6 +108,19 @@ you reach the machine:
 | Same LAN | `https://192.168.x.x:8443` or `https://hostname.local:8443` |
 | Tailscale / VPN | `https://<tailscale-ip-or-magicdns-name>:8443` |
 | Reverse proxy with real TLS | whatever hostname the proxy serves |
+
+**Other private networks work too.** Headscale, NetBird, Twingate, ZeroTier,
+WireGuard or any similar VPN only needs to make the server reachable: enter the
+server's address on that network when you connect, and choose your network under
+**Settings → Connection → Private network**. The app reads and switches only the
+Tailscale client (which Headscale also uses); turn any other VPN on from its own
+app. A VPN being off never blocks the app as long as the server answers, so
+leaving it off at home is fine.
+
+**Home and away:** add the server's other address under **Settings → Connection →
+Second address**. The app uses whichever address answers and moves between them
+by itself. A second address must present the certificate you already trust, so it
+has to be reachable once when you add it (turn the VPN on for that moment).
 
 **Tailscale** is the recommended way to use the app away from home: install
 Tailscale on both the server and your devices, and use the server's Tailscale
@@ -169,8 +184,14 @@ APP_PUBLIC_URL=https://192.168.1.10:8443   # used for links in emails
 SURVEY_URL=https://forms.example.com/…      # optional, linked from the welcome email
 ```
 
-With `SMTP_HOST` blank the server runs exactly as before — nothing is sent, and
-member invites fall back to a copy-able one-time link shown in the app.
+With `SMTP_HOST` blank, the server sends no notifications. Invites still work:
+the owner connects their own email under **Settings → Members** (using an app
+password, stored encrypted), and invitations come from that address. If an email
+can't be sent, the app says so and shows a one-time link to share instead.
+
+Invite links use `APP_PUBLIC_URL`, or the address the owner's app is connected
+to when that's unset. The invited person must be able to reach that address, for
+example on the same LAN or over your VPN.
 
 ## 6. Family members
 
@@ -321,7 +342,15 @@ download, `ollama pull llama3.2:1b` (~1.3 GB) streams fine on any hardware —
 just don't judge answer quality by it; small models quote your numbers
 correctly but reason clumsily about them.
 
-## 9. Backups
+## 9. Locking your data with a passphrase
+
+The installer offers to keep everything the server stores in an encrypted
+volume that only your passphrase opens. After a restart, unlock it with
+`bash installers/server/vault-storage.sh unlock` and the server starts. Details
+and how to add it to an existing server:
+[operations — passphrase-locked storage](operations.md#passphrase-locked-storage).
+
+## 9b. Backups
 
 Back up with the encrypted backup script. Each backup is one AES-256-encrypted
 file holding the database and the server's data folder, kept 30 days:
