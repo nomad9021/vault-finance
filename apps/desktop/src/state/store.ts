@@ -33,7 +33,7 @@ import {
 } from "../lib/serverRoute.js";
 import { describeProbeFailure, runChecks, type UiCheck } from "../lib/startupChecks.js";
 
-export const APP_VERSION = "0.1.17";
+export const APP_VERSION = "0.1.18";
 
 export type Screen =
   | { name: "boot" }
