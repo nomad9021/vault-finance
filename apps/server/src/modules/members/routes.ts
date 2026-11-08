@@ -156,7 +156,7 @@ export default async function memberRoutes(
         sentFrom = await deliver(
           {
             to: body.email.trim().toLowerCase(),
-            ...memberInvite({ inviterName, inviteUrl: url, expiresAt }),
+            ...memberInvite({ inviterName, inviteUrl: url, expiresAt, version: opts.config.apiVersion }),
           },
           inviterName,
         );
