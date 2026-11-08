@@ -1,3 +1,4 @@
+import { appDownloads, RELEASES_PAGE_URL } from "@vault/shared";
 import type { MailMessage } from "./mailer.js";
 
 /**
@@ -135,15 +136,22 @@ export function memberInvite(input: {
   inviterName: string;
   inviteUrl: string;
   expiresAt: Date;
+  /** The release to download: the server's own version, which the app must match. */
+  version: string;
 }): Body {
   const expires = input.expiresAt.toUTCString();
+  const serverAddress = new URL(input.inviteUrl).origin;
+  const downloads = appDownloads(input.version);
   const lines = [
     `${input.inviterName} invited you to join their ${BRAND} household.`,
-    `Open this link to set your password and finish creating your account:`,
-    input.inviteUrl,
-    `The link expires ${expires}.`,
+    `1. Install the app for your computer:\n${downloads.map((d) => `${d.label}: ${d.url}`).join("\n")}\n(All downloads: ${RELEASES_PAGE_URL})`,
+    `2. Open this link to set your password and finish creating your account:\n${input.inviteUrl}\nThe link expires ${expires}.`,
+    `3. Open ${BRAND}, connect to ${serverAddress}, and sign in.`,
     REACH_NOTE(input.inviterName),
   ];
+  const downloadHtml = downloads
+    .map((d) => `<a href="${escapeAttr(d.url)}" style="color:#7c5cff">${escapeHtml(d.label)}</a>`)
+    .join(" · ");
   return {
     subject: `${input.inviterName} invited you to ${BRAND}`,
     text: textFrom(lines),
@@ -151,7 +159,9 @@ export function memberInvite(input: {
       `You've been invited to ${BRAND}`,
       [
         `<strong>${escapeHtml(input.inviterName)}</strong> invited you to join their household.`,
-        `Use the button below to set your password and finish creating your account. The link expires ${escapeHtml(expires)}.`,
+        `<strong>1. Install the app:</strong> ${downloadHtml} (<a href="${escapeAttr(RELEASES_PAGE_URL)}" style="color:#7c5cff">all downloads</a>)`,
+        `<strong>2.</strong> Use the button below to set your password and finish creating your account. The link expires ${escapeHtml(expires)}.`,
+        `<strong>3.</strong> Open ${BRAND}, connect to <code>${escapeHtml(serverAddress)}</code>, and sign in.`,
         escapeHtml(REACH_NOTE(input.inviterName)),
       ],
       { label: "Accept the invitation", url: input.inviteUrl },

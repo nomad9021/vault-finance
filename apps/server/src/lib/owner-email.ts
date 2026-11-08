@@ -33,17 +33,26 @@ function transportFor(box: OwnerMailbox): Transporter {
  * server responses, so only this text is ever shown to the owner.
  */
 export function mailProblem(err: unknown): string {
-  const code = (err as { code?: unknown } | null)?.code;
+  const e = (err ?? {}) as { code?: unknown; response?: unknown };
+  const code = typeof e.code === "string" ? e.code : null;
+  // The provider's own reply (e.g. "535-5.7.8 Username and Password not
+  // accepted") says what actually went wrong. Only that reply is passed on,
+  // never the raw error text, and only to the owner who's connecting.
+  const reply =
+    typeof e.response === "string"
+      ? e.response.replace(/\s+/g, " ").trim().slice(0, 200)
+      : null;
+  const said = reply ? ` Your provider said: "${reply}"` : code ? ` (error ${code})` : "";
   if (code === "EAUTH") {
-    return "Your email provider rejected that sign-in. Check the address and use an app password, not your normal password.";
+    return `Your email provider rejected that sign-in. Check the address, and use a new app password rather than your normal password.${said}`;
   }
   if (code === "EENVELOPE") {
-    return "Your email provider refused that recipient address.";
+    return `Your email provider refused that address.${said}`;
   }
   if (code === "ESOCKET" || code === "ECONNECTION" || code === "ETIMEDOUT" || code === "EDNS") {
-    return "Couldn't reach your email provider from the server. Check the mail server address and the server's internet connection.";
+    return `Couldn't reach your email provider from the server. Check the mail server address and that the server can reach the internet.${said}`;
   }
-  return "Your email provider didn't accept the message. Please try again.";
+  return `Your email provider didn't accept the message.${said}`;
 }
 
 /** Sign in without sending anything. Throws what nodemailer throws. */

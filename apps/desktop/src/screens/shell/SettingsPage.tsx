@@ -20,6 +20,7 @@ import {
   type DeviceSession,
   type EmailConnectionStatus,
   type InviteMemberResponse,
+  inviteMessage,
   mailServerFor,
   type PendingApproval,
   type TrustedDevice,
@@ -594,7 +595,7 @@ function MembersSection() {
   const [emailStatus, setEmailStatus] = useState<EmailConnectionStatus | null>(null);
   // Servers before 0.1.17 send invites their own way and have no email settings.
   const [olderServer, setOlderServer] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"link" | "message" | null>(null);
   const [connect, setConnect] = useState({ email: "", password: "", host: "", port: "587" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -689,7 +690,7 @@ function MembersSection() {
           // Older servers require a name; the part before the @ stands in for it.
           ...(olderServer ? { displayName: to.split("@")[0] || to } : {}),
         });
-        setCopied(false);
+        setCopied(null);
         setInviteResult({ ...result, to, linkOnly, link: shareableInviteLink(result.inviteUrl, serverUrl) });
       } else {
         await client.createMember({
@@ -942,14 +943,31 @@ function MembersSection() {
         actions={
           <>
             {inviteResult?.link && (
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  void navigator.clipboard.writeText(inviteResult.link!).then(() => setCopied(true)).catch(() => {});
-                }}
-              >
-                {copied ? "Copied" : "Copy link"}
-              </Button>
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    const link = inviteResult.link!;
+                    const text = inviteMessage({
+                      inviterName: user.displayName,
+                      inviteUrl: link,
+                      serverAddress: new URL(link).origin,
+                      version: APP_VERSION,
+                    });
+                    void navigator.clipboard.writeText(text).then(() => setCopied("message")).catch(() => {});
+                  }}
+                >
+                  {copied === "message" ? "Message copied" : "Copy message with downloads"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(inviteResult.link!).then(() => setCopied("link")).catch(() => {});
+                  }}
+                >
+                  {copied === "link" ? "Copied" : "Copy link only"}
+                </Button>
+              </>
             )}
             <Button variant="primary" onClick={() => setInviteResult(null)}>
               Done

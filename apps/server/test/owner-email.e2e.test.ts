@@ -32,7 +32,8 @@ vi.mock("nodemailer", () => ({
   },
 }));
 
-const codeError = (code: string) => Object.assign(new Error(`raw provider detail ${code}`), { code });
+const codeError = (code: string, response?: string) =>
+  Object.assign(new Error(`raw provider detail ${code}`), { code, ...(response ? { response } : {}) });
 
 /**
  * Invitations sent from the owner's own connected mailbox, with no server-wide
@@ -125,10 +126,12 @@ describe("owner email invitations", () => {
   });
 
   it("a rejected sign-in explains the app password and saves nothing", async () => {
-    smtp.verifyError = codeError("EAUTH");
+    smtp.verifyError = codeError("EAUTH", "535-5.7.8 Username and Password not accepted.");
     const res = await connectGmail();
     expect(res.statusCode).toBe(400);
     expect(res.json().error.message).toContain("app password");
+    // The provider's reply is shown so the owner can see what went wrong.
+    expect(res.json().error.message).toContain("535-5.7.8 Username and Password not accepted.");
     expect(res.body).not.toContain("raw provider detail");
     const status = await asOwner("GET", "/api/v1/members/email");
     expect(status.json().connected).toBe(false);
@@ -174,6 +177,11 @@ describe("owner email invitations", () => {
     expect(mail["to"]).toBe("sam@vault.test");
     expect(mail["text"]).toContain(res.json().inviteUrl);
     expect(mail["text"]).toContain("private network");
+    // Everything she needs: installers for each computer and where to connect.
+    expect(mail["text"]).toContain("Mac (Apple chip): https://github.com/nomad9021/vault-finance/releases/download/v");
+    expect(mail["text"]).toContain("Windows: ");
+    expect(mail["text"]).toContain("Linux: ");
+    expect(mail["text"]).toContain("connect to https://100.64.0.5:8443");
 
     const token = new URL(res.json().inviteUrl).searchParams.get("token")!;
     expect(new URL(res.json().inviteUrl).origin).toBe("https://100.64.0.5:8443");
