@@ -24,6 +24,7 @@ describe("inviteMessage", () => {
     expect(text).toContain("Windows: https://github.com/nomad9021/vault-finance/releases/download/v0.1.19/");
     expect(text).toContain("Linux: ");
     expect(text).toContain("Mac (Intel): ");
+    expect(text).toContain("click Open Anyway next to Vault Finance");
     expect(text).toContain("https://192.168.1.122:8443/invite?token=a.b");
     expect(text).toContain("connect to https://192.168.1.122:8443");
   });

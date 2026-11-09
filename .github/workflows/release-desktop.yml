@@ -81,10 +81,14 @@ jobs:
           # macOS code signing + notarization. Leave these commented until you
           # actually have an Apple Developer certificate: Tauri's macOS bundler
           # treats a *present-but-empty* APPLE_CERTIFICATE as "sign me" and then
-          # fails ("failed to import keychain certificate"). With them absent it
-          # ad-hoc signs and ships an unsigned .dmg (Gatekeeper: right-click →
-          # Open on first launch). Uncomment all six once the secrets exist —
-          # see docs/releasing.md.
+          # fails ("failed to import keychain certificate"). With them absent the
+          # bundle is ad-hoc signed via bundle.macOS.signingIdentity "-" in
+          # tauri.conf.json — without that, macOS calls the downloaded app
+          # "damaged" and only offers Move to Trash. That ships an un-notarized
+          # .dmg (Gatekeeper blocks first
+          # launch until approved: Open Anyway in System Settings on macOS 15+,
+          # right-click → Open on earlier versions). Uncomment all six once the
+          # secrets exist — see docs/releasing.md.
           # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
