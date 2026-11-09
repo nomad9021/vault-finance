@@ -75,14 +75,15 @@ visibility). Self-hosters then update with `installers/server/update-server.sh`
    - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — empty string (key has no password)
 
 Unsigned-OS builds still work without any further secrets: Windows shows a
-SmartScreen warning, macOS requires right-click → Open on first launch. The
-updater artifacts are always signed with the Tauri key above regardless —
+SmartScreen warning, macOS needs a one-time approval on first launch (System
+Settings → Privacy & Security → Open Anyway on macOS 15+, right-click → Open on
+earlier versions). The updater artifacts are always signed with the Tauri key above regardless —
 that signature is what the auto-updater verifies.
 
 ## macOS signing & notarization (one-time, browser + CLI, no Mac needed)
 
-Without these, the `.dmg` works but Gatekeeper warns. With them, it opens
-clean. All steps happen in a browser or in CI:
+Without these, the `.dmg` works but Gatekeeper blocks the first launch until
+the user approves it. With them, it opens clean. All steps happen in a browser or in CI:
 
 1. Enroll in the [Apple Developer Program](https://developer.apple.com/programs/)
    ($99/yr) — browser only.
