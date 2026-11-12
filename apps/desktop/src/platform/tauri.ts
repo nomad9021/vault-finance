@@ -34,10 +34,13 @@ let pendingUpdate: Update | null = null;
 export async function createTauriPlatform(): Promise<HostPlatform> {
   const store = new LazyStore("settings.json");
   const os = osPlatform();
+  const ios = os === "ios";
+  // Lets the stylesheet clear the notch and home indicator (components.css).
+  if (ios) document.documentElement.dataset.platform = "ios";
   const platformName: ApiPlatform =
-    os === "windows" ? "windows" : os === "macos" ? "macos" : "linux";
+    os === "windows" ? "windows" : os === "macos" ? "macos" : ios ? "ios" : "linux";
   // Best-effort: a device name is a nicety, not a reason to fail boot.
-  let deviceName = `${platformName} desktop`;
+  let deviceName = ios ? "iPhone" : `${platformName} desktop`;
   try {
     deviceName = (await hostname()) ?? deviceName;
   } catch (err) {
@@ -118,6 +121,8 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
     },
 
     async checkForUpdate() {
+      // iOS has no in-app updater: a new build is installed onto the phone.
+      if (ios) return null;
       pendingUpdate = await check();
       return pendingUpdate ? { version: pendingUpdate.version } : null;
     },
@@ -141,29 +146,44 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
       await relaunch();
     },
 
-    async openAdminConsole() {
-      await invoke("open_admin_window");
-    },
-
-    async tailscaleStatus() {
-      return await invoke<TailscaleStatus>("tailscale_status");
-    },
-    async tailscaleUp() {
-      return await invoke<TailscaleActionResult>("tailscale_up");
-    },
-    async tailscaleDown() {
-      return await invoke<TailscaleActionResult>("tailscale_down");
-    },
+    // Desktop only. iOS has one window, and the Tailscale app there can't be
+    // driven by other apps — the phone just needs it switched on.
+    ...(ios
+      ? {}
+      : {
+          async openAdminConsole() {
+            await invoke("open_admin_window");
+          },
+          async tailscaleStatus() {
+            return await invoke<TailscaleStatus>("tailscale_status");
+          },
+          async tailscaleUp() {
+            return await invoke<TailscaleActionResult>("tailscale_up");
+          },
+          async tailscaleDown() {
+            return await invoke<TailscaleActionResult>("tailscale_down");
+          },
+        }),
     onSystemLock(onLock) {
       let stop: (() => void) | null = null;
       let cancelled = false;
       void listen("vault-system-lock", () => onLock()).then((un) => (cancelled ? un() : (stop = un)));
+      // iOS: lock the moment the app leaves the screen (home swipe, app
+      // switch, phone locked), so the app switcher's snapshot shows the lock
+      // screen rather than balances.
+      const onHidden = () => {
+        if (document.visibilityState === "hidden") onLock();
+      };
+      if (ios) document.addEventListener("visibilitychange", onHidden);
       return () => {
         cancelled = true;
         stop?.();
+        if (ios) document.removeEventListener("visibilitychange", onHidden);
       };
     },
     async setFullscreen(on) {
+      // The iOS app is always full screen.
+      if (ios) return;
       await getCurrentWindow().setFullscreen(on);
     },
     async openExternal(url) {

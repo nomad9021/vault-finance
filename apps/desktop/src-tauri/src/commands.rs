@@ -259,12 +259,22 @@ pub async fn tailscale_down() -> Result<crate::tailscale::TailscaleActionResult,
 /// Open a link in the user's browser (Tailscale sign-in, download pages).
 /// https only, so the webview can't use this to launch local files or apps.
 #[tauri::command]
-pub fn open_external(url: String) -> Result<(), CommandError> {
+pub fn open_external(
+    #[allow(unused_variables)] app: tauri::AppHandle,
+    url: String,
+) -> Result<(), CommandError> {
     let ok = url.starts_with("https://")
         && !url.chars().any(|c| c.is_whitespace() || c == '"' || c == '\'' || c == '`');
     if !ok {
         return Err(CommandError::Other("only https links can be opened".into()));
     }
+    // iOS apps can't start other programs; the opener plugin hands the link
+    // to Safari.
+    #[cfg(target_os = "ios")]
+    let result = {
+        use tauri_plugin_opener::OpenerExt;
+        app.opener().open_url(&url, None::<&str>)
+    };
     #[cfg(target_os = "macos")]
     let result = std::process::Command::new("open").arg(&url).spawn();
     #[cfg(windows)]
@@ -276,7 +286,7 @@ pub fn open_external(url: String) -> Result<(), CommandError> {
             .creation_flags(0x0800_0000)
             .spawn()
     };
-    #[cfg(all(unix, not(target_os = "macos")))]
+    #[cfg(all(unix, not(any(target_os = "macos", target_os = "ios"))))]
     let result = std::process::Command::new("xdg-open").arg(&url).spawn();
     result
         .map(|_| ())

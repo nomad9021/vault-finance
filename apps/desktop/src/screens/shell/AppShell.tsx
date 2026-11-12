@@ -107,7 +107,7 @@ export function AppShell() {
     <div
       style={{
         display: "flex",
-        height: "100vh",
+        height: "100dvh",
         overflow: "hidden",
         background: "var(--color-bg)",
         color: "var(--content-primary)",

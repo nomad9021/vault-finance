@@ -239,6 +239,9 @@ Open `https://<server-ip>:8443/` in your phone's browser for the read-only
 mobile view, and add it to your home screen. It locks the moment you switch
 away and signs out after a few minutes idle.
 
+A full iPhone app (the desktop app built for iOS, with Face ID) is in
+progress — it has to be built on a Mac for now. See [docs/ios.md](docs/ios.md).
+
 ---
 
 ## Repository layout
@@ -268,6 +271,7 @@ scripts/          Repo tooling (dev stack, demo seed, version bump)
 | [api-design.md](docs/api-design.md) | REST API, auth flows, streaming |
 | [self-hosting.md](docs/self-hosting.md) | Deploying and operating your server |
 | [operations.md](docs/operations.md) | Data location, 2FA, backups, lockout recovery |
+| [ios.md](docs/ios.md) | Building and running the iPhone app |
 | [releasing.md](docs/releasing.md) | Cutting desktop releases (maintainers) |
 | [roadmap.md](docs/roadmap.md) | Milestones M1–M6 |
 | [docs/adr/](docs/adr/) | Architecture decision records |

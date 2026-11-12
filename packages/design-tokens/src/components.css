@@ -1421,3 +1421,29 @@ button.list-row:active, .list-row[role="button"]:active {
   white-space: nowrap;
   border: 0;
 }
+
+/* iOS app (data-platform="ios", set by the Tauri host). The page runs edge to
+   edge (viewport-fit=cover), so the header clears the notch / Dynamic Island
+   and the tab bar clears the home indicator. Inputs stay at 16px there:
+   WebKit on iPhone zooms the whole page into any field smaller than that. */
+:root[data-platform="ios"] {
+  --tabbar-safe: max(0px, calc(env(safe-area-inset-bottom) - 12px));
+}
+:root[data-platform="ios"] .app-header {
+  height: calc(var(--header-h) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+}
+:root[data-platform="ios"] .app-main {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+:root[data-platform="ios"] input,
+:root[data-platform="ios"] select,
+:root[data-platform="ios"] textarea,
+:root[data-platform="ios"] .input {
+  font-size: max(16px, 1em);
+}
+:root[data-platform="ios"] body {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}

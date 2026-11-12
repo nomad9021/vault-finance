@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "ios",
+  "description": "iOS main window: same as desktop's default minus the updater (the device installs updates) and fullscreen (the app is always full screen). Face ID and Safari links go through the Rust commands, so the webview gets no biometric or opener permissions.",
+  "windows": [
+    "main"
+  ],
+  "platforms": [
+    "iOS"
+  ],
+  "permissions": [
+    "core:default",
+    "os:default",
+    "store:default",
+    "process:allow-restart"
+  ]
+}

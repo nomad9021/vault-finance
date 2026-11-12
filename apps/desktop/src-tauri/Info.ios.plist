@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Shown the first time Face ID sign-in is turned on. -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>Vault Finance uses Face ID to sign you in on this iPhone.</string>
+	<!-- The home server is usually on the same Wi-Fi (192.168.x.x). -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Vault Finance connects to your household's Vault server on your home network.</string>
+	<!-- Phone app: no iPad split view. -->
+	<key>UIRequiresFullScreen</key>
+	<true/>
+</dict>
+</plist>

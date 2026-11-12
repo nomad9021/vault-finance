@@ -41,7 +41,13 @@ impl Serialize for BiometricError {
 }
 
 #[tauri::command]
-pub async fn biometric_status() -> BiometricStatus {
+pub async fn biometric_status(
+    #[allow(unused_variables)] app: tauri::AppHandle,
+) -> BiometricStatus {
+    // The iOS plugin lives on the app handle; the desktop APIs are global.
+    #[cfg(target_os = "ios")]
+    return imp::status_for(&app).await;
+    #[cfg(not(target_os = "ios"))]
     imp::status().await
 }
 
@@ -336,9 +342,74 @@ mod imp {
     }
 }
 
-// ── Anything else (iOS is Phase 2 and will use tauri-plugin-biometric) ──
+// ── iOS: Face ID or Touch ID via tauri-plugin-biometric (LocalAuthentication) ──
 
-#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+#[cfg(target_os = "ios")]
+mod imp {
+    use super::*;
+    use tauri::plugin::mobile::PluginInvokeError;
+    use tauri::Manager;
+    use tauri_plugin_biometric::{AuthOptions, BiometricExt, BiometryType};
+
+    // LAError names the Swift side rejects with that mean "the user backed out".
+    const CANCEL_CODES: [&str; 4] = ["userCancel", "userFallback", "systemCancel", "appCancel"];
+
+    fn label(kind: &BiometryType) -> &'static str {
+        match kind {
+            BiometryType::TouchID => "Touch ID",
+            _ => "Face ID",
+        }
+    }
+
+    pub async fn status_for(app: &tauri::AppHandle) -> BiometricStatus {
+        match app.biometric().status() {
+            Ok(s) if s.is_available => available(label(&s.biometry_type)),
+            Ok(s) if s.error_code.as_deref() == Some("biometryNotEnrolled") => unavailable(
+                label(&s.biometry_type),
+                "Face ID isn't set up — turn it on in Settings → Face ID & Passcode.",
+            ),
+            Ok(s) => unavailable(
+                label(&s.biometry_type),
+                s.error.unwrap_or_else(|| "Face ID isn't available on this iPhone.".into()),
+            ),
+            Err(e) => unavailable("Face ID", e.to_string()),
+        }
+    }
+
+    pub async fn authenticate(
+        window: &tauri::WebviewWindow,
+        reason: &str,
+    ) -> Result<(), BiometricError> {
+        let options = AuthOptions {
+            // Face ID only — the passcode fallback would let anyone who has
+            // watched the passcode being typed sign in.
+            allow_device_credential: false,
+            ..Default::default()
+        };
+        match window.app_handle().biometric().authenticate(reason.to_owned(), options) {
+            Ok(()) => Ok(()),
+            Err(tauri_plugin_biometric::Error::PluginInvoke(PluginInvokeError::InvokeRejected(
+                rejected,
+            ))) if rejected
+                .code
+                .as_deref()
+                .is_some_and(|c| CANCEL_CODES.contains(&c)) =>
+            {
+                Err(BiometricError::Cancelled)
+            }
+            Err(tauri_plugin_biometric::Error::PluginInvoke(PluginInvokeError::InvokeRejected(
+                rejected,
+            ))) if rejected.code.as_deref() == Some("authenticationFailed") => {
+                Err(BiometricError::Failed)
+            }
+            Err(e) => Err(BiometricError::Unavailable(e.to_string())),
+        }
+    }
+}
+
+// ── Anything else ──
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux", target_os = "ios")))]
 mod imp {
     use super::*;
 

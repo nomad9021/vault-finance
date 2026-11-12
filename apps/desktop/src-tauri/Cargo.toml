@@ -17,11 +17,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-os = "2"
 tauri-plugin-store = "2"
-tauri-plugin-single-instance = "2"
 tauri-plugin-process = "2"
-
-[target."cfg(any(target_os = \"macos\", windows, target_os = \"linux\"))".dependencies]
-tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
@@ -32,6 +28,17 @@ rustls-pki-types = "1"
 sha2 = "0.11"
 hex = "0.4"
 thiserror = "2"
+
+# Desktop only: in-app updates (iOS updates come from the device install) and
+# one running copy (iOS never starts a second one).
+[target."cfg(any(target_os = \"macos\", windows, target_os = \"linux\"))".dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-single-instance = "2"
+
+# iOS: Face ID / Touch ID, and opening links in Safari (no `open` binary there).
+[target."cfg(target_os = \"ios\")".dependencies]
+tauri-plugin-biometric = "2"
+tauri-plugin-opener = "2"
 
 # Biometric sign-in (src/biometric.rs): one native API per OS.
 [target."cfg(windows)".dependencies]

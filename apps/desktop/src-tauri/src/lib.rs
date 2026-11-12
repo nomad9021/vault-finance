@@ -13,19 +13,29 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_process::init());
-    // Auto-update is desktop-only; the Phase 2 iOS build updates via the App Store.
+    // Auto-update and the one-copy rule are desktop-only; iOS installs the
+    // app itself and never starts a second copy.
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+        builder = builder
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            // Second launch focuses the existing window instead of a new process.
+            .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }));
+    }
+    // Face ID / Touch ID, and Safari for outside links. Only the Rust side
+    // calls these plugins, so the webview gets no permissions for them.
+    #[cfg(target_os = "ios")]
+    {
+        builder = builder
+            .plugin(tauri_plugin_biometric::init())
+            .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build());
     }
     builder
-        // Second launch focuses the existing window instead of a new process.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
-        }))
         .invoke_handler(tauri::generate_handler![
             commands::http_request,
             commands::http_request_stream,
