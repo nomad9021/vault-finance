@@ -13,14 +13,18 @@ export function AuthLayout({ children, width = 380 }: { children: ReactNode; wid
         background:
           "radial-gradient(900px 500px at 50% -10%, color-mix(in srgb, var(--color-section) 45%, var(--color-bg)) 0%, var(--color-bg) 70%)",
         display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 20,
+        // Clear the iPhone notch / home indicator (env() is 0 on desktop).
+        padding:
+          "max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left))",
         overflow: "auto",
       }}
     >
       <div
         style={{
+          // margin:auto centres like align/justify-center, but when the card is
+          // taller than the view (phone keyboard open) its top stays reachable
+          // instead of being pushed above the scroll area.
+          margin: "auto",
           width,
           maxWidth: "100%",
           background: "var(--color-surface)",

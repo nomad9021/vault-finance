@@ -327,6 +327,14 @@ pub fn run_external_updater(app: tauri::AppHandle) -> Result<(), CommandError> {
 /// Reveal the pre-declared, normally-hidden admin console window. Its webview
 /// is a separate capability group (`admin.json`) so a fault in the main window
 /// can't reach it and vice-versa.
+#[cfg(mobile)]
+#[tauri::command]
+pub fn open_admin_window(_app: tauri::AppHandle) -> Result<(), CommandError> {
+    // One window on iPhone; the UI hides the admin entry point there.
+    Err(CommandError::Other("the admin console isn't available on this device".into()))
+}
+
+#[cfg(desktop)]
 #[tauri::command]
 pub fn open_admin_window(app: tauri::AppHandle) -> Result<(), CommandError> {
     use tauri::Manager;
