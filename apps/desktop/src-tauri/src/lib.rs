@@ -58,6 +58,10 @@ pub fn run() {
         .setup(|app| {
             // Lock the app when the screen locks or the computer sleeps.
             lockwatch::start(app.handle().clone());
+            #[cfg(target_os = "ios")]
+            if let Some(window) = app.get_webview_window("main") {
+                full_bleed_webview(&window);
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -71,4 +75,24 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// iPhone: let the page fill the whole screen. By default the WKWebView's
+/// scroll view insets its content by the safe areas (notch + home bar), which
+/// shrinks the page by ~96pt and leaves the bare web-view background showing
+/// at the bottom. The stylesheet already pads with `env(safe-area-inset-*)`
+/// (index.html sets `viewport-fit=cover`), so turn the automatic inset off.
+#[cfg(target_os = "ios")]
+fn full_bleed_webview(window: &tauri::WebviewWindow) {
+    use objc2::{msg_send, runtime::AnyObject};
+    // UIScrollViewContentInsetAdjustmentBehavior.never
+    const NEVER: isize = 2;
+    let result = window.with_webview(|webview| unsafe {
+        let wk = webview.inner() as *mut AnyObject;
+        let scroll: *mut AnyObject = msg_send![wk, scrollView];
+        let _: () = msg_send![scroll, setContentInsetAdjustmentBehavior: NEVER];
+    });
+    if let Err(e) = result {
+        eprintln!("couldn't make the web view full screen: {e}");
+    }
 }

@@ -37,6 +37,7 @@ tauri-plugin-single-instance = "2"
 
 # iOS: Face ID / Touch ID, and opening links in Safari (no `open` binary there).
 [target."cfg(target_os = \"ios\")".dependencies]
+objc2 = "0.6"
 tauri-plugin-biometric = "2"
 tauri-plugin-opener = "2"
 

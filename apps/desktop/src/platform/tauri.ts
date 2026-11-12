@@ -14,6 +14,7 @@ import type {
   TailscaleActionResult,
   TailscaleStatus,
 } from "./types.js";
+import { suppressProgrammaticKeyboard } from "./iosKeyboard.js";
 
 interface RustHttpResponse {
   status: number;
@@ -35,8 +36,12 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
   const store = new LazyStore("settings.json");
   const os = osPlatform();
   const ios = os === "ios";
-  // Lets the stylesheet clear the notch and home indicator (components.css).
-  if (ios) document.documentElement.dataset.platform = "ios";
+  if (ios) {
+    // Lets the stylesheet clear the notch and home indicator (components.css).
+    document.documentElement.dataset.platform = "ios";
+    // Keyboard opens only when the user taps a text box (iosKeyboard.ts).
+    suppressProgrammaticKeyboard();
+  }
   const platformName: ApiPlatform =
     os === "windows" ? "windows" : os === "macos" ? "macos" : ios ? "ios" : "linux";
   // Best-effort: a device name is a nicety, not a reason to fail boot.
