@@ -15,7 +15,8 @@ git tag v0.2.0
 git push && git push --tags
 ```
 
-CI builds all platforms and creates a **draft** GitHub release. Spot-check
+CI first creates one **draft** GitHub release for the tag, then builds every
+platform into it. Spot-check
 the artifacts, then click **Publish**. Publishing is what makes
 `releases/latest/download/latest.json` resolve — existing installs see the
 update on their next check.
