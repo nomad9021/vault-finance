@@ -27,6 +27,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { availableCents, shownBalance, useShowActualBalances } from "../../lib/balanceView.js";
 import { moveWidget, placeWidget, resolveLayout, SPANS, type ResolvedWidget, type Span } from "../../lib/dashboardLayout.js";
 import { useData } from "../../lib/useData.js";
+import { useCountUp } from "../../lib/useCountUp.js";
 import { useLayoutMode } from "../../lib/useLayout.js";
 import { periodFigures } from "../../lib/budgetPeriod.js";
 import { useApp } from "../../state/store.js";
@@ -923,6 +924,7 @@ function PhoneSummary({
   savingsRate: number | null;
   onNavigate: Navigate;
 }) {
+  const shownNetWorth = useCountUp(netWorthCents);
   const history = points.map((p) => p.netWorthCents);
   const projected = project(history, 3);
   const first = history[0] ?? 0;
@@ -937,7 +939,7 @@ function PhoneSummary({
     <div className="panel phone-summary">
       <button type="button" className="phone-summary-hero" onClick={() => onNavigate("networth")}>
         <span className="t-sm t-tertiary">Net worth</span>
-        <span className="phone-summary-value num">{formatCentsWhole(netWorthCents)}</span>
+        <span className="phone-summary-value num">{formatCentsWhole(Math.round(shownNetWorth))}</span>
         {history.length >= 2 && (
           <span className={`stat-delta ${delta >= 0 ? "pos" : "neg"}`} style={{ alignSelf: "flex-start" }}>
             <Icon name={delta >= 0 ? "arrowUp" : "arrowDown"} size={12} />

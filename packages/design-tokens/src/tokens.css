@@ -97,12 +97,13 @@
   --radius-pill: 999px;
 
   /* — motion — */
-  --dur-fast: 0.12s;
+  --dur-fast: 0.15s;
   --dur: 0.2s;
-  --dur-slow: 0.32s;
-  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --dur-slow: 0.3s; /* the ceiling: nothing animates longer */
+  /* One curve for all motion (same as Life Hub): quick start, soft landing. */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1); /* no overshoot: nothing bounces */
 
   /* — layout — */
   --page-max: 1240px;

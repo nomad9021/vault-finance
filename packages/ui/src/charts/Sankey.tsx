@@ -265,6 +265,7 @@ export function Sankey({
 
   return (
     <svg
+      className="chart-reveal"
       viewBox={`0 0 ${W} ${geo.height}`}
       style={{ width: "100%", height: "auto", display: "block" }}
       role="img"
