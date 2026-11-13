@@ -32,6 +32,7 @@ import {
   type ServerRoute,
 } from "../lib/serverRoute.js";
 import { describeProbeFailure, runChecks, type UiCheck } from "../lib/startupChecks.js";
+import { applyPhonePreviewLook, isPhonePreview, signInPhonePreview } from "../platform/phonePreview.js";
 
 export const APP_VERSION = "0.1.20";
 
@@ -433,6 +434,11 @@ export const useApp = create<AppState>((set, get) => ({
       if (tokens) {
         try {
           const user = await client.me();
+          // Dev-only design preview: straight in (phonePreview.ts).
+          if (import.meta.env.DEV && isPhonePreview()) {
+            get().signedIn(user);
+            return;
+          }
           // The app always opens locked: keep the session, but make the
           // user prove it's them first (biometrics or their password).
           set({ user: null, lockedUser: user, screen: { name: "login" } });
@@ -872,6 +878,18 @@ export async function bootstrap(): Promise<void> {
   }
   platformRef = platform;
   useApp.setState({ platform });
+  // Dev-only design preview (phonePreview.ts). The DEV check is here, at the
+  // call site, so release builds drop the preview code entirely.
+  if (import.meta.env.DEV) {
+    applyPhonePreviewLook();
+    await signInPhonePreview({
+      saveValue: (k, v) => platform.saveValue(k, v),
+      setSecret: (k, v) => platform.setSecret(k, v),
+      addressKey: ADDRESS_KEY,
+      tokensKey: TOKENS_KEY,
+      identityKey: deviceIdentityKey,
+    }).catch((err: unknown) => console.error("phone preview sign-in failed", err));
+  }
   void platform.biometricStatus().then((biometric) => useApp.setState({ biometric }));
   startUpdateChecks();
 

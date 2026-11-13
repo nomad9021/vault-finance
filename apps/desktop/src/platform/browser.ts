@@ -1,3 +1,4 @@
+import { isPhonePreview } from "./phonePreview.js";
 import type { HostPlatform, ProbeResult } from "./types.js";
 
 /**
@@ -7,10 +8,13 @@ import type { HostPlatform, ProbeResult } from "./types.js";
  */
 export function createBrowserPlatform(): HostPlatform {
   const prefix = "vault.";
+  // Dev-only phone preview (phonePreview.ts); dropped from release builds.
+  const preview = import.meta.env.DEV && isPhonePreview();
   return {
     kind: "browser",
-    platformName: "linux",
-    deviceName: "Browser (dev)",
+    // The phone preview (phonePreview.ts) renders the iPhone variant.
+    platformName: preview ? "ios" : "linux",
+    deviceName: preview ? "Phone preview" : "Browser (dev)",
     fetchImpl: async (url, init) => {
       const res = await fetch(url, init);
       return { status: res.status, text: () => res.text() };

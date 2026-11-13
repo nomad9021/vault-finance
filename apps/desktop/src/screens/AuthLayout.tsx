@@ -15,7 +15,7 @@ export function AuthLayout({ children, width = 380 }: { children: ReactNode; wid
         display: "flex",
         // Clear the iPhone notch / home indicator (env() is 0 on desktop).
         padding:
-          "max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left))",
+          "max(20px, var(--safe-top)) max(20px, var(--safe-right)) max(20px, var(--safe-bottom)) max(20px, var(--safe-left))",
         overflow: "auto",
       }}
     >

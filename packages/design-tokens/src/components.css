@@ -1159,7 +1159,7 @@ button.list-row:active, .list-row[role="button"]:active {
   z-index: var(--z-modal);
   max-height: 82vh;
   overflow: auto;
-  padding: var(--space-3) var(--space-4) calc(var(--space-6) + env(safe-area-inset-bottom));
+  padding: var(--space-3) var(--space-4) calc(var(--space-6) + var(--safe-bottom));
   background: var(--surface-2);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   box-shadow: var(--shadow-overlay);
@@ -1427,15 +1427,15 @@ button.list-row:active, .list-row[role="button"]:active {
    and the tab bar clears the home indicator. Inputs stay at 16px there:
    WebKit on iPhone zooms the whole page into any field smaller than that. */
 :root[data-platform="ios"] {
-  --tabbar-safe: max(0px, calc(env(safe-area-inset-bottom) - 12px));
+  --tabbar-safe: max(0px, calc(var(--safe-bottom) - 12px));
 }
 :root[data-platform="ios"] .app-header {
-  height: calc(var(--header-h) + env(safe-area-inset-top));
-  padding-top: env(safe-area-inset-top);
+  height: calc(var(--header-h) + var(--safe-top));
+  padding-top: var(--safe-top);
 }
 :root[data-platform="ios"] .app-main {
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
 }
 :root[data-platform="ios"] input,
 :root[data-platform="ios"] select,
