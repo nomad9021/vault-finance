@@ -55,17 +55,21 @@ export function LoginScreen() {
     };
   }, [client]);
 
+  // The automatic Face ID attempt may retry only until the person takes over.
+  const autoActive = useRef(true);
   const bioLabel = biometric?.label ?? "biometrics";
   const selectedHasBiometric = !!selected && biometricUserIds.includes(selected.id);
 
   const doBiometric = useCallback(
     async (profile: PublicProfile) => {
-      if (busy || scanning) return;
+      // A tap always works: it takes over from the automatic attempt.
+      autoActive.current = false;
+      if (busy) return;
       setScanning(true);
       setError(null);
       try {
         const r = await unlockWithBiometric(profile.id);
-        if (!r.ok && r.reason !== "cancelled") {
+        if (!r.ok && r.reason !== "cancelled" && r.reason !== "interrupted") {
           setError(
             r.message ??
               (r.reason === "failed"
@@ -77,35 +81,94 @@ export function LoginScreen() {
         setScanning(false);
       }
     },
-    [busy, scanning, unlockWithBiometric, bioLabel],
+    [busy, unlockWithBiometric, bioLabel],
   );
 
-  // Locked with Face ID / Touch ID set up for this profile: ask straight away,
-  // behind a blank lock page. Recognised = straight back in, no sign-in page;
-  // failed, cancelled or unavailable = the sign-in page below.
-  const faceIdFirst = !!lockedUser && biometricUserIds.includes(lockedUser.id);
+  // Locked with Face ID / Touch ID set up for this profile: ask for it
+  // straight away. Coming back to the app after leaving it (iPhone swipe
+  // away), that happens behind a blank padlock page; recognised = straight
+  // back in. A failed match, a cancel, or 4 seconds without getting in shows
+  // the sign-in page. Any other lock (fresh start, Ctrl/Cmd+L, idle) shows the
+  // sign-in page from the start, with the prompt on top of it.
+  const lockedAway = useApp((s) => s.lockedAway);
+  const biometricFirst = !!lockedUser && biometricUserIds.includes(lockedUser.id);
+  const faceIdFirst = biometricFirst && lockedAway;
   const [veilLifted, setVeilLifted] = useState(false);
-  const autoPrompted = useRef(false);
+  // "Use password instead": no Face ID for this unlock, password up front.
+  const [passwordOnly, setPasswordOnly] = useState(false);
+  const usePassword = () => {
+    autoActive.current = false;
+    setPasswordOnly(true);
+    setVeilLifted(true);
+    setScanning(false);
+    setError(null);
+    void platform.biometricCancel();
+  };
   useEffect(() => {
-    if (autoPrompted.current || !faceIdFirst || !lockedUser) return;
+    if (!faceIdFirst || veilLifted) return;
+    const t = setTimeout(() => {
+      autoActive.current = false;
+      setScanning(false);
+      setVeilLifted(true);
+    }, 4000);
+    return () => clearTimeout(t);
+  }, [faceIdFirst, veilLifted]);
+  const autoPrompted = useRef(false);
+  // "Still on screen", kept apart from the prompt effect: that effect may
+  // re-run (e.g. once the Face ID label loads) and must not drop a result.
+  const onScreen = useRef(true);
+  useEffect(() => {
+    onScreen.current = true;
+    return () => {
+      onScreen.current = false;
+    };
+  }, []);
+  const labelRef = useRef(bioLabel);
+  labelRef.current = bioLabel;
+  useEffect(() => {
+    if (autoPrompted.current || !biometricFirst || !lockedUser) return;
     autoPrompted.current = true;
+    // Ask only once the app is in front (iOS refuses Face ID while it's
+    // leaving or away). If leaving the app interrupted the prompt, keep the
+    // padlock and ask again on return; only a real cancel or a failed match
+    // brings up the sign-in page.
+    let tries = 0;
+    const attempt = async (): Promise<Awaited<ReturnType<typeof unlockWithBiometric>>> => {
+      // A retry pauses briefly, so a prompt the system keeps refusing can't spin.
+      if (tries++ > 0) await new Promise((r) => setTimeout(r, 400));
+      await platform.whenActive?.();
+      if (!onScreen.current || !autoActive.current) return { ok: false, reason: "cancelled" };
+      const r = await unlockWithBiometric(lockedUser.id);
+      // Interrupted by the system (the app left the screen mid-prompt): keep
+      // the padlock up and ask again once the app is back. A cancel, or
+      // "Use Password", is the person's choice and goes to the sign-in page.
+      const interrupted = !r.ok && r.reason === "interrupted";
+      if (interrupted && onScreen.current && autoActive.current && tries < 3) {
+        return attempt();
+      }
+      return r;
+    };
     setScanning(true);
-    void unlockWithBiometric(lockedUser.id)
+    void attempt()
       .then((r) => {
-        if (r.ok) return;
+        // The person took over (tapped the button, or the 4 seconds passed):
+        // leave the result of this attempt alone.
+        if (r.ok || !onScreen.current || !autoActive.current) return;
         setVeilLifted(true);
-        if (r.reason !== "cancelled") {
+        if (r.reason !== "cancelled" && r.reason !== "interrupted") {
           setError(
             r.message ??
               (r.reason === "failed"
-                ? `${bioLabel} didn't recognize you — try again or use your password.`
-                : `${bioLabel} isn't available right now — use your password.`),
+                ? `${labelRef.current} didn't recognize you — try again or use your password.`
+                : `${labelRef.current} isn't available right now — use your password.`),
           );
         }
       })
       .catch(() => setVeilLifted(true))
-      .finally(() => setScanning(false));
-  }, [faceIdFirst, lockedUser, unlockWithBiometric, bioLabel]);
+      .finally(() => {
+        if (autoActive.current) setScanning(false);
+      });
+  }, [biometricFirst, lockedUser, unlockWithBiometric, platform]);
 
   useEffect(() => {
     if (selected && !biometricUserIds.includes(selected.id)) passwordRef.current?.focus();
@@ -191,7 +254,7 @@ export function LoginScreen() {
                 setNeedsTotp(false);
                 setTotpCode("");
                 setError(null);
-                if (biometricUserIds.includes(p.id)) void doBiometric(p);
+                if (biometricUserIds.includes(p.id) && !passwordOnly) void doBiometric(p);
               }}
               style={{
                 display: "flex",
@@ -219,7 +282,7 @@ export function LoginScreen() {
         </div>
       )}
 
-      {selected && selectedHasBiometric && (
+      {selected && selectedHasBiometric && !passwordOnly && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
           <Button
             variant="primary"
@@ -238,11 +301,9 @@ export function LoginScreen() {
               </Button>
             </div>
           )}
-          {!scanning && (
-            <div style={{ textAlign: "center", fontSize: "var(--text-2xs)", color: "var(--content-tertiary)", textTransform: "uppercase", letterSpacing: ".05em" }}>
-              or use your password
-            </div>
-          )}
+          <Button variant="ghost" block onClick={usePassword}>
+            Use password instead
+          </Button>
         </div>
       )}
 
@@ -290,7 +351,7 @@ export function LoginScreen() {
             </div>
           )}
           <Button
-            variant={selectedHasBiometric ? "secondary" : "primary"}
+            variant={selectedHasBiometric && !passwordOnly ? "secondary" : "primary"}
             block
             type="submit"
             disabled={busy || !password || (needsTotp && totpCode.length < 6)}

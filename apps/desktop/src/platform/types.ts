@@ -8,10 +8,14 @@ export interface BiometricStatus {
   reason?: string;
 }
 
-/** Outcome of a biometric prompt. "cancelled" is not an error worth showing. */
+/**
+ * Outcome of a biometric prompt. "cancelled" (the person backed out) and
+ * "interrupted" (the system called it off, e.g. the app left the screen) are
+ * not errors worth showing.
+ */
 export type BiometricResult =
   | { ok: true }
-  | { ok: false; reason: "cancelled" | "failed" | "unavailable"; message?: string };
+  | { ok: false; reason: "cancelled" | "interrupted" | "failed" | "unavailable"; message?: string };
 
 export interface ProbeResult {
   reachable: boolean;
@@ -117,7 +121,15 @@ export interface HostPlatform {
    * lockwatch.rs). Returns an unsubscribe function. Undefined where the host
    * can't tell (browser dev); the app's own sleep and idle checks still apply.
    */
-  onSystemLock?(onLock: () => void): () => void;
+  /** `reason` "away": the app itself left the screen (iOS swipe away). */
+  onSystemLock?(onLock: (reason?: "away" | "system") => void): () => void;
+  /**
+   * Resolves once the app is in front and able to show a Face ID / Touch ID
+   * prompt (iOS: after UIApplicationDidBecomeActive). Absent = always able.
+   */
+  whenActive?(): Promise<void>;
+  /** Is the app in front right now? Absent = always. */
+  isActive?(): boolean;
   /** Put the app window in (or take it out of) full screen — the review presenter. */
   setFullscreen(on: boolean): Promise<void>;
   /** Open an https link in the default browser (Tauri only). */

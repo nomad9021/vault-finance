@@ -36,6 +36,29 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
   const store = new LazyStore("settings.json");
   const os = osPlatform();
   const ios = os === "ios";
+
+  // iOS: is the app in front? Leaving it (swipe up, app switcher, Control
+  // Centre) makes it inactive before anything else happens, and iOS refuses
+  // Face ID until it's active again, so the lock screen waits on this.
+  let active = true;
+  let waiters: Array<() => void> = [];
+  if (ios) {
+    const setActive = (v: boolean) => {
+      active = v;
+      if (v) {
+        const w = waiters;
+        waiters = [];
+        w.forEach((f) => f());
+      }
+    };
+    void listen<string>("vault-system-lock", (e) => {
+      if (e.payload === "app-inactive") setActive(false);
+    });
+    void listen("vault-app-active", () => setActive(true));
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") setActive(false);
+    });
+  }
   if (ios) {
     // Lets the stylesheet clear the notch and home indicator (components.css).
     document.documentElement.dataset.platform = "ios";
@@ -169,15 +192,23 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
             return await invoke<TailscaleActionResult>("tailscale_down");
           },
         }),
+    ...(ios
+      ? {
+          isActive: () => active,
+          whenActive: () => (active ? Promise.resolve() : new Promise<void>((r) => waiters.push(r))),
+        }
+      : {}),
     onSystemLock(onLock) {
       let stop: (() => void) | null = null;
       let cancelled = false;
-      void listen("vault-system-lock", () => onLock()).then((un) => (cancelled ? un() : (stop = un)));
+      void listen<string>("vault-system-lock", (e) => onLock(e.payload === "app-inactive" ? "away" : "system")).then(
+        (un) => (cancelled ? un() : (stop = un)),
+      );
       // iOS: lock the moment the app leaves the screen (home swipe, app
       // switch, phone locked), so the app switcher's snapshot shows the lock
       // screen rather than balances.
       const onHidden = () => {
-        if (document.visibilityState === "hidden") onLock();
+        if (document.visibilityState === "hidden") onLock("away");
       };
       if (ios) document.addEventListener("visibilitychange", onHidden);
       return () => {
@@ -207,9 +238,9 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
         await invoke("biometric_authenticate", { reason });
         return { ok: true };
       } catch (err) {
-        // Rust serializes BiometricError as "cancelled" | "failed" | "unavailable: <why>".
+        // Rust serializes BiometricError as "cancelled" | "interrupted" | "failed" | "unavailable: <why>".
         const text = String(err);
-        if (text === "cancelled" || text === "failed") return { ok: false, reason: text };
+        if (text === "cancelled" || text === "interrupted" || text === "failed") return { ok: false, reason: text };
         return { ok: false, reason: "unavailable", message: text.replace(/^unavailable:\s*/, "") };
       }
     },

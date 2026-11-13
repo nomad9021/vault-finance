@@ -60,7 +60,7 @@ export function useAutoLock(active: boolean) {
       if (why) lock();
     }, TICK_MS);
 
-    const stopSystem = platform.onSystemLock?.(() => lock());
+    const stopSystem = platform.onSystemLock?.((reason) => lock(reason === "away" ? "away" : undefined));
 
     return () => {
       for (const e of events) window.removeEventListener(e, touch);
