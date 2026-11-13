@@ -1,3 +1,4 @@
+import { monthlyAmountCents } from "../budgets/period.js";
 import { and, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import {
   accounts,
@@ -109,8 +110,11 @@ export async function buildFinancialContext(db: Db): Promise<string> {
     );
     for (const b of latestBudget.values()) {
       const name = categoryName.get(b.categoryId) ?? "Unknown";
+      // Month figures throughout; a weekly budget shows its monthly equivalent.
+      const amount = monthlyAmountCents(b, today.slice(0, 7));
+      const note = b.period === "weekly" ? ` (weekly: ${dollars(b.amountCents)}/week, resets each week)` : "";
       lines.push(
-        `  ${name} | ${dollars(b.amountCents)} | ${dollars(spentByCat.get(b.categoryId) ?? 0)}`,
+        `  ${name} | ${dollars(amount)}${note} | ${dollars(spentByCat.get(b.categoryId) ?? 0)}`,
       );
     }
   }

@@ -2,6 +2,7 @@ import {
   centsToAmountInput,
   formatCents,
   parseAmountToCents,
+  type BudgetPeriod,
   type BudgetWithSpend,
   type Category,
 } from "@vault/shared";
@@ -11,6 +12,7 @@ import {
   EmptyState,
   Field,
   Panel,
+  Segmented,
   Select,
   SkeletonList,
   Spinner,
@@ -18,6 +20,7 @@ import {
   Tag,
 } from "@vault/ui";
 import { useState } from "react";
+import { periodFigures } from "../../lib/budgetPeriod.js";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 import type { Navigate } from "./AppShell.js";
@@ -84,7 +87,11 @@ function BudgetsTab({ onNavigate }: { onNavigate: Navigate }) {
   const client = useApp((s) => s.client);
   const [month, setMonth] = useState(currentMonth());
 
-  const { data, loading, reload } = useData(() => client.budgets(month), [client, month]);
+  const weekStart = useApp((s) => s.reviewPrefs.weekStartsOn);
+  const { data, loading, reload } = useData(
+    () => client.budgets(month, weekStart),
+    [client, month, weekStart],
+  );
   const { data: categoryData } = useData(() => client.categories(), [client]);
   const categories = categoryData?.categories ?? [];
   const categoryById = new Map(categories.map((c) => [c.id, c]));
@@ -154,7 +161,7 @@ function BudgetsTab({ onNavigate }: { onNavigate: Navigate }) {
               compact
               icon="target"
               title={`No budgets for ${monthLabel(month)}`}
-              body="Add one to start tracking spending against a monthly limit."
+              body="Add one to track spending against a weekly or monthly limit."
               action={
                 <Button variant="primary" icon="plus" onClick={() => setEditing("new")}>
                   Add budget
@@ -205,7 +212,9 @@ function BudgetBar({
   onClick: () => void;
   onViewTransactions: () => void;
 }) {
-  const pct = budget.amountCents > 0 ? budget.spentCents / budget.amountCents : 0;
+  // Weekly budgets show this week (they reset every week); monthly ones the month.
+  const { limit, spent, weekly } = periodFigures(budget);
+  const pct = limit > 0 ? spent / limit : 0;
   const over = pct > 1;
   const color = category?.color ?? "var(--color-accent)";
 
@@ -248,6 +257,11 @@ function BudgetBar({
             }}
           />
           {category?.name ?? "Unknown category"}
+          {weekly && (
+            <span style={{ fontWeight: 400, fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>
+              This week
+            </span>
+          )}
         </span>
         <span style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
           <span
@@ -255,7 +269,7 @@ function BudgetBar({
               color: over ? "var(--color-negative)" : "var(--content-tertiary)",
             }}
           >
-            {formatCents(budget.spentCents)} of {formatCents(budget.amountCents)}
+            {formatCents(spent)} of {formatCents(limit)}
             {over && " — over"}
           </span>
           <button
@@ -317,12 +331,14 @@ function BudgetDialog({
   onSaved: () => void;
 }) {
   const client = useApp((s) => s.client);
+  const weekStartLabel = useApp((s) => (s.reviewPrefs.weekStartsOn === "sunday" ? "Sunday" : "Monday"));
   const available = categories.filter(
     (c) => !existingCategoryIds.has(c.id) || c.id === budget?.categoryId,
   );
   const [categoryId, setCategoryId] = useState(budget?.categoryId ?? available[0]?.id ?? "");
+  const [period, setPeriod] = useState<BudgetPeriod>(budget?.period ?? "monthly");
   const [amount, setAmount] = useState(
-    budget ? centsToAmountInput(budget.amountCents) : "",
+    budget ? centsToAmountInput(budget.periodAmountCents ?? budget.amountCents) : "",
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -336,12 +352,13 @@ function BudgetDialog({
     setError(null);
     try {
       if (budget) {
-        await client.updateBudget(budget.id, { amountCents: amountCents! });
+        await client.updateBudget(budget.id, { amountCents: amountCents!, period });
       } else {
         await client.createBudget({
           categoryId,
           amountCents: amountCents!,
           rollover: false,
+          period,
           month,
         });
       }
@@ -399,22 +416,34 @@ function BudgetDialog({
             ))}
           </Select>
         )}
+        <Segmented
+          aria-label="Resets"
+          options={[
+            { value: "monthly", label: "Monthly" },
+            { value: "weekly", label: "Weekly" },
+          ]}
+          value={period}
+          onChange={(v) => setPeriod(v as BudgetPeriod)}
+        />
         <Field
-          label="Monthly amount"
+          label={period === "weekly" ? "Weekly amount" : "Monthly amount"}
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           inputMode="decimal"
           autoFocus
-          placeholder="600.00"
+          placeholder={period === "weekly" ? "150.00" : "600.00"}
           error={
             amount && (amountCents === null || amountCents <= 0)
               ? "Enter a positive amount like 600.00"
               : undefined
           }
           hint={
-            budget
+            (period === "weekly"
+              ? `Starts fresh every ${weekStartLabel} — about ${formatCents(Math.round(((amountCents ?? 0) * 30.44) / 7))} a month. `
+              : "Starts fresh on the 1st of each month. ") +
+            (budget
               ? "Changes apply from this budget's start month onward."
-              : `Applies from ${monthLabel(month)} onward, until you change it.`
+              : `Applies from ${monthLabel(month)} onward, until you change it.`)
           }
         />
         {error && (
@@ -426,3 +455,4 @@ function BudgetDialog({
     </Dialog>
   );
 }
+

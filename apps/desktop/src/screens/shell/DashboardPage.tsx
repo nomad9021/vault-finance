@@ -3,6 +3,7 @@ import {
   formatCentsWhole,
   type Account,
   type Bill,
+  type BudgetListResponse,
   type Goal,
   type PreIncome,
   type SankeyResponse,
@@ -27,6 +28,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { availableCents, shownBalance, useShowActualBalances } from "../../lib/balanceView.js";
 import { moveWidget, placeWidget, resolveLayout, SPANS, type ResolvedWidget, type Span } from "../../lib/dashboardLayout.js";
 import { useData } from "../../lib/useData.js";
+import { useLayoutMode } from "../../lib/useLayout.js";
+import { periodFigures } from "../../lib/budgetPeriod.js";
 import { useApp } from "../../state/store.js";
 import { buildBudgetSankey, buildBudgetVsActual, preIncomeBranches, withGrossBranch, withTaxBranch } from "./budgetSankey.js";
 import type { Navigate, PageId } from "./nav.js";
@@ -70,6 +73,11 @@ function monthLong(month: string): string {
   const [y, m] = month.split("-").map(Number) as [number, number];
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, { month: "long", timeZone: "UTC" });
 }
+function monthYear(month: string): string {
+  const [y, m] = month.split("-").map(Number) as [number, number];
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, { month: "short", year: "numeric", timeZone: "UTC" });
+}
+
 function monthShort(month: string): string {
   const [y, m] = month.split("-").map(Number) as [number, number];
   return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined, { month: "short", timeZone: "UTC" });
@@ -121,6 +129,8 @@ const toneColor = (tone: "over" | "soon" | "ok") =>
 
 export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
   const client = useApp((s) => s.client);
+  const phone = useLayoutMode() === "narrow";
+  const weekStart = useApp((s) => s.reviewPrefs.weekStartsOn);
 
   // Trends come first: they carry six months of income/spending, which is
   // enough to choose a sensible default month without another request.
@@ -139,7 +149,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
     [client],
   );
   const { data: goalData } = useData(() => client.goals(), [client]);
-  const { data: budgetData } = useData(() => client.budgets(month), [client, month]);
+  const { data: budgetData } = useData(() => client.budgets(month, weekStart), [client, month, weekStart]);
   const { data: categoryData } = useData(() => client.categories(), [client]);
   const { data: billData } = useData(() => client.bills(), [client]);
   const { data: investData } = useData(() => client.investments(), [client]);
@@ -416,6 +426,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
     budgets: { label: "Budgets", span: 4, node: <BudgetOverview
             data={budgetData}
             month={month}
+            isCurrentMonth={isCurrentMonth}
             categoryById={categoryById}
             onViewAll={() => onNavigate("budgets")}
           /> },
@@ -426,12 +437,32 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
             accountName={(id) => accountById.get(id)?.name ?? "—"}
             onViewAll={() => onNavigate("transactions")}
           /> },
-    goals: { label: "Goals", span: 4, node: <TopGoals goals={goals} onViewAll={() => onNavigate("goals")} /> },
+    goals: { label: "Savings goals", span: 4, node: <TopGoals goals={goals} onViewAll={() => onNavigate("goals")} /> },
   };
+  // Phone: one compact summary replaces the four number cards, and budgets
+  // and savings goals come straight after it, ahead of everything else.
+  const phoneSummary = (
+    <PhoneSummary
+      month={month}
+      netWorthCents={netWorth}
+      incomeCents={income}
+      spendingCents={spending}
+      savingsRate={savingsRate}
+      onNavigate={onNavigate}
+    />
+  );
   const layout = resolveLayout(
     Object.entries(widgetNodes).map(([id, w]) => ({ id, span: w.span })),
     prefs?.dashboard,
   );
+  const PHONE_FIRST = ["budgets", "goals"];
+  const shown = layout.filter((w) => !w.hidden);
+  const ordered = phone
+    ? [
+        ...PHONE_FIRST.flatMap((id) => shown.filter((w) => w.id === id)),
+        ...shown.filter((w) => !PHONE_FIRST.includes(w.id) && !w.id.startsWith("metric-")),
+      ]
+    : shown;
 
   return (
     <div className="page">
@@ -450,13 +481,12 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
         />
       )}
       <div className="grid">
-        {layout
-          .filter((w) => !w.hidden)
-          .map((w) => (
-            <div key={w.id} className={`col-${w.span}`}>
-              {widgetNodes[w.id]!.node}
-            </div>
-          ))}
+        {phone && <div className="col-12">{phoneSummary}</div>}
+        {ordered.map((w) => (
+          <div key={w.id} className={`col-${w.span}`}>
+            {widgetNodes[w.id]!.node}
+          </div>
+        ))}
       </div>
       {editingPreIncome && preIncome && (
         <PreIncomeDialog
@@ -770,25 +800,34 @@ function TrendCard({
 }
 
 /** This month's budgeted-vs-spent, with the top few category bars. */
+/**
+ * The budget at a glance: what's left this month, then the few categories
+ * that most need attention (closest to or over their limit). Weekly budgets
+ * are judged on this week, since that's when they reset.
+ */
 function BudgetOverview({
   data,
   month,
+  isCurrentMonth,
   categoryById,
   onViewAll,
 }: {
-  data: {
-    budgets: { categoryId: string; amountCents: number; spentCents: number }[];
-    totalBudgetedCents: number;
-    totalSpentCents: number;
-  } | null;
+  data: BudgetListResponse | null;
   month: string;
+  isCurrentMonth: boolean;
   categoryById: Map<string, { name: string; color: string }>;
   onViewAll: () => void;
 }) {
   const budgeted = data?.totalBudgetedCents ?? 0;
   const spent = data?.totalSpentCents ?? 0;
-  const over = budgeted > 0 && spent > budgeted;
-  const top = [...(data?.budgets ?? [])].sort((a, b) => b.spentCents - a.spentCents).slice(0, 3);
+  const left = budgeted - spent;
+  const over = budgeted > 0 && left < 0;
+  const ranked = (data?.budgets ?? [])
+    .map((b) => ({ b, ...periodFigures(b) }))
+    .filter((x) => x.limit > 0)
+    .sort((x, y) => y.spent / y.limit - x.spent / x.limit)
+    .slice(0, 3);
+  const daysLeft = isCurrentMonth ? daysLeftInMonth() : 0;
 
   return (
     <Panel title="Budgets" subtitle={monthLong(month)} actions={<PanelLink onClick={onViewAll} />}>
@@ -797,7 +836,7 @@ function BudgetOverview({
           compact
           icon="target"
           title="No budgets this month"
-          body="Set a limit per category to track spending against a plan."
+          body="Set a weekly or monthly limit per category to track spending against a plan."
           action={
             <Button variant="secondary" size="sm" onClick={onViewAll}>
               Set budgets
@@ -806,17 +845,25 @@ function BudgetOverview({
         />
       ) : (
         <>
-          <div className="row-baseline" style={{ marginBottom: "var(--space-2)" }}>
-            <span className="stat-value" style={{ fontSize: "var(--text-xl)" }}>
-              {formatCents(spent)}
+          <div className="row-baseline" style={{ marginBottom: "var(--space-1)" }}>
+            <span
+              className="stat-value num"
+              style={{ fontSize: "var(--text-xl)", color: over ? "var(--color-negative)" : undefined }}
+            >
+              {formatCents(Math.abs(left))}
             </span>
-            <span className="t-xs t-tertiary">of {formatCents(budgeted)}</span>
+            <span className="t-sm t-tertiary">{over ? "over budget" : "left to spend"}</span>
+          </div>
+          <div className="t-xs t-tertiary" style={{ marginBottom: "var(--space-3)" }}>
+            {formatCents(spent)} of {formatCents(budgeted)}
+            {daysLeft > 0 && ` · ${daysLeft} day${daysLeft === 1 ? "" : "s"} left`}
+            {daysLeft > 0 && left > 0 && ` · ${formatCents(Math.floor(left / daysLeft))} a day`}
           </div>
           <ProgressBar value={spent / budgeted} over={over} label="Total budget used" />
           <div className="stack" style={{ marginTop: "var(--space-4)" }}>
-            {top.map((b) => {
+            {ranked.map(({ b, limit, spent: s, weekly }) => {
               const cat = categoryById.get(b.categoryId);
-              const catOver = b.spentCents > b.amountCents;
+              const catLeft = limit - s;
               return (
                 <div key={b.categoryId}>
                   <div className="row-between t-xs" style={{ marginBottom: "var(--space-1)" }}>
@@ -827,21 +874,19 @@ function BudgetOverview({
                         style={{ background: cat?.color ?? "var(--color-accent)" }}
                       />
                       <span className="truncate">{cat?.name ?? "Category"}</span>
+                      {weekly && <span className="t-tertiary" style={{ flex: "none" }}>this week</span>}
                     </span>
                     <span
                       className="num"
-                      style={{
-                        color: catOver ? "var(--color-negative)" : "var(--content-tertiary)",
-                        flex: "none",
-                      }}
+                      style={{ color: catLeft < 0 ? "var(--color-negative)" : "var(--content-tertiary)", flex: "none" }}
                     >
-                      {formatCents(b.spentCents)} / {formatCents(b.amountCents)}
+                      {catLeft < 0 ? `${formatCents(-catLeft)} over` : `${formatCents(catLeft)} left`}
                     </span>
                   </div>
                   <ProgressBar
                     small
-                    value={b.amountCents > 0 ? b.spentCents / b.amountCents : 0}
-                    over={catOver}
+                    value={s / limit}
+                    over={catLeft < 0}
                     {...(cat?.color ? { color: cat.color } : {})}
                   />
                 </div>
@@ -851,6 +896,55 @@ function BudgetOverview({
         </>
       )}
     </Panel>
+  );
+}
+
+/**
+ * Phone: the four headline numbers in one card: net worth large, the month's
+ * income, spending and savings rate beneath it. Each part opens its page.
+ */
+function PhoneSummary({
+  month,
+  netWorthCents,
+  incomeCents,
+  spendingCents,
+  savingsRate,
+  onNavigate,
+}: {
+  month: string;
+  netWorthCents: number;
+  incomeCents: number;
+  spendingCents: number;
+  savingsRate: number | null;
+  onNavigate: Navigate;
+}) {
+  const figures: Array<{ label: string; value: string; page: PageId | null }> = [
+    { label: "Income", value: formatCentsWhole(incomeCents), page: "income" },
+    { label: "Spending", value: formatCentsWhole(spendingCents), page: "reports" },
+    { label: "Saved", value: savingsRate !== null ? `${savingsRate}%` : "—", page: null },
+  ];
+  return (
+    <div className="panel phone-summary">
+      <button type="button" className="phone-summary-hero" onClick={() => onNavigate("networth")}>
+        <span className="t-sm t-tertiary">Net worth</span>
+        <span className="phone-summary-value num">{formatCentsWhole(netWorthCents)}</span>
+      </button>
+      <div className="phone-summary-month t-xs t-tertiary">{monthLong(month)}</div>
+      <div className="phone-summary-figures">
+        {figures.map((f) => (
+          <button
+            key={f.label}
+            type="button"
+            className="phone-summary-figure"
+            disabled={!f.page}
+            onClick={() => f.page && onNavigate(f.page)}
+          >
+            <span className="t-xs t-tertiary">{f.label}</span>
+            <span className="num t-medium">{f.value}</span>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -991,13 +1085,19 @@ function RecentActivity({
   );
 }
 
+/** Savings goals: progress toward each, and when it's on track to land. */
 function TopGoals({ goals, onViewAll }: { goals: Goal[]; onViewAll: () => void }) {
+  // Unfinished goals first, closest to done first; finished ones last.
   const top = [...goals]
-    .sort((a, b) => b.savedCents / (b.targetCents || 1) - a.savedCents / (a.targetCents || 1))
+    .sort((a, b) => {
+      const pa = a.savedCents / (a.targetCents || 1);
+      const pb = b.savedCents / (b.targetCents || 1);
+      return (pa >= 1 ? 1 : 0) - (pb >= 1 ? 1 : 0) || pb - pa;
+    })
     .slice(0, 3);
 
   return (
-    <Panel title="Goals" actions={<PanelLink onClick={onViewAll} />}>
+    <Panel title="Savings goals" actions={<PanelLink onClick={onViewAll} />}>
       {top.length === 0 ? (
         <EmptyState
           compact
@@ -1012,25 +1112,36 @@ function TopGoals({ goals, onViewAll }: { goals: Goal[]; onViewAll: () => void }
         />
       ) : (
         <div className="stack-lg">
-          {top.map((g) => (
-            <div key={g.id}>
-              <div className="row-between t-sm" style={{ marginBottom: "var(--space-1)" }}>
-                <span className="t-medium truncate">{g.name}</span>
-                <span className="num t-tertiary" style={{ flex: "none" }}>
-                  {formatCentsWhole(g.savedCents)} / {formatCentsWhole(g.targetCents)}
-                </span>
+          {top.map((g) => {
+            const pct = g.targetCents > 0 ? Math.min(1, g.savedCents / g.targetCents) : 0;
+            return (
+              <div key={g.id}>
+                <div className="row-between t-sm" style={{ marginBottom: "var(--space-1)" }}>
+                  <span className="t-medium truncate">{g.name}</span>
+                  <span className="num t-tertiary" style={{ flex: "none" }}>
+                    {formatCentsWhole(g.savedCents)} of {formatCentsWhole(g.targetCents)}
+                  </span>
+                </div>
+                <ProgressBar value={pct} color={g.color} label={g.name} />
+                <div className="t-xs t-tertiary" style={{ marginTop: "var(--space-1)" }}>
+                  {goalPlanLine(g, pct)}
+                </div>
               </div>
-              <ProgressBar
-                value={g.targetCents > 0 ? g.savedCents / g.targetCents : 0}
-                color={g.color}
-                label={g.name}
-              />
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </Panel>
   );
+}
+
+function goalPlanLine(g: Goal, pct: number): string {
+  if (pct >= 1) return "Funded";
+  const parts = [`${Math.round(pct * 100)}%`];
+  if (g.monthlyCents > 0) parts.push(`${formatCentsWhole(g.monthlyCents)} a month`);
+  if (g.targetDate) parts.push(`target ${monthYear(g.targetDate.slice(0, 7))}`);
+  else if (g.projectedCompletion) parts.push(`on track for ${monthYear(g.projectedCompletion)}`);
+  return parts.join(" · ");
 }
 
 function GetStarted({

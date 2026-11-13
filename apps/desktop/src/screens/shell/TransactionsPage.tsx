@@ -10,6 +10,7 @@ import {
 import { Button, DateField, Dialog, Field, Panel, Select, Spinner } from "@vault/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useData } from "../../lib/useData.js";
+import { useLayoutMode } from "../../lib/useLayout.js";
 import { useApp } from "../../state/store.js";
 
 type Period = "all" | "month" | "3m" | "12m";
@@ -40,6 +41,7 @@ export function TransactionsPage({
   /** Pre-applied account filter (from an account/income link elsewhere). */
   initialAccountId?: string;
 } = {}) {
+  const phone = useLayoutMode() === "narrow";
   const client = useApp((s) => s.client);
 
   const { data: accountData } = useData(() => client.accounts(true), [client]);
@@ -269,6 +271,20 @@ export function TransactionsPage({
 
       <div className="grid">
         <div className="col-9">
+          {phone ? (
+            <PhoneTransactionList
+              rows={rows}
+              loading={loading}
+              emptyText={
+                totalCount === 0 && !debouncedSearch && !categoryFilter && !accountFilter && period === "all"
+                  ? "No transactions yet. Add one or import a CSV from your bank."
+                  : "Nothing matches these filters."
+              }
+              categoryById={categoryById}
+              accountById={accountById}
+              onOpen={setEditing}
+            />
+          ) : (
           <div className="panel panel-flush table-scroll">
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-sm)" }}>
               <thead>
@@ -330,6 +346,7 @@ export function TransactionsPage({
               </tbody>
             </table>
           </div>
+          )}
 
           {nextCursor && (
             <div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}>
@@ -792,4 +809,91 @@ function ImportDialog({
       </div>
     </Dialog>
   );
+}
+
+/**
+ * Phone: transactions as a list grouped by day (like the iPhone's own apps)
+ * instead of a table that would have to scroll sideways. Tap a row to edit.
+ */
+function PhoneTransactionList({
+  rows,
+  loading,
+  emptyText,
+  categoryById,
+  accountById,
+  onOpen,
+}: {
+  rows: Transaction[];
+  loading: boolean;
+  emptyText: string;
+  categoryById: Map<string, Category>;
+  accountById: Map<string, { name: string }>;
+  onOpen: (t: Transaction) => void;
+}) {
+  if (loading && rows.length === 0) {
+    return (
+      <div className="panel" style={{ display: "grid", placeItems: "center", padding: 24 }}>
+        <Spinner label="Loading transactions" />
+      </div>
+    );
+  }
+  if (rows.length === 0) {
+    return <div className="panel text-muted" style={{ padding: 24, textAlign: "center" }}>{emptyText}</div>;
+  }
+  const days: Array<{ day: string; items: Transaction[] }> = [];
+  for (const t of rows) {
+    const last = days[days.length - 1];
+    if (last && last.day === t.postedAt) last.items.push(t);
+    else days.push({ day: t.postedAt, items: [t] });
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {days.map(({ day, items }) => (
+        <section key={day} aria-label={dayLabel(day)}>
+          <div className="phone-list-head">{dayLabel(day)}</div>
+          <div className="panel panel-flush">
+            {items.map((t) => {
+              const category = t.categoryId ? categoryById.get(t.categoryId) : undefined;
+              return (
+                <button key={t.id} type="button" className="phone-row" onClick={() => onOpen(t)}>
+                  <span className="phone-row-main">
+                    <span className="phone-row-title">{t.merchantName}</span>
+                    <span className="phone-row-sub">
+                      <span
+                        aria-hidden="true"
+                        className="dot"
+                        style={{ background: category?.color ?? "var(--color-neutral-600)" }}
+                      />
+                      {category?.name ?? "Uncategorized"} · {accountById.get(t.accountId)?.name ?? "—"}
+                    </span>
+                  </span>
+                  <span
+                    className="phone-row-amount num"
+                    style={{ color: t.amountCents > 0 ? "var(--color-positive)" : "var(--color-text)" }}
+                  >
+                    {formatCents(t.amountCents, { signed: true })}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function dayLabel(ymd: string): string {
+  const d = new Date(`${ymd}T12:00:00`);
+  const today = new Date();
+  const yesterday = new Date(today.getTime() - 86_400_000);
+  const same = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+  if (same(d, today)) return "Today";
+  if (same(d, yesterday)) return "Yesterday";
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    ...(d.getFullYear() !== today.getFullYear() ? { year: "numeric" } : {}),
+  });
 }

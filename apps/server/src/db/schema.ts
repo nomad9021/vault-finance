@@ -341,7 +341,8 @@ export const budgets = pgTable(
       .notNull()
       .references(() => categories.id, { onDelete: "cascade" }),
     amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
-    period: text("period", { enum: ["monthly"] }).notNull().default("monthly"),
+    // Amount is per this period. No DB constraint, so "weekly" needs no migration.
+    period: text("period", { enum: ["monthly", "weekly"] }).notNull().default("monthly"),
     rollover: boolean("rollover").notNull().default(false),
     startsOn: date("starts_on").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

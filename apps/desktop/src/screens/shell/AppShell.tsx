@@ -156,7 +156,9 @@ export function AppShell() {
         )}
       </main>
 
-      {aiVisible && page !== "assistant" && <AssistantBubble onOpenPage={() => navigate("assistant")} />}
+      {aiVisible && page !== "assistant" && (
+        <AssistantBubble phone={narrow} onOpenPage={() => navigate("assistant")} />
+      )}
       <CommandPalette
         open={paletteOpen}
         commands={commands}

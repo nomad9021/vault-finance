@@ -10,8 +10,11 @@ import { ChatComposer, ChatMessages } from "./ChatView.js";
  * The assistant on every page: a bubble in the corner (or Ctrl/Cmd+J) opens
  * the same conversation as the Assistant page, so you can ask about what's
  * on screen and keep going on the full page with "Open full page".
+ *
+ * On a phone the bubble simply opens the Assistant page: a pop-up chat over a
+ * small screen is cramped, and the page has the same conversation.
  */
-export function AssistantBubble({ onOpenPage }: { onOpenPage: () => void }) {
+export function AssistantBubble({ onOpenPage, phone = false }: { onOpenPage: () => void; phone?: boolean }) {
   const [open, setOpen] = useState(false);
   const client = useApp((s) => s.client);
   const level = useApp((s) => s.aiLevel);
@@ -25,24 +28,26 @@ export function AssistantBubble({ onOpenPage }: { onOpenPage: () => void }) {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "j") {
         e.preventDefault();
-        setOpen((o) => !o);
+        if (phone) onOpenPage();
+        else setOpen((o) => !o);
       }
       if (e.key === "Escape") setOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [phone, onOpenPage]);
 
   if (!open) {
     return (
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => (phone ? onOpenPage() : setOpen(true))}
         title="Ask the assistant (Ctrl+J)"
         aria-label="Open the assistant"
         style={{
           position: "fixed",
           right: 20,
-          bottom: 20,
+          // Phone: sit above the tab bar instead of on top of it.
+          bottom: phone ? "calc(var(--tabbar-h) + var(--tabbar-safe) + 16px)" : 20,
           zIndex: "var(--z-rail)",
           width: 52,
           height: 52,

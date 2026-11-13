@@ -241,7 +241,7 @@ function SubscriptionRow({
 }) {
   return (
     <div
-      className="row-div"
+      className="row-div wrap-actions"
       style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 2px" }}
     >
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -274,6 +274,7 @@ function SubscriptionRow({
         </div>
       </div>
 
+      <div className="row-actions">
       {hidden ? (
         <Button variant="secondary" size="sm" onClick={onRestore} disabled={busy}>
           {busy ? <Spinner label="Restoring" /> : "It's a subscription"}
@@ -291,6 +292,7 @@ function SubscriptionRow({
       <Button variant="ghost" size="sm" iconEnd="arrowRight" onClick={onView}>
         Charges
       </Button>
+      </div>
     </div>
   );
 }

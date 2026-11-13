@@ -883,6 +883,7 @@ export async function bootstrap(): Promise<void> {
   if (import.meta.env.DEV) {
     applyPhonePreviewLook();
     await signInPhonePreview({
+      getSecret: (k) => platform.getSecret(k),
       saveValue: (k, v) => platform.saveValue(k, v),
       setSecret: (k, v) => platform.setSecret(k, v),
       addressKey: ADDRESS_KEY,

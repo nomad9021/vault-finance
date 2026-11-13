@@ -42,6 +42,7 @@ export function applyPhonePreviewLook(): void {
 }
 
 interface StoreKeys {
+  getSecret(key: string): Promise<string | null>;
   saveValue(key: string, value: string): Promise<void>;
   setSecret(key: string, value: string): Promise<void>;
   addressKey: string;
@@ -62,6 +63,9 @@ export async function signInPhonePreview(store: StoreKeys): Promise<void> {
     return;
   }
   const address = location.origin; // Vite proxies /api to the demo server
+  // Reuse the saved session (the server rate-limits sign-ins); the app clears
+  // it if it has gone stale, and the next load signs in fresh.
+  if (await store.getSecret(store.tokensKey)) return;
   const res = await fetch(`${address}/api/v1/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
