@@ -10,12 +10,21 @@
  * Tauri apps never have.
  */
 
+/** `?preview=ios` (the iPhone frame) or `?preview=desktop` (a signed-in desktop window). */
+function previewKind(): "ios" | "desktop" | null {
+  if (!import.meta.env.DEV || "__TAURI_INTERNALS__" in window) return null;
+  const v = new URLSearchParams(location.search).get("preview");
+  return v === "ios" || v === "desktop" ? v : null;
+}
+
+/** Any preview: signed straight in to the demo server, Face ID pretended. */
+export function isPreview(): boolean {
+  return previewKind() !== null;
+}
+
+/** The iPhone preview: iOS styling and safe areas as well. */
 export function isPhonePreview(): boolean {
-  return (
-    import.meta.env.DEV &&
-    !("__TAURI_INTERNALS__" in window) &&
-    new URLSearchParams(location.search).get("preview") === "ios"
-  );
+  return previewKind() === "ios";
 }
 
 /**
@@ -61,7 +70,7 @@ interface StoreKeys {
  * where the app looks for it, so bootstrap lands on the dashboard.
  */
 export async function signInPhonePreview(store: StoreKeys): Promise<void> {
-  if (!isPhonePreview()) return;
+  if (!isPreview()) return;
   const env = import.meta.env;
   const identity = { deviceId: env.VITE_PREVIEW_DEVICE_ID, deviceSecret: env.VITE_PREVIEW_DEVICE_SECRET };
   if (!env.VITE_PREVIEW_EMAIL || !identity.deviceId) {

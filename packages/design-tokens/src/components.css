@@ -1809,3 +1809,24 @@ button.list-row:active, .list-row[role="button"]:active {
   flex-direction: column;
   min-height: calc(100dvh - var(--topbar-h, 0px) - var(--tabbar-float-h, 0px) - var(--tabbar-float-bottom, 0px) - var(--space-10));
 }
+
+/* Menus and the command palette float above the page (the functional layer),
+   so they get Liquid Glass too, in its thicker "regular" weight because they
+   hold text (HIG liquid-glass.md › Which variant). */
+.menu,
+.palette,
+:root[data-theme="light"] .menu,
+:root[data-theme="light"] .palette {
+  background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(1.8);
+  backdrop-filter: blur(28px) saturate(1.8);
+  border-color: var(--glass-edge);
+  box-shadow: var(--shadow-overlay), inset 0 1px 0 var(--glass-highlight);
+}
+@media (prefers-contrast: more) {
+  .menu, .palette { background: var(--color-surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+/* Start-up for household members: just the icon while the checks run. */
+.quiet-splash { position: fixed; inset: 0; display: grid; place-items: center; background: var(--color-bg); }
+.phone-summary-chart { display: block; width: 100%; margin-top: var(--space-2); }

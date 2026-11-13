@@ -441,6 +441,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
   const phoneSummary = (
     <PhoneSummary
       month={month}
+      points={points}
       netWorthCents={netWorth}
       incomeCents={income}
       spendingCents={spending}
@@ -453,11 +454,16 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
     prefs?.dashboard,
   );
   const PHONE_FIRST = ["budgets", "goals"];
+  // On a phone the net worth chart lives in the summary card, so the separate
+  // net worth trend card is left out.
+  const PHONE_OMIT = ["trend-networth"];
   const shown = layout.filter((w) => !w.hidden && !(hideSankey && w.id === "sankey"));
   const ordered = phone
     ? [
         ...PHONE_FIRST.flatMap((id) => shown.filter((w) => w.id === id)),
-        ...shown.filter((w) => !PHONE_FIRST.includes(w.id) && !w.id.startsWith("metric-")),
+        ...shown.filter(
+          (w) => !PHONE_FIRST.includes(w.id) && !PHONE_OMIT.includes(w.id) && !w.id.startsWith("metric-"),
+        ),
       ]
     : shown;
 
@@ -902,6 +908,7 @@ function BudgetOverview({
  */
 function PhoneSummary({
   month,
+  points,
   netWorthCents,
   incomeCents,
   spendingCents,
@@ -909,12 +916,18 @@ function PhoneSummary({
   onNavigate,
 }: {
   month: string;
+  points: { month: string; netWorthCents: number }[];
   netWorthCents: number;
   incomeCents: number;
   spendingCents: number;
   savingsRate: number | null;
   onNavigate: Navigate;
 }) {
+  const history = points.map((p) => p.netWorthCents);
+  const projected = project(history, 3);
+  const first = history[0] ?? 0;
+  const delta = (history[history.length - 1] ?? 0) - first;
+  const pct = (delta / (Math.abs(first) || 1)) * 100;
   const figures: Array<{ label: string; value: string; page: PageId | null }> = [
     { label: "Income", value: formatCentsWhole(incomeCents), page: "income" },
     { label: "Spending", value: formatCentsWhole(spendingCents), page: "reports" },
@@ -925,7 +938,19 @@ function PhoneSummary({
       <button type="button" className="phone-summary-hero" onClick={() => onNavigate("networth")}>
         <span className="t-sm t-tertiary">Net worth</span>
         <span className="phone-summary-value num">{formatCentsWhole(netWorthCents)}</span>
+        {history.length >= 2 && (
+          <span className={`stat-delta ${delta >= 0 ? "pos" : "neg"}`} style={{ alignSelf: "flex-start" }}>
+            <Icon name={delta >= 0 ? "arrowUp" : "arrowDown"} size={12} />
+            {formatCentsWhole(Math.abs(delta))}
+            {Math.abs(first) >= 100 && Math.abs(pct) < 1000 && ` (${pct >= 0 ? "+" : ""}${pct.toFixed(0)}%)`}
+            {points[0] && <span className="t-tertiary" style={{ fontWeight: 400 }}>&nbsp;since {monthShort(points[0].month)}</span>}
+          </span>
+        )}
       </button>
+      {/* Six months of net worth, dashed three months ahead. */}
+      <div className="phone-summary-chart">
+        <TrendChart history={history} projected={projected} color="var(--viz-2)" height={72} />
+      </div>
       <div className="phone-summary-month t-xs t-tertiary">{monthLong(month)}</div>
       <div className="phone-summary-figures">
         {figures.map((f) => (

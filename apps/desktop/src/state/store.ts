@@ -32,7 +32,7 @@ import {
   type ServerRoute,
 } from "../lib/serverRoute.js";
 import { describeProbeFailure, runChecks, type UiCheck } from "../lib/startupChecks.js";
-import { applyPhonePreviewLook, isPhonePreview, signInPhonePreview } from "../platform/phonePreview.js";
+import { applyPhonePreviewLook, isPreview, signInPhonePreview } from "../platform/phonePreview.js";
 
 export const APP_VERSION = "0.1.20";
 
@@ -91,6 +91,12 @@ interface AppState {
   sidebarMini: boolean;
   /** Show the cash-flow diagram on Home (per device; on by default). */
   showSankey: boolean;
+  /**
+   * Show the start-up checks? Only for the household owner: remembered per
+   * device from the last sign-in (startup runs before anyone signs in). On
+   * until someone has signed in here, since a fresh install is the owner's.
+   */
+  showStartupChecks: boolean;
   setNavCollapsed(groups: string[]): Promise<void>;
   setSidebarMini(mini: boolean): Promise<void>;
   setShowSankey(show: boolean): Promise<void>;
@@ -189,6 +195,7 @@ const AUTO_LOCK_KEY = "auto-lock-minutes";
 const NAV_COLLAPSED_KEY = "nav-collapsed";
 const SIDEBAR_MINI_KEY = "sidebar-mini";
 const SHOW_SANKEY_KEY = "show-cashflow-diagram";
+const STARTUP_CHECKS_KEY = "startup-checks";
 export const AUTO_LOCK_DEFAULT = 5;
 export function parseStringList(raw: string | null): string[] {
   try {
@@ -287,6 +294,7 @@ export const useApp = create<AppState>((set, get) => ({
   navCollapsed: [],
   sidebarMini: false,
   showSankey: true,
+  showStartupChecks: true,
   aiVisible: false,
   householdName: null,
   lockedUser: null,
@@ -440,8 +448,8 @@ export const useApp = create<AppState>((set, get) => ({
         try {
           const user = await client.me();
           // Dev-only design preview: straight in (phonePreview.ts).
-          if (import.meta.env.DEV && isPhonePreview()) {
-            // The preview "phone" has Face ID on for this profile.
+          if (import.meta.env.DEV && isPreview()) {
+            // The preview device has Face ID on for this profile.
             const address = get().serverAddress;
             if (address) {
               set({ biometricUserIds: [user.id] });
@@ -471,6 +479,10 @@ export const useApp = create<AppState>((set, get) => ({
 
   signedIn(user) {
     set({ user, lockedUser: null, screen: { name: "shell" } });
+    // Only the owner sees the start-up checks on this device from now on.
+    const showStartupChecks = user.role === "owner";
+    set({ showStartupChecks });
+    void get().platform.saveValue(STARTUP_CHECKS_KEY, showStartupChecks ? "on" : "off").catch(() => {});
     void get().refreshAiEnabled();
     get()
       .client.household()
@@ -930,6 +942,7 @@ export async function bootstrap(): Promise<void> {
       navCollapsed: parseStringList(await platform.loadValue(NAV_COLLAPSED_KEY)),
       sidebarMini: (await platform.loadValue(SIDEBAR_MINI_KEY)) === "on",
       showSankey: (await platform.loadValue(SHOW_SANKEY_KEY)) !== "off",
+      showStartupChecks: (await platform.loadValue(STARTUP_CHECKS_KEY)) !== "off",
     });
   } catch (err) {
     console.error("loading review preferences failed; using defaults", err);

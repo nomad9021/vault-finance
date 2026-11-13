@@ -1,4 +1,4 @@
-import { isPhonePreview } from "./phonePreview.js";
+import { isPhonePreview, isPreview } from "./phonePreview.js";
 import type { HostPlatform, ProbeResult } from "./types.js";
 
 /**
@@ -8,13 +8,14 @@ import type { HostPlatform, ProbeResult } from "./types.js";
  */
 export function createBrowserPlatform(): HostPlatform {
   const prefix = "vault.";
-  // Dev-only phone preview (phonePreview.ts); dropped from release builds.
-  const preview = import.meta.env.DEV && isPhonePreview();
+  // Dev-only previews (phonePreview.ts); dropped from release builds.
+  const preview = import.meta.env.DEV && isPreview();
+  const phonePreview = import.meta.env.DEV && isPhonePreview();
   return {
     kind: "browser",
     // The phone preview (phonePreview.ts) renders the iPhone variant.
-    platformName: preview ? "ios" : "linux",
-    deviceName: preview ? "Phone preview" : "Browser (dev)",
+    platformName: phonePreview ? "ios" : "linux",
+    deviceName: phonePreview ? "Phone preview" : preview ? "Desktop preview" : "Browser (dev)",
     fetchImpl: async (url, init) => {
       const res = await fetch(url, init);
       return { status: res.status, text: () => res.text() };
@@ -63,8 +64,8 @@ export function createBrowserPlatform(): HostPlatform {
     async installUpdateAndRestart() {},
 
     async biometricStatus() {
-      // Phone preview: pretend this "phone" has Face ID, to show the lock flow.
-      if (preview) return { available: true, label: "Face ID" };
+      // Previews: pretend this device has Face ID / Touch ID, to show the lock flow.
+      if (preview) return { available: true, label: phonePreview ? "Face ID" : "Touch ID" };
       return { available: false, label: "Biometrics", reason: "Not available in browser dev mode." };
     },
     async biometricAuthenticate() {

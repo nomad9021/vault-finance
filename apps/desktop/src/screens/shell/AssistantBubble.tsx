@@ -43,7 +43,7 @@ export function AssistantBubble({ onOpenPage, phone = false }: { onOpenPage: () 
         onClick={() => (phone ? onOpenPage() : setOpen(true))}
         title="Ask the assistant (Ctrl+J)"
         aria-label="Open the assistant"
-        className={phone ? "ai-bubble glass" : undefined}
+        className={phone ? "ai-bubble glass" : "glass"}
         style={phone ? undefined : {
           position: "fixed",
           right: 20,
@@ -52,11 +52,9 @@ export function AssistantBubble({ onOpenPage, phone = false }: { onOpenPage: () 
           width: 52,
           height: 52,
           borderRadius: "50%",
-          border: 0,
           cursor: "pointer",
-          background: "var(--color-accent)",
-          color: "var(--color-on-accent, #fff)",
-          boxShadow: "var(--shadow-lg)",
+          // Glass circle (components.css .glass), like the iPhone's.
+          color: "var(--content-primary)",
           display: "grid",
           placeItems: "center",
           fontSize: 22,
