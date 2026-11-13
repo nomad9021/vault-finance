@@ -154,7 +154,7 @@ mod imp {
     use objc2::runtime::AnyObject;
     use objc2::{class, msg_send};
     use std::ptr::{self, NonNull};
-    use tauri::AppHandle;
+    use tauri::{AppHandle, Emitter};
 
     #[repr(C)]
     #[derive(Clone, Copy)]
