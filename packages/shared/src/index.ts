@@ -1,5 +1,6 @@
 export * from "./schemas/common.js";
 export * from "./downloads.js";
+export * from "./schemas/dashboard.js";
 export * from "./schemas/user.js";
 export * from "./schemas/auth.js";
 export * from "./schemas/password.js";
@@ -14,6 +15,7 @@ export * from "./schemas/accounts.js";
 export * from "./schemas/categories.js";
 export * from "./schemas/transactions.js";
 export * from "./schemas/budgets.js";
+export * from "./schemas/guiltFree.js";
 export * from "./schemas/ai.js";
 export * from "./schemas/taxes.js";
 export * from "./schemas/buckets.js";

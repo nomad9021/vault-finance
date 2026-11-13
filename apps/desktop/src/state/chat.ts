@@ -1,4 +1,4 @@
-import { ApiRequestError, stripAssistantBlocks, type AiActionRecord } from "@vault/shared";
+import { ApiRequestError, splitUserMessage, stripAssistantBlocks, type AiActionRecord, type ChatAttachment } from "@vault/shared";
 import { create } from "zustand";
 import { applyClientAction } from "../lib/aiClientActions.js";
 import { useApp } from "./store.js";
@@ -24,6 +24,8 @@ export interface ChatMessage {
   remembered?: string[];
   /** The user pressed Stop on this reply. */
   stopped?: boolean;
+  /** Spreadsheets attached to this (user) message, by name. */
+  files?: string[];
 }
 
 interface ChatState {
@@ -35,6 +37,11 @@ interface ChatState {
   listVersion: number;
   /** Bumped when a change was applied, so open pages can refresh their data. */
   dataVersion: number;
+  /** A spreadsheet waiting to go with the next message. */
+  attachment: ChatAttachment | null;
+  attach(file: ChatAttachment | null): void;
+  /** Approve every pending change of one reply, in order. */
+  approveAll(records: AiActionRecord[]): Promise<void>;
   /** Ask every open page to refetch (pull to refresh). */
   refreshData(): void;
   newChat(): void;
@@ -72,6 +79,16 @@ export const useChat = create<ChatState>((set, get) => {
     error: null,
     listVersion: 0,
     dataVersion: 0,
+    attachment: null,
+
+    attach(file) {
+      set({ attachment: file });
+    },
+
+    async approveAll(records) {
+      // In order: a budget can need the category created just before it.
+      for (const r of records) if (r.status === "pending") await get().decide(r, true);
+    },
 
     refreshData() {
       set((s) => ({ dataVersion: s.dataVersion + 1 }));
@@ -89,11 +106,11 @@ export const useChat = create<ChatState>((set, get) => {
         const detail = await useApp.getState().client.conversation(id);
         set({
           conversationId: id,
-          messages: detail.messages.map((m) => ({
-            role: m.role,
-            text: m.role === "assistant" ? stripAssistantBlocks(m.content) : m.content,
-            actions: m.actions ?? [],
-          })),
+          messages: detail.messages.map((m) => {
+            if (m.role === "assistant") return { role: m.role, text: stripAssistantBlocks(m.content), actions: m.actions ?? [] };
+            const { text, files } = splitUserMessage(m.content);
+            return { role: m.role, text, actions: [], ...(files.length ? { files } : {}) };
+          }),
         });
       } catch (err) {
         set({ error: err instanceof ApiRequestError ? err.message : "Couldn't open that chat." });
@@ -101,20 +118,26 @@ export const useChat = create<ChatState>((set, get) => {
     },
 
     async send(text) {
-      const message = text.trim();
+      const attachment = get().attachment;
+      const message = text.trim() || (attachment ? "Import the budget in this spreadsheet." : "");
       if (!message || get().busy) return;
       const { client, aiAutoApply: autoApply, aiLevel: level } = useApp.getState();
       controller = new AbortController();
       set((s) => ({
         busy: true,
         error: null,
-        messages: [...s.messages, { role: "user", text: message }, { role: "assistant", text: "", pending: true }],
+        attachment: null,
+        messages: [
+          ...s.messages,
+          { role: "user", text: message, ...(attachment ? { files: [attachment.name] } : {}) },
+          { role: "assistant", text: "", pending: true },
+        ],
       }));
       const clientPending: AiActionRecord[] = [];
       try {
         const conversationId = get().conversationId;
         const result = await client.chat(
-          { message, autoApply, level, ...(conversationId ? { conversationId } : {}) },
+          { message, autoApply, level, ...(conversationId ? { conversationId } : {}), ...(attachment ? { attachment } : {}) },
           (token) =>
             patchLast((m) => {
               const next = { ...m, text: m.text + token };
@@ -145,7 +168,11 @@ export const useChat = create<ChatState>((set, get) => {
           patchLast((m) => ({ ...m, stopped: true }));
           return;
         }
-        set((s) => ({ messages: s.messages.filter((m) => !(m.pending && stripAssistantBlocks(m.text) === "")) }));
+        set((s) => ({
+          messages: s.messages.filter((m) => !(m.pending && stripAssistantBlocks(m.text) === "")),
+          // Keep the spreadsheet so trying again doesn't mean picking it again.
+          ...(attachment && !s.attachment ? { attachment } : {}),
+        }));
         set({
           error:
             err instanceof ApiRequestError

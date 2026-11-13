@@ -6,11 +6,11 @@ import type { IconName } from "@vault/ui";
  * This is the spine of the redesign. Rather than a flat list of destinations,
  * pages belong to a *group* that answers a question:
  *
- *   Home   — how am I doing?
- *   Money  — what actually happened?
- *   Plan   — what should happen?
- *   Grow   — where am I heading?
- *   More   — everything else
+ *   Home   — how am I doing? (dashboard, insights, reports)
+ *   Money  — what I have and what came in and went out
+ *   Budget — what's planned to go out: budgets, bills, subscriptions
+ *   Save   — what I'm putting away: goals, investments, giving
+ *   More   — the assistant and settings
  *
  * At wide widths the groups become labelled sidebar sections. At narrow widths
  * (and on the phone viewer) the groups become the five bottom tabs and their
@@ -79,6 +79,13 @@ export const NAV_GROUPS: NavGroup[] = [
         title: "Insights",
         keywords: "alerts warnings overspent attention what needs doing",
       },
+      {
+        id: "reports",
+        label: "Reports",
+        icon: "report",
+        title: "Reports",
+        keywords: "export csv spending by category year weekly monthly review present slideshow",
+      },
     ],
   },
   {
@@ -108,17 +115,24 @@ export const NAV_GROUPS: NavGroup[] = [
         keywords: "paycheck salary earnings deposits",
       },
       {
-        id: "subscriptions",
-        label: "Subscriptions",
-        icon: "refresh",
-        title: "Subscriptions",
-        keywords: "recurring charges streaming memberships cancel price increase",
+        id: "taxes",
+        label: "Taxes",
+        icon: "scale",
+        title: "Salary & taxes",
+        keywords: "salary gross pay take-home paycheck tax federal state city 401k hsa withholding move compare sankey",
+      },
+      {
+        id: "networth",
+        label: "Net Worth",
+        icon: "scale",
+        title: "Net Worth",
+        keywords: "assets liabilities balance sheet over time what am i worth",
       },
     ],
   },
   {
     id: "plan",
-    label: "Plan",
+    label: "Budget",
     icon: "target",
     pages: [
       {
@@ -130,18 +144,18 @@ export const NAV_GROUPS: NavGroup[] = [
         keywords: "budget planner allocate categories monthly limits envelope",
       },
       {
-        id: "taxes",
-        label: "Taxes",
-        icon: "scale",
-        title: "Salary & taxes",
-        keywords: "salary gross pay take-home paycheck tax federal state city 401k hsa withholding move compare sankey",
-      },
-      {
         id: "bills",
         label: "Bills",
         icon: "receipt",
         title: "Bills",
         keywords: "recurring due subscriptions payments",
+      },
+      {
+        id: "subscriptions",
+        label: "Subscriptions",
+        icon: "refresh",
+        title: "Subscriptions",
+        keywords: "recurring charges streaming memberships cancel price increase",
       },
       {
         id: "cashflow",
@@ -151,19 +165,12 @@ export const NAV_GROUPS: NavGroup[] = [
         // The debt payoff planner moved here from Savings Goals.
         keywords: "income vs spending trends debt payoff snowball avalanche",
       },
-      {
-        id: "giving",
-        label: "Giving",
-        icon: "gift",
-        title: "Giving & Gifts",
-        keywords: "charity tithe donations gifts presents christmas birthday sinking fund",
-      },
     ],
   },
   {
     id: "grow",
-    label: "Grow",
-    icon: "trendUp",
+    label: "Save",
+    icon: "flag",
     pages: [
       {
         id: "goals",
@@ -180,11 +187,11 @@ export const NAV_GROUPS: NavGroup[] = [
         keywords: "portfolio holdings stocks allocation returns",
       },
       {
-        id: "networth",
-        label: "Net Worth",
-        icon: "scale",
-        title: "Net Worth",
-        keywords: "assets liabilities balance sheet over time what am i worth",
+        id: "giving",
+        label: "Giving",
+        icon: "gift",
+        title: "Giving & Gifts",
+        keywords: "charity tithe donations gifts presents christmas birthday sinking fund",
       },
     ],
   },
@@ -193,13 +200,6 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "More",
     icon: "more",
     pages: [
-      {
-        id: "reports",
-        label: "Reports",
-        icon: "report",
-        title: "Reports",
-        keywords: "export csv spending by category year weekly monthly review present slideshow",
-      },
       {
         id: "assistant",
         label: "AI Assistant",

@@ -1,4 +1,7 @@
+import { notTransfer } from "../../lib/transfers.js";
 import {
+  DASHBOARD_WIDGETS,
+  resolveWidgets,
   estimateTaxes,
   findLocality,
   LOCALITIES_2026,
@@ -56,6 +59,8 @@ const QUERY_LABEL: Record<AiQuery["type"], string> = {
   cashflow: "cash flow",
   insights: "insights",
   accounts: "accounts",
+  guilt_free: "guilt-free spending",
+  dashboard: "home screen",
 };
 
 export function describeQueries(queries: AiQuery[]): string {
@@ -113,14 +118,14 @@ export async function runQuery(app: FastifyInstance, request: FastifyRequest, q:
       const [sum] = await app.db
         .select({
           count: sql<number>`count(*)::int`,
-          out: sql<string>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)`,
-          inn: sql<string>`coalesce(sum(${transactions.amountCents}) filter (where ${transactions.amountCents} > 0), 0)`,
+          out: sql<string>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0 and not ${transactions.isTransfer}), 0)`,
+          inn: sql<string>`coalesce(sum(${transactions.amountCents}) filter (where ${transactions.amountCents} > 0 and not ${transactions.isTransfer}), 0)`,
         })
         .from(transactions)
         .where(where);
       const lines = rows
         .slice(0, limit)
-        .map((t) => `  ${t.postedAt} | ${t.merchantName.slice(0, 40)} | ${dollars(t.amountCents)} | ${pathOf(t.categoryId)}`);
+        .map((t) => `  ${t.postedAt} | ${t.merchantName.slice(0, 40)} | ${dollars(t.amountCents)} | ${t.isTransfer ? "transfer between own accounts (not spending)" : pathOf(t.categoryId)}`);
       return [
         `TOTAL for these filters: ${sum?.count ?? 0} transactions, spent ${dollars(Number(sum?.out ?? 0))}, received ${dollars(Number(sum?.inn ?? 0))} (use these totals; don't add up yourself).`,
         `TRANSACTIONS (date | merchant | amount | category)${rows.length > limit ? `, newest ${limit} shown` : ""}:`,
@@ -140,7 +145,7 @@ export async function runQuery(app: FastifyInstance, request: FastifyRequest, q:
           categoryIds: sql<string>`string_agg(distinct coalesce(${transactions.categoryId}::text, ''), ',')`,
         })
         .from(transactions)
-        .where(and(gte(transactions.postedAt, since), q.uncategorizedOnly ? isNull(transactions.categoryId) : undefined))
+        .where(and(notTransfer, gte(transactions.postedAt, since), q.uncategorizedOnly ? isNull(transactions.categoryId) : undefined))
         .groupBy(sql`lower(${transactions.merchantName})`)
         .orderBy(sql`count(*) desc`)
         .limit(MAX_LINES);
@@ -166,7 +171,7 @@ export async function runQuery(app: FastifyInstance, request: FastifyRequest, q:
           inn: sql<string>`coalesce(sum(${transactions.amountCents}) filter (where ${transactions.amountCents} > 0), 0)`,
         })
         .from(transactions)
-        .where(gte(transactions.postedAt, since))
+        .where(and(notTransfer, gte(transactions.postedAt, since)))
         .groupBy(transactions.categoryId);
       const lines = rows
         .sort((a, b) => Number(b.out) + Number(b.inn) - (Number(a.out) + Number(a.inn)))
@@ -321,6 +326,30 @@ export async function runQuery(app: FastifyInstance, request: FastifyRequest, q:
       return [
         `ACCOUNTS (net worth ${dollars(net)}; name | type | balance | free to use after set-asides):`,
         ...accounts.map((a) => `  ${a.name} | ${a.type} | ${dollars(a.balanceCents)} | ${dollars(a.balanceCents - (a.setAsideCents ?? 0))}`),
+      ].join("\n");
+    }
+
+    case "guilt_free": {
+      const g = await get<{ weekStart: string; weekEnd: string; people: Array<{ displayName: string; isMe: boolean; weeklyCents: number; spentCents: number; purchases: Array<{ merchantName: string; amountCents: number; postedAt: string }> }> }>("/guilt-free");
+      return [
+        `GUILT-FREE SPENDING, week of ${g.weekStart} (resets ${g.weekEnd}); person | weekly | spent | left:`,
+        ...g.people.map(
+          (p) =>
+            `  ${p.displayName}${p.isMe ? " (the user)" : ""} | ${p.weeklyCents ? dollars(p.weeklyCents) : "not set"} | ${dollars(p.spentCents)} | ${dollars(p.weeklyCents - p.spentCents)}` +
+            (p.purchases.length ? `\n    ${p.purchases.slice(0, 10).map((x) => `${x.postedAt} ${x.merchantName} ${dollars(x.amountCents)}`).join("; ")}` : ""),
+        ),
+      ].join("\n");
+    }
+
+    case "dashboard": {
+      const prefs = await get<{ dashboard?: Array<{ id: string; hidden?: boolean; span?: number }>; sankeyView?: string }>("/me/preferences");
+      const layout = resolveWidgets(DASHBOARD_WIDGETS, prefs.dashboard);
+      const width: Record<number, string> = { 3: "quarter", 4: "third", 6: "half", 8: "two-thirds", 12: "full" };
+      const about = new Map(DASHBOARD_WIDGETS.map((w) => [w.id, w.about]));
+      return [
+        `HOME SCREEN, top to bottom (id | shown | width | what it is); cash-flow diagram view: ${prefs.sankeyView ?? "actual"}:`,
+        ...layout.map((w) => `  ${w.id} | ${w.hidden ? "hidden" : "shown"} | ${width[w.span] ?? w.span} | ${about.get(w.id) ?? ""}`),
+        "  (on a phone it's one column, and the four number cards become one summary card)",
       ].join("\n");
     }
   }

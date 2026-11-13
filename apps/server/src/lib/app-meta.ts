@@ -5,6 +5,8 @@ import type { Db } from "../plugins/db.js";
 /** Well-known app_meta keys, so two modules can't collide on a string. */
 export const META_KEYS = {
   householdName: "household_name",
+  /** Guilt-free spending: which categories belong to whom (guiltFree/routes.ts). */
+  guiltFree: "guilt_free",
 } as const;
 
 export async function readMeta(db: Db, key: string): Promise<string | null> {

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { detectTransfers } from "../lib/transfers.js";
 import { fileURLToPath } from "node:url";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -32,6 +33,14 @@ export default fp(
       app.log.info("running database migrations");
       await migrate(db, { migrationsFolder });
       app.log.info("database migrations complete");
+      // Catch up on transfers between the household's accounts (all history,
+      // the first time; afterwards only new pairs match).
+      try {
+        const flagged = await detectTransfers(db, 3650);
+        if (flagged) app.log.info({ flagged }, "marked transfers between accounts");
+      } catch (err) {
+        app.log.warn({ err }, "couldn't check for transfers");
+      }
     }
 
     app.decorate("db", db);

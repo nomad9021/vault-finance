@@ -304,6 +304,14 @@ export const transactions = pgTable(
     pending: boolean("pending").notNull().default(false),
     externalId: text("external_id"),
     notes: text("notes"),
+    /**
+     * Money moving between the household's own accounts (checking → savings,
+     * paying a credit card). Neither income nor spending, so every total
+     * leaves it out. Found automatically (lib/transfers.ts) or set by hand.
+     */
+    isTransfer: boolean("is_transfer").notNull().default(false),
+    /** The person set isTransfer themselves; detection leaves the row alone. */
+    transferManual: boolean("transfer_manual").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

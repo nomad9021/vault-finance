@@ -1,3 +1,4 @@
+import { notTransfer } from "../../lib/transfers.js";
 import {
   ReviewQuery,
   type CategorySpend,
@@ -97,7 +98,7 @@ export default async function reportRoutes(
         spending: sql<string>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)`,
       })
       .from(transactions)
-      .where(and(gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst)));
+      .where(and(notTransfer, gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst)));
     const incomeCents = Number(row?.income ?? 0);
     const spendingCents = Number(row?.spending ?? 0);
     return { incomeCents, spendingCents, savedCents: incomeCents - spendingCents };
@@ -111,7 +112,7 @@ export default async function reportRoutes(
         spent: sql<string>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)`,
       })
       .from(transactions)
-      .where(and(gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst)))
+      .where(and(notTransfer, gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst)))
       .groupBy(transactions.categoryId);
     const cats = await app.db.select().from(categories);
     const byId = new Map(cats.map((c) => [c.id, c]));
@@ -246,7 +247,7 @@ export default async function reportRoutes(
         count: sql<string>`count(*)`,
       })
       .from(transactions)
-      .where(and(gte(transactions.postedAt, from), lt(transactions.postedAt, to)));
+      .where(and(notTransfer, gte(transactions.postedAt, from), lt(transactions.postedAt, to)));
     const incomeCents = Number(row?.income ?? 0);
     const spendingCents = Number(row?.spending ?? 0);
     return {
@@ -264,7 +265,7 @@ export default async function reportRoutes(
         spent: sql<string>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)`,
       })
       .from(transactions)
-      .where(and(gte(transactions.postedAt, from), lt(transactions.postedAt, to)))
+      .where(and(notTransfer, gte(transactions.postedAt, from), lt(transactions.postedAt, to)))
       .groupBy(transactions.categoryId);
     return new Map(rows.map((r) => [r.categoryId, Number(r.spent)]));
   }
@@ -304,7 +305,7 @@ export default async function reportRoutes(
         count: sql<string>`count(*)`,
       })
       .from(transactions)
-      .where(and(inPeriod, lt(transactions.amountCents, 0)))
+      .where(and(notTransfer, inPeriod, lt(transactions.amountCents, 0)))
       .groupBy(transactions.merchantName)
       .orderBy(desc(sql`sum(-${transactions.amountCents})`))
       .limit(5);
@@ -318,7 +319,7 @@ export default async function reportRoutes(
         categoryId: transactions.categoryId,
       })
       .from(transactions)
-      .where(and(inPeriod, lt(transactions.amountCents, 0)))
+      .where(and(notTransfer, inPeriod, lt(transactions.amountCents, 0)))
       .orderBy(asc(transactions.amountCents))
       .limit(5);
 
@@ -328,7 +329,7 @@ export default async function reportRoutes(
         spent: sql<string>`sum(-${transactions.amountCents})`,
       })
       .from(transactions)
-      .where(and(inPeriod, lt(transactions.amountCents, 0)))
+      .where(and(notTransfer, inPeriod, lt(transactions.amountCents, 0)))
       .groupBy(transactions.postedAt);
     const dailyByDate = new Map(daily.map((d) => [String(d.date), Number(d.spent)]));
     const dailySpending: PeriodReview["dailySpending"] = [];

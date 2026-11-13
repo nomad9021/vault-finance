@@ -20,7 +20,8 @@ import type { FastifyInstance } from "fastify";
 import { aiActions, aiConversations, aiMessages, aiSettings } from "../../db/schema.js";
 import { appendMemory, MEMORY_PROMPT_LIMIT, readMemory } from "../../lib/ai-memory.js";
 import { applyStoredAction, buildActionGuide, checkActions, loadCheckWorld, recordActions, toRecord } from "./actions.js";
-import { agentNames, routeAgents } from "./agents.js";
+import { agentNames, routeAgents, type AgentId } from "./agents.js";
+import { fileBlock } from "./sheet.js";
 import { AppError, notFound } from "../../errors.js";
 import type { AppConfig } from "../../config.js";
 import { buildFinancialContext } from "./context.js";
@@ -60,6 +61,7 @@ const AUTO_APPLY_OK = new Set([
   "create_giving_fund",
   "recolor_category",
   "reorder_categories",
+  "set_dashboard_layout", // only moves cards around on the person's own home screen
   "autocategorize", // only fills in transactions that have no category yet
 ]);
 /** Long-term memory notes kept from any one reply. */
@@ -386,12 +388,17 @@ export default async function aiRoutes(
         .returning({ id: aiConversations.id });
       conversationId = created!.id;
     }
+    // An attached spreadsheet travels inside the message (as a <vault-file>
+    // block the app shows as a chip), so follow-ups can still see it.
+    const userContent = body.attachment ? body.message + fileBlock(body.attachment) : body.message;
     await app.db
       .insert(aiMessages)
-      .values({ conversationId, role: "user", content: body.message });
+      .values({ conversationId, role: "user", content: userContent });
 
-    // Which specialist agents this message needs (agents.ts).
-    const agentIds = routeAgents(body.message, previousUserMessage);
+    // Which specialist agents this message needs (agents.ts). A spreadsheet
+    // is usually a budget to import, so it brings the budget agents along.
+    const routed = routeAgents(body.message, previousUserMessage);
+    const agentIds: AgentId[] = body.attachment ? [...new Set<AgentId>([...routed, "budget", "organizer"])] : routed;
 
     // Assemble the model's view: system context + recent history.
     const memory = readMemory(opts.config.dataDir, userId).slice(-MEMORY_PROMPT_LIMIT);

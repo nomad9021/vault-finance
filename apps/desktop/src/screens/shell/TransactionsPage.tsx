@@ -338,7 +338,10 @@ export function TransactionsPage({
                           <input type="checkbox" aria-label={`Select ${t.merchantName}`} checked={isSel} onChange={() => toggleRow(t.id)} style={{ cursor: "pointer" }} />
                         </td>
                         <Td muted nowrap>{t.postedAt}</Td>
-                        <Td style={{ fontWeight: 500 }}>{t.merchantName}</Td>
+                        <Td style={{ fontWeight: 500 }}>
+                          {t.merchantName}
+                          {t.isTransfer && <span className="txn-transfer" title="Between your own accounts: not income or spending">Transfer</span>}
+                        </Td>
                         <Td><CategoryPill category={category} /></Td>
                         <Td muted nowrap>{accountById.get(t.accountId)?.name ?? "—"}</Td>
                         <Td nowrap style={{ textAlign: "right", fontWeight: 600, color: t.amountCents > 0 ? "var(--color-positive)" : "var(--color-text)" }}>
@@ -569,6 +572,7 @@ function TransactionDialog({
     transaction ? (transaction.amountCents / 100).toFixed(2) : "",
   );
   const [notes, setNotes] = useState(transaction?.notes ?? "");
+  const [isTransfer, setIsTransfer] = useState(transaction?.isTransfer ?? false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Offered only when you're actually filing something that wasn't filed
@@ -597,7 +601,10 @@ function TransactionDialog({
         notes: notes.trim() || null,
       };
       if (transaction) {
-        await client.updateTransaction(transaction.id, common);
+        await client.updateTransaction(transaction.id, {
+          ...common,
+          ...(isTransfer !== (transaction.isTransfer ?? false) ? { isTransfer } : {}),
+        });
       } else {
         await client.createTransaction({ ...common, accountId, pending: false });
       }
@@ -726,6 +733,22 @@ function TransactionDialog({
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
         />
+        {transaction && (
+          <label className="radio" style={{ alignItems: "flex-start", gap: "var(--space-2)" }}>
+            <input
+              type="checkbox"
+              checked={isTransfer}
+              onChange={(e) => setIsTransfer(e.target.checked)}
+              style={{ position: "static", opacity: 1, width: 16, height: 16, marginTop: 2 }}
+            />
+            <span>
+              <span className="t-sm">Transfer between my accounts</span>
+              <span className="field-hint" style={{ display: "block" }}>
+                Not counted as income or spending. Found automatically when both sides are here; change it if it's wrong.
+              </span>
+            </span>
+          </label>
+        )}
         {error && (
           <div role="alert" style={{ fontSize: "var(--text-sm)", color: "var(--color-negative)" }}>
             {error}
@@ -916,7 +939,7 @@ function PhoneTransactionList({
                         className="dot"
                         style={{ background: category?.color ?? "var(--color-neutral-600)" }}
                       />
-                      {category?.name ?? "Uncategorized"} · {accountById.get(t.accountId)?.name ?? "—"}
+                      {t.isTransfer ? "Transfer" : (category?.name ?? "Uncategorized")} · {accountById.get(t.accountId)?.name ?? "—"}
                     </span>
                   </span>
                   <span

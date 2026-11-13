@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SankeyView, WIDGET_WIDTHS, type WidgetWidth } from "./dashboard.js";
 
 /**
  * Changes the AI assistant may propose. The model names categories the way
@@ -38,7 +39,8 @@ export const AiAction = z.discriminatedUnion("type", [
   z.object({ type: z.literal("delete_category"), category: Name }),
   z.object({ type: z.literal("create_rule"), keyword: z.string().trim().min(1).max(100), category: Name }),
   z.object({ type: z.literal("delete_rule"), keyword: z.string().trim().min(1).max(100) }),
-  z.object({ type: z.literal("set_budget"), category: Name, amount: Dollars }),
+  /** `amount` is per `period`: per month (the default) or per week. */
+  z.object({ type: z.literal("set_budget"), category: Name, amount: Dollars, period: z.enum(["monthly", "weekly"]).optional() }),
   z.object({ type: z.literal("remove_budget"), category: Name }),
   z.object({ type: z.literal("set_planned_income"), amount: Dollars }),
   z.object({ type: z.literal("rename_household"), name: z.string().trim().min(1).max(80) }),
@@ -177,6 +179,25 @@ export const AiAction = z.discriminatedUnion("type", [
     strategy: z.enum(["avalanche", "snowball"]).optional(),
     extraMonthly: Dollars.optional(),
   }),
+  // ── Guilt-free spending: each person's weekly no-questions-asked money ──
+  /** person = a household member's name, or "me". amount 0 removes it. */
+  z.object({ type: z.literal("set_guilt_free"), person: Name, weekly: Dollars }),
+
+  // ── Home screen (saved to the person's account) ──
+  z.object({
+    type: z.literal("set_dashboard_layout"),
+    /** Back to the default layout first, then the rest of this change. */
+    reset: z.boolean().optional(),
+    /** Widget ids in the order wanted; ones left out keep their order after them. */
+    order: z.array(z.string().min(1).max(40)).max(40).optional(),
+    show: z.array(z.string().min(1).max(40)).max(40).optional(),
+    hide: z.array(z.string().min(1).max(40)).max(40).optional(),
+    widths: z
+      .record(z.string().min(1).max(40), z.enum(Object.keys(WIDGET_WIDTHS) as [WidgetWidth, ...WidgetWidth[]]))
+      .optional(),
+    sankeyView: SankeyView.optional(),
+  }),
+
   // Applied by the app itself (they're per-device preferences).
   z.object({ type: z.literal("set_theme"), theme: z.string().min(1).max(20) }),
   z.object({
@@ -250,7 +271,7 @@ export function describeAiAction(a: AiAction): string {
     case "delete_rule":
       return `Remove the auto-categorization rule for "${a.keyword}"`;
     case "set_budget":
-      return `Set the monthly budget for "${a.category}" to $${a.amount.toLocaleString("en-US", Number.isInteger(a.amount) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      return `Set the ${a.period === "weekly" ? "weekly" : "monthly"} budget for "${a.category}" to $${a.amount.toLocaleString("en-US", Number.isInteger(a.amount) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     case "remove_budget":
       return `Remove the budget for "${a.category}"`;
     case "set_planned_income":
@@ -319,6 +340,23 @@ export function describeAiAction(a: AiAction): string {
       return a.use ? "Show the estimated taxes before income" : "Stop showing the estimated taxes before income (use your own items)";
     case "set_debt_plan":
       return `Debt plan: ${[a.strategy && `${a.strategy} order`, a.extraMonthly !== undefined && `$${a.extraMonthly.toLocaleString("en-US")} extra a month`].filter(Boolean).join(", ") || "no change"}`;
+    case "set_guilt_free": {
+      const who = /^(me|myself|i)$/i.test(a.person.trim()) ? "your" : `${a.person}'s`;
+      return a.weekly > 0
+        ? `Set ${who} guilt-free spending to $${a.weekly.toLocaleString("en-US")} a week`
+        : `Remove ${who} weekly guilt-free spending`;
+    }
+    case "set_dashboard_layout": {
+      const parts: string[] = [];
+      if (a.reset) parts.push("reset to the default layout");
+      if (a.order?.length) parts.push(`order: ${a.order.join(", ")}`);
+      if (a.show?.length) parts.push(`show ${a.show.join(", ")}`);
+      if (a.hide?.length) parts.push(`hide ${a.hide.join(", ")}`);
+      const widths = Object.entries(a.widths ?? {});
+      if (widths.length) parts.push(widths.map(([id, w]) => `${id} ${w} width`).join(", "));
+      if (a.sankeyView) parts.push(`cash-flow diagram: ${a.sankeyView === "combined" ? "budget vs actual" : a.sankeyView}`);
+      return `Home screen: ${parts.join("; ") || "no change"}`;
+    }
     case "set_theme":
       return `Switch the theme to ${a.theme}`;
     case "set_review_prefs": {
@@ -399,6 +437,9 @@ export const AiQuery = z.discriminatedUnion("type", [
   z.object({ type: z.literal("cashflow"), months: z.number().int().min(1).max(24).optional() }),
   z.object({ type: z.literal("insights") }),
   z.object({ type: z.literal("accounts") }),
+  z.object({ type: z.literal("guilt_free") }),
+  /** The person's home screen layout: widgets in order, shown or hidden, widths. */
+  z.object({ type: z.literal("dashboard") }),
 ]);
 export type AiQuery = z.infer<typeof AiQuery>;
 
@@ -424,6 +465,12 @@ const QUERY_ALIASES: Record<string, string> = {
   bill: "bills",
   goal: "goals",
   account: "accounts",
+  guiltfree: "guilt_free",
+  "guilt-free": "guilt_free",
+  home: "dashboard",
+  home_screen: "dashboard",
+  layout: "dashboard",
+  dashboard_layout: "dashboard",
 };
 
 export function extractQueryBlocks(text: string): { queries: AiQuery[]; invalid: string[] } {

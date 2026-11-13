@@ -1,4 +1,5 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { detectTransfers } from "../../lib/transfers.js";
 import type { FastifyInstance } from "fastify";
 import type { AppConfig } from "../../config.js";
 import type { Db } from "../../plugins/db.js";
@@ -165,6 +166,9 @@ async function pullConnection(
       .delete(transactions)
       .where(and(inArray(transactions.accountId, ownAccounts), inArray(transactions.externalId, delta.removedIds)));
   }
+
+  // Checking → savings and card payments show up on both sides; pair them up.
+  await detectTransfers(db);
 
   await db
     .update(bankConnections)

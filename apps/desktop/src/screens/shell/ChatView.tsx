@@ -1,6 +1,7 @@
 import { stripAssistantBlocks, type AiActionRecord } from "@vault/shared";
-import { Button, Spinner, Tag } from "@vault/ui";
+import { Button, Icon, Spinner, Tag } from "@vault/ui";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { readSpreadsheet, SPREADSHEET_ACCEPT, SpreadsheetError } from "../../lib/spreadsheet.js";
 import { useChat } from "../../state/chat.js";
 
 /**
@@ -14,6 +15,7 @@ export function ChatMessages({ compact = false, empty }: { compact?: boolean; em
   const messages = useChat((s) => s.messages);
   const error = useChat((s) => s.error);
   const decide = useChat((s) => s.decide);
+  const approveAll = useChat((s) => s.approveAll);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -41,6 +43,11 @@ export function ChatMessages({ compact = false, empty }: { compact?: boolean; em
               lineHeight: 1.5,
             }}
           >
+            {m.files?.map((f) => (
+              <div key={f} className="chat-file-chip" style={{ marginBottom: m.text ? 6 : 0 }}>
+                <Icon name="report" size={14} /> {f}
+              </div>
+            ))}
             {m.text}
           </div>
         ) : (
@@ -63,6 +70,9 @@ export function ChatMessages({ compact = false, empty }: { compact?: boolean; em
               </div>
             )}
             {m.stopped && <div style={{ fontSize: "var(--text-xs)", color: "var(--content-tertiary)" }}>Stopped.</div>}
+            {(m.actions?.filter((a) => a.status === "pending").length ?? 0) > 1 && (
+              <ApproveAll count={m.actions!.filter((a) => a.status === "pending").length} onApprove={() => approveAll(m.actions!)} />
+            )}
             {m.actions?.map((a) => (
               <ActionCard key={a.id} action={a} onDecide={(approve) => void decide(a, approve)} />
             ))}
@@ -83,12 +93,49 @@ export function ChatMessages({ compact = false, empty }: { compact?: boolean; em
   );
 }
 
-/** Input with Send, which turns into Stop while a reply is coming in. */
+/** Approve every pending change in one reply (a whole imported budget), in order. */
+function ApproveAll({ count, onApprove }: { count: number; onApprove: () => Promise<void> }) {
+  const [working, setWorking] = useState(false);
+  return (
+    <Button
+      variant="primary"
+      size="sm"
+      icon="check"
+      disabled={working}
+      style={{ alignSelf: "flex-start" }}
+      onClick={() => {
+        setWorking(true);
+        void onApprove().finally(() => setWorking(false));
+      }}
+    >
+      {working ? "Applying…" : `Approve all ${count}`}
+    </Button>
+  );
+}
+
+/**
+ * Input with Send, which turns into Stop while a reply is coming in, and a
+ * paperclip for attaching a spreadsheet (CSV or Excel) — an existing budget
+ * to import, a list of bills.
+ */
 export function ChatComposer({ disabled = false, compact = false, autoFocus = false }: { disabled?: boolean; compact?: boolean; autoFocus?: boolean }) {
   const [input, setInput] = useState("");
   const busy = useChat((s) => s.busy);
   const send = useChat((s) => s.send);
   const stop = useChat((s) => s.stop);
+  const attachment = useChat((s) => s.attachment);
+  const attach = useChat((s) => s.attach);
+  const setError = useChat((s) => s.setError);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const pick = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      attach(await readSpreadsheet(file));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof SpreadsheetError ? err.message : "Couldn't read that file. Save it as CSV and try again.");
+    }
+  };
   return (
     <form
       onSubmit={(e) => {
@@ -98,28 +145,58 @@ export function ChatComposer({ disabled = false, compact = false, autoFocus = fa
         setInput("");
         void send(text);
       }}
-      style={{ flex: "none", borderTop: "1px solid var(--color-divider)", padding: compact ? "10px 12px" : "12px 24px", display: "flex", gap: 10 }}
+      style={{ flex: "none", borderTop: "1px solid var(--color-divider)", padding: compact ? "10px 12px" : "12px 24px", display: "flex", flexDirection: "column", gap: 8 }}
     >
-      <input
-        className="input"
-        style={{ flex: 1, borderRadius: "var(--radius-md)" }}
-        placeholder="Ask about your money…"
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        disabled={disabled}
-        // eslint-disable-next-line jsx-a11y/no-autofocus
-        autoFocus={autoFocus}
-        aria-label="Ask about your money"
-      />
-      {busy ? (
-        <Button variant="secondary" type="button" onClick={stop} style={{ whiteSpace: "nowrap" }} aria-label="Stop the reply">
-          <Spinner label="Thinking" /> Stop
-        </Button>
-      ) : (
-        <Button variant="primary" type="submit" style={{ whiteSpace: "nowrap" }} disabled={disabled || !input.trim()}>
-          Send
-        </Button>
+      {attachment && (
+        <div className="chat-file-chip chat-file-chip-pending">
+          <Icon name="report" size={14} />
+          <span className="truncate" style={{ minWidth: 0 }}>{attachment.name}</span>
+          <button type="button" aria-label="Remove the attached file" onClick={() => attach(null)}>
+            ×
+          </button>
+        </div>
       )}
+      <div style={{ display: "flex", gap: 10 }}>
+        <input
+          ref={fileRef}
+          type="file"
+          accept={SPREADSHEET_ACCEPT}
+          style={{ display: "none" }}
+          onChange={(e) => {
+            void pick(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+        <Button
+          variant="ghost"
+          type="button"
+          icon="upload"
+          aria-label="Attach a spreadsheet"
+          title="Attach a spreadsheet (CSV or Excel) — like a budget to import"
+          disabled={disabled || busy}
+          onClick={() => fileRef.current?.click()}
+        />
+        <input
+          className="input"
+          style={{ flex: 1, borderRadius: "var(--radius-md)", minWidth: 0 }}
+          placeholder={attachment ? "What should I do with it? (or just Send to import the budget)" : "Ask about your money…"}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          disabled={disabled}
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus={autoFocus}
+          aria-label="Ask about your money"
+        />
+        {busy ? (
+          <Button variant="secondary" type="button" onClick={stop} style={{ whiteSpace: "nowrap" }} aria-label="Stop the reply">
+            <Spinner label="Thinking" /> Stop
+          </Button>
+        ) : (
+          <Button variant="primary" type="submit" style={{ whiteSpace: "nowrap" }} disabled={disabled || (!input.trim() && !attachment)}>
+            Send
+          </Button>
+        )}
+      </div>
     </form>
   );
 }

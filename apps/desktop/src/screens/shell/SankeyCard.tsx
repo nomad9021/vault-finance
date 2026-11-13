@@ -12,6 +12,7 @@ import { Button, Field, Sankey, Spinner } from "@vault/ui";
 import { useEffect, useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
+import { SankeyArranger } from "./SankeyArranger.js";
 import type { NavFilter, Navigate, PageId } from "./AppShell.js";
 
 type Period = "weekly" | "monthly" | "yearly";
@@ -76,6 +77,7 @@ export function SankeyCard({
   compact = false,
   precise = false,
   singlePeriod = false,
+  editable = false,
 }: {
   nodes: SankeyCardNode[];
   links: SankeyCardLink[];
@@ -91,7 +93,10 @@ export function SankeyCard({
   precise?: boolean;
   /** Month-only figures: no weekly or yearly scaling to offer. */
   singlePeriod?: boolean;
+  /** Offer an Edit mode that rearranges the categories behind the diagram, in place. */
+  editable?: boolean;
 }) {
+  const [editing, setEditing] = useState(false);
   const [focus, setFocus] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>("monthly");
   const pf = singlePeriod ? 1 : PERIOD_FACTOR[period];
@@ -108,10 +113,15 @@ export function SankeyCard({
         style={{ padding: "var(--card-pad) var(--card-pad) var(--space-2)" }}
       >
         <div className="panel-title">{title}</div>
-        {!compact && (
+        {(!compact || editable) && (
           <div className="row" style={{ gap: "var(--space-4)" }}>
-            <span className="t-xs t-tertiary">{hint}</span>
-            {!singlePeriod && <div className="seg">
+            {!compact && !editing && <span className="t-xs t-tertiary hide-narrow">{hint}</span>}
+            {editable && (
+              <Button variant={editing ? "primary" : "ghost"} size="sm" icon={editing ? "check" : "edit"} onClick={() => { setEditing((e) => !e); setFocus(null); }}>
+                {editing ? "Done" : "Edit"}
+              </Button>
+            )}
+            {!compact && !singlePeriod && <div className="seg">
               {(["weekly", "monthly", "yearly"] as const).map((p) => (
                 <button
                   key={p}
@@ -128,7 +138,8 @@ export function SankeyCard({
         )}
       </div>
 
-      <div style={{ padding: "0 var(--space-1) var(--space-2)" }}>
+      <div className={editing ? "sankey-editing" : undefined}>
+      <div style={{ padding: "0 var(--space-1) var(--space-2)", minWidth: 0 }}>
         <Sankey
           nodes={nodes.map((n) => ({ id: n.id, label: n.label, value: n.valueCents, color: n.color, depth: n.depth, kind: n.kind, ...(n.caption ? { caption: n.caption } : {}) }))}
           links={links.map((l) => ({ from: l.from, to: l.to, value: l.valueCents, ...(l.color ? { color: l.color } : {}) }))}
@@ -137,6 +148,8 @@ export function SankeyCard({
           onFocus={setFocus}
           ariaLabel={`${title} Sankey diagram for ${month}`}
         />
+      </div>
+      {editing && <SankeyArranger {...(onChanged ? { onChanged } : {})} />}
       </div>
 
       {focus && focusNode && (

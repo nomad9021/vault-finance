@@ -9,7 +9,7 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { bills } from "../../db/schema.js";
 import { notFound } from "../../errors.js";
-import { daysUntilDue, nextDueDate } from "./due.js";
+import { autoSetAsideCents, daysUntilDue, nextDueDate } from "./due.js";
 
 function toApi(row: typeof bills.$inferSelect): ApiBill {
   const next = nextDueDate(row.dueDay);
@@ -17,7 +17,8 @@ function toApi(row: typeof bills.$inferSelect): ApiBill {
     id: row.id,
     name: row.name,
     amountCents: row.amountCents,
-    savedCents: row.savedCents,
+    // Set aside automatically as the due date approaches (see due.ts).
+    savedCents: autoSetAsideCents(row),
     dueDay: row.dueDay,
     cadence: row.cadence as BillCadence,
     autopay: row.autopay,
