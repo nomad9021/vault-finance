@@ -19,7 +19,7 @@ layout (bottom tab bar), which is what the iPhone gets.
 | Biometric sign-in | Windows Hello / Touch ID / fprintd | Face ID or Touch ID (`tauri-plugin-biometric`), no passcode fallback |
 | Locks when | screen lock, sleep, idle, Ctrl/Cmd+L | all of those, plus the moment the app stops being active (swiping up, Control Centre, a call); the app-switcher snapshot is a native cover showing only a padlock |
 | Unlocking | biometrics or password | with Face ID set up, an empty page with a padlock while Face ID runs, then straight in; the sign-in page only if Face ID fails |
-| Look | sidebar | floating Liquid Glass tab bar and title bar, bottom sheets, swipe actions, pull to refresh, Dynamic Type |
+| Look | sidebar | docked tab bar and title bar, bottom sheets, swipe actions, pull to refresh, Dynamic Type |
 | App icon | one icon | light icon, plus the dark icon in iOS dark mode |
 | Updates | in-app updater | install the new build onto the phone |
 | Tailscale | in-app on/off (CLI) | turn on the Tailscale iOS app; the in-app control is hidden |

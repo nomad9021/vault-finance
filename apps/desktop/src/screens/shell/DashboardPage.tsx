@@ -1,4 +1,5 @@
 import {
+  DASHBOARD_WIDGETS,
   formatCentsWhole,
   type Account,
   type Bill,
@@ -25,7 +26,8 @@ import {
 } from "@vault/ui";
 import { useEffect, useState, type ReactNode } from "react";
 import { availableCents, shownBalance, useShowActualBalances } from "../../lib/balanceView.js";
-import { moveWidget, placeWidget, resolveLayout, SPANS, type ResolvedWidget, type Span } from "../../lib/dashboardLayout.js";
+import { resolveLayout, SPANS, type ResolvedWidget, type Span } from "../../lib/dashboardLayout.js";
+import { reorder, useDragSort } from "../../lib/dragSort.js";
 import { useData } from "../../lib/useData.js";
 import { useCountUp } from "../../lib/useCountUp.js";
 import { useLayoutMode } from "../../lib/useLayout.js";
@@ -34,6 +36,7 @@ import { useApp } from "../../state/store.js";
 import { buildBudgetSankey, buildBudgetVsActual, preIncomeBranches, withGrossBranch, withTaxBranch } from "./budgetSankey.js";
 import type { Navigate, PageId } from "./nav.js";
 import { PreIncomeDialog } from "./PreIncomeDialog.js";
+import { GuiltFreeCard } from "./GuiltFreeCard.js";
 import { SankeyCard } from "./SankeyCard.js";
 import { TrendChart, project } from "./TrendChart.js";
 
@@ -162,7 +165,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
   useEffect(() => {
     if (savedPrefs) setPrefs(savedPrefs as UserPreferences);
   }, [savedPrefs]);
-  const [customizing, setCustomizing] = useState(false);
+  const [editing, setEditing] = useState(false);
   const saveLayout = (next: ResolvedWidget[] | null) => {
     const dashboard = next ? next.map(({ id, hidden, span }) => ({ id, hidden, span })) : [];
     setPrefs((p) => ({ ...(p ?? {}), dashboard }));
@@ -187,16 +190,19 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
     }
   };
 
-  // Which cash-flow diagram the dashboard leads with. Remembered, because it's
-  // a statement about how you think about money, not a per-visit choice.
-  const [sankeyView, setSankeyView] = useState<SankeyView>(loadSankeyView);
-  useEffect(() => {
+  // Which cash-flow diagram the dashboard leads with. Saved to the account
+  // (so the assistant can set it too), with this device's old choice as the
+  // fallback until one is saved.
+  const sankeyView: SankeyView = prefs?.sankeyView ?? loadSankeyView();
+  const setSankeyView = (v: SankeyView) => {
+    setPrefs((p) => ({ ...(p ?? {}), sankeyView: v }));
+    void client.savePreferences({ sankeyView: v }).catch(() => {});
     try {
-      localStorage.setItem(SANKEY_VIEW_KEY, sankeyView);
+      localStorage.setItem(SANKEY_VIEW_KEY, v);
     } catch {
-      /* ignore */
+      /* per-device fallback only */
     }
-  }, [sankeyView]);
+  };
 
   // Poll so bank auto-sync / webhook imports show up live without a manual
   // refresh. The skeleton only appears when there's no data yet, so this is
@@ -249,34 +255,34 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
 
   // Every card and section is a widget the person can move, hide or resize
   // (Customize); their layout is saved to their account on the server.
-  const widgetNodes: Record<string, { label: string; span: Span; node: ReactNode }> = {
-    "metric-networth": { label: "Net worth (number)", span: 3, node: <MetricCard
+  const nodes: Record<string, ReactNode> = {
+    "metric-networth": (<MetricCard
             label="Net worth"
             icon="bank"
             value={formatCentsWhole(netWorth)}
             hint="Across all accounts"
             onClick={() => onNavigate("accounts")}
-          /> },
-    "metric-income": { label: "Income this month (number)", span: 3, node: <MetricCard
+          />),
+    "metric-income": (<MetricCard
             label={`Income · ${monthLong(month)}`}
             icon="income"
             value={formatCentsWhole(income)}
             onClick={() => onNavigate("income")}
-          /> },
-    "metric-spending": { label: "Spending this month (number)", span: 3, node: <MetricCard
+          />),
+    "metric-spending": (<MetricCard
             label={`Spending · ${monthLong(month)}`}
             icon="card"
             value={formatCentsWhole(spending)}
             onClick={() => onNavigate("reports")}
-          /> },
-    "metric-savings": { label: "Savings rate (number)", span: 3, node: <MetricCard
+          />),
+    "metric-savings": (<MetricCard
             label="Savings rate"
             icon="target"
             value={savingsRate !== null ? `${savingsRate}%` : "—"}
             deltaTone={savingsRate !== null && savingsRate >= 0 ? "up" : "down"}
             hint="of income kept"
-          /> },
-    sankey: { label: "Cash-flow Sankey", span: 12, node: (loading && !sankeyData ? (
+          />),
+    sankey: ((loading && !sankeyData ? (
         <Panel>
           <Skeleton height={360} />
         </Panel>
@@ -355,6 +361,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
             </div>
           ) : effectiveView === "combined" ? (
             <SankeyCard
+              editable
               singlePeriod
               title="Budget vs actual"
               hint="Budget flows in on the left, spending out on the right"
@@ -365,6 +372,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
             />
           ) : effectiveView === "planned" ? (
             <SankeyCard
+              editable
               title="Budget plan"
               hint="Click a category to see this month's actual spending"
               nodes={planSankey.nodes}
@@ -374,6 +382,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
             />
           ) : (
             <SankeyCard
+              editable
               nodes={actualSankey!.nodes}
               links={actualSankey!.links}
               month={sankeyData!.month}
@@ -384,61 +393,62 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
         </div>
       ) : (
         <GetStarted onNavigate={onNavigate} hasAccounts={accounts.length > 0} />
-      )) },
-    "this-month": { label: "This month: plan vs actual", span: 8, node: <ThisMonth
+      ))),
+    "this-month": (<ThisMonth
             month={month}
             isCurrentMonth={isCurrentMonth}
             plannedIncomeCents={plannedIncome}
             incomeCents={income}
             budgetedCents={budgetData?.totalBudgetedCents ?? 0}
             spentCents={budgetData?.totalSpentCents ?? spending}
-            accounts={accounts}
+            budgets={budgetData}
+            categories={categories}
             bills={billData?.bills ?? []}
             onNavigate={onNavigate}
-          /> },
-    accounts: { label: "Accounts", span: 4, node: <AccountsCard accounts={accounts} onViewAll={() => onNavigate("accounts")} /> },
-    "trend-networth": { label: "Net worth trend", span: 4, node: <TrendCard
+          />),
+    accounts: (<AccountsCard accounts={accounts} onViewAll={() => onNavigate("accounts")} />),
+    "trend-networth": (<TrendCard
             label="Net worth"
             points={points}
             pick={(p) => p.netWorthCents}
             color="var(--viz-2)"
             goodWhenUp
             onViewAll={() => onNavigate("accounts")}
-          /> },
-    "trend-income": { label: "Income trend", span: 4, node: <TrendCard
+          />),
+    "trend-income": (<TrendCard
             label="Income"
             points={points}
             pick={(p) => p.incomeCents}
             color="var(--viz-3)"
             goodWhenUp
             onViewAll={() => onNavigate("income")}
-          /> },
-    "trend-spending": { label: "Spending trend", span: 4, node: <TrendCard
+          />),
+    "trend-spending": (<TrendCard
             label="Spending"
             points={points}
             pick={(p) => p.spendingCents}
             color="var(--viz-1)"
             goodWhenUp={false}
             onViewAll={() => onNavigate("reports")}
-          /> },
-    budgets: { label: "Budgets", span: 4, node: <BudgetOverview
+          />),
+    budgets: (<BudgetOverview
             data={budgetData}
             month={month}
             isCurrentMonth={isCurrentMonth}
             categoryById={categoryById}
             onViewAll={() => onNavigate("budgets")}
-          /> },
-    bills: { label: "Upcoming bills", span: 4, node: <UpcomingBills bills={billData?.bills ?? []} onViewAll={() => onNavigate("bills")} /> },
-    investments: { label: "Investments", span: 4, node: <InvestmentsCard data={investData} onViewAll={() => onNavigate("investments")} /> },
-    recent: { label: "Recent activity", span: 8, node: <RecentActivity
+          />),
+    bills: (<UpcomingBills bills={billData?.bills ?? []} onViewAll={() => onNavigate("bills")} />),
+    investments: (<InvestmentsCard data={investData} onViewAll={() => onNavigate("investments")} />),
+    recent: (<RecentActivity
             transactions={recent}
             accountName={(id) => accountById.get(id)?.name ?? "—"}
             onViewAll={() => onNavigate("transactions")}
-          /> },
-    goals: { label: "Savings goals", span: 4, node: <TopGoals goals={goals} onViewAll={() => onNavigate("goals")} /> },
+          />),
+    goals: (<TopGoals goals={goals} onViewAll={() => onNavigate("goals")} />),
+    "guilt-free": <GuiltFreeCard />,
   };
-  // Phone: one compact summary replaces the four number cards, and budgets
-  // and savings goals come straight after it, ahead of everything else.
+  // Phone: one compact summary stands in for the four number cards.
   const phoneSummary = (
     <PhoneSummary
       month={month}
@@ -450,47 +460,119 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
       onNavigate={onNavigate}
     />
   );
+  const defaults = DASHBOARD_WIDGETS.map((w) => ({ id: w.id, span: w.span }));
+  // Until the person arranges it, a phone leads with the week's guilt-free
+  // money, budgets and goals; once they do, their order wins everywhere.
+  const PHONE_FIRST = ["guilt-free", "budgets", "goals"];
+  const customized = (prefs?.dashboard?.length ?? 0) > 0;
   const layout = resolveLayout(
-    Object.entries(widgetNodes).map(([id, w]) => ({ id, span: w.span })),
+    phone && !customized
+      ? [...PHONE_FIRST.flatMap((id) => defaults.filter((d) => d.id === id)), ...defaults.filter((d) => !PHONE_FIRST.includes(d.id))]
+      : defaults,
     prefs?.dashboard,
   );
-  const PHONE_FIRST = ["budgets", "goals"];
-  // On a phone the net worth chart lives in the summary card, so the separate
-  // net worth trend card is left out.
-  const PHONE_OMIT = ["trend-networth"];
+  const labels = Object.fromEntries(DASHBOARD_WIDGETS.map((w) => [w.id, w.label]));
   const shown = layout.filter((w) => !w.hidden && !(hideSankey && w.id === "sankey"));
-  const ordered = phone
-    ? [
-        ...PHONE_FIRST.flatMap((id) => shown.filter((w) => w.id === id)),
-        ...shown.filter(
-          (w) => !PHONE_FIRST.includes(w.id) && !PHONE_OMIT.includes(w.id) && !w.id.startsWith("metric-"),
-        ),
-      ]
+  // On a phone the summary takes the place of the first number card shown,
+  // and carries the net worth chart, so the net worth trend card stays out.
+  const anyMetric = shown.some((w) => w.id.startsWith("metric-"));
+  const firstMetric = shown.find((w) => w.id.startsWith("metric-"))?.id;
+  const viewItems = phone
+    ? shown.filter((w) => !(w.id.startsWith("metric-") && w.id !== firstMetric) && !(anyMetric && w.id === "trend-networth"))
     : shown;
+
+  const placeAt = (dragId: string, targetId: string, zone: "before" | "after" | "inside") => {
+    if (zone === "inside") return;
+    const ids = reorder(layout.map((w) => w.id), dragId, targetId, zone);
+    saveLayout(ids.map((id) => layout.find((w) => w.id === id)!));
+  };
+  const dnd = { ...useDragSort({ onDrop: placeAt }), onDropAt: placeAt };
+  const setWidget = (id: string, patch: Partial<ResolvedWidget>) => saveLayout(layout.map((w) => (w.id === id ? { ...w, ...patch } : w)));
+  const hidden = layout.filter((w) => w.hidden);
+  const editItems = layout.filter((w) => !w.hidden);
 
   return (
     <div className="page">
-      <div className="row-between wrap" style={{ marginBottom: -8 }}>
-        <span />
-        <Button variant={customizing ? "primary" : "ghost"} size="sm" icon="edit" onClick={() => setCustomizing((c) => !c)}>
-          {customizing ? "Done" : "Customize"}
-        </Button>
-      </div>
-      {customizing && (
-        <CustomizeDashboard
-          layout={layout}
-          labels={Object.fromEntries(Object.entries(widgetNodes).map(([id, w]) => [id, w.label]))}
-          onChange={saveLayout}
-          onReset={() => saveLayout(null)}
-        />
+      {editing ? (
+        <div className="dash-edit-tray">
+          <div className="row-between wrap" style={{ gap: "var(--space-2)" }}>
+            <div>
+              <div className="panel-title">Editing your home screen</div>
+              <div className="t-xs t-tertiary">
+                Drag a card by ⋮⋮ to move it{phone ? "" : ", pick its width"}, or hide it. Saved to your account as you go.
+              </div>
+            </div>
+            <div className="row" style={{ gap: "var(--space-2)" }}>
+              <Button variant="ghost" size="sm" onClick={() => saveLayout(null)}>
+                Reset
+              </Button>
+              <Button variant="primary" size="sm" icon="check" onClick={() => setEditing(false)}>
+                Done
+              </Button>
+            </div>
+          </div>
+          {hidden.length > 0 && (
+            <div className="row wrap" style={{ gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
+              <span className="t-xs t-tertiary">Hidden:</span>
+              {hidden.map((w) => (
+                <button key={w.id} type="button" className="dash-chip" onClick={() => setWidget(w.id, { hidden: false })}>
+                  <Icon name="plus" size={12} /> {labels[w.id] ?? w.id}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="row-between wrap" style={{ marginBottom: -8 }}>
+          <span />
+          <Button variant="ghost" size="sm" icon="edit" onClick={() => setEditing(true)}>
+            Edit home screen
+          </Button>
+        </div>
       )}
       <div className="grid">
-        {phone && <div className="col-12">{phoneSummary}</div>}
-        {ordered.map((w) => (
-          <div key={w.id} className={`col-${w.span}`}>
-            {widgetNodes[w.id]!.node}
-          </div>
-        ))}
+        {editing
+          ? editItems.map((w, i) => {
+              const it = dnd.item(w.id);
+              return (
+                <div key={w.id} className={`col-${phone ? 12 : w.span} dash-edit`} {...it}>
+                  <div className="dash-edit-bar">
+                    <span className="dash-grip" role="button" tabIndex={-1} aria-label={`Drag ${labels[w.id]}`} {...dnd.handle(w.id)}>
+                      ⋮⋮
+                    </span>
+                    <span className="dash-edit-label truncate">{labels[w.id] ?? w.id}</span>
+                    <span className="dash-edit-controls">
+                    {!phone && (
+                      <select
+                        className="input"
+                        aria-label={`Width of ${labels[w.id] ?? w.id}`}
+                        value={w.span}
+                        onChange={(e) => setWidget(w.id, { span: Number(e.target.value) as Span })}
+                        style={{ width: 100, padding: "2px 6px", height: 28 }}
+                      >
+                        {SPANS.map((sp) => (
+                          <option key={sp.value} value={sp.value}>
+                            {sp.label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <Button variant="ghost" size="sm" icon="arrowUp" aria-label="Move earlier" disabled={i === 0} onClick={() => dnd.onDropAt(w.id, editItems[i - 1]!.id, "before")} />
+                    <Button variant="ghost" size="sm" icon="arrowDown" aria-label="Move later" disabled={i === editItems.length - 1} onClick={() => dnd.onDropAt(w.id, editItems[i + 1]!.id, "after")} />
+                    <Button variant="ghost" size="sm" icon="close" aria-label={`Hide ${labels[w.id]}`} title="Hide" onClick={() => setWidget(w.id, { hidden: true })} />
+                    </span>
+                  </div>
+                  <div className="dash-edit-body" aria-hidden="true">
+                    {nodes[w.id]}
+                  </div>
+                </div>
+              );
+            })
+          : viewItems.map((w) => (
+              <div key={w.id} className={phone ? "col-12" : `col-${w.span}`}>
+                {phone && w.id === firstMetric ? phoneSummary : nodes[w.id]}
+              </div>
+            ))}
       </div>
       {editingPreIncome && preIncome && (
         <PreIncomeDialog
@@ -508,93 +590,53 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
   );
 }
 
-/** Arrange the dashboard: drag or nudge widgets, show/hide them, pick their width. */
-function CustomizeDashboard({
-  layout,
-  labels,
-  onChange,
-  onReset,
-}: {
-  layout: ResolvedWidget[];
-  labels: Record<string, string>;
-  onChange: (next: ResolvedWidget[]) => void;
-  onReset: () => void;
-}) {
-  const [dragging, setDragging] = useState<string | null>(null);
-  const set = (id: string, patch: Partial<ResolvedWidget>) => onChange(layout.map((w) => (w.id === id ? { ...w, ...patch } : w)));
-  return (
-    <Panel
-      title="Customize your dashboard"
-      subtitle="Drag to reorder, or use the arrows. Saved to your account."
-      actions={
-        <Button variant="ghost" size="sm" onClick={onReset}>
-          Reset to default
-        </Button>
-      }
-    >
-      <div style={{ display: "flex", flexDirection: "column" }}>
-        {layout.map((w, i) => (
-          <div
-            key={w.id}
-            draggable
-            onDragStart={() => setDragging(w.id)}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={() => {
-              if (dragging) onChange(placeWidget(layout, dragging, w.id));
-              setDragging(null);
-            }}
-            onDragEnd={() => setDragging(null)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-              padding: "6px 4px",
-              borderTop: i ? "1px solid var(--color-divider)" : undefined,
-              opacity: dragging === w.id ? 0.5 : w.hidden ? 0.6 : 1,
-              cursor: "grab",
-            }}
-          >
-            <span aria-hidden="true" style={{ color: "var(--content-tertiary)", letterSpacing: -2 }}>⋮⋮</span>
-            <label className="radio" style={{ flex: 1, fontSize: "var(--text-sm)" }}>
-              <input type="checkbox" checked={!w.hidden} onChange={(e) => set(w.id, { hidden: !e.target.checked })} />
-              <span className="dot" style={{ borderRadius: "var(--radius-sm)" }} />
-              {labels[w.id] ?? w.id}
-            </label>
-            <select
-              className="input"
-              aria-label={`Width of ${labels[w.id] ?? w.id}`}
-              value={w.span}
-              onChange={(e) => set(w.id, { span: Number(e.target.value) as Span })}
-              style={{ width: 120, padding: "4px 8px" }}
-            >
-              {SPANS.map((sp) => (
-                <option key={sp.value} value={sp.value}>
-                  {sp.label}
-                </option>
-              ))}
-            </select>
-            <Button variant="ghost" size="sm" icon="arrowUp" aria-label="Move up" disabled={i === 0} onClick={() => onChange(moveWidget(layout, w.id, -1))} />
-            <Button variant="ghost" size="sm" icon="arrowDown" aria-label="Move down" disabled={i === layout.length - 1} onClick={() => onChange(moveWidget(layout, w.id, 1))} />
-          </div>
-        ))}
-      </div>
-    </Panel>
-  );
-}
-
-/** Accounts you spend from: checking, savings and other cash. */
-const CASH_TYPES = new Set<Account["type"]>(["checking", "savings", "other"]);
-
 function daysLeftInMonth(): number {
   const now = new Date();
   const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
   return end.getUTCDate() - now.getUTCDate() + 1;
 }
 
+/** Categories that are saving rather than spending (and everything inside them). */
+const SAVINGS_NAME = /saving|invest|retire|401\s?k|\bira\b|emergency fund|sinking fund|brokerage/i;
+
+/**
+ * What's safe to spend: what's left in this month's budgets, not counting the
+ * budgets for bills (they're set aside automatically) or savings. Spending in
+ * a budget past its limit eats into the rest.
+ */
+export function safeToSpend(
+  budgets: BudgetListResponse | null,
+  categories: Array<{ id: string; name: string; parentCategoryId: string | null }>,
+  bills: Array<{ categoryId: string | null }>,
+): { leftCents: number; budgetedCents: number; spentCents: number; excluded: number } {
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  const roots = new Set<string>([
+    ...bills.map((b) => b.categoryId).filter((x): x is string => !!x),
+    ...categories.filter((c) => SAVINGS_NAME.test(c.name)).map((c) => c.id),
+  ]);
+  const excludedCat = (id: string) => {
+    for (let cur = byId.get(id), n = 0; cur && n < 50; cur = cur.parentCategoryId ? byId.get(cur.parentCategoryId) : undefined, n++) {
+      if (roots.has(cur.id)) return true;
+    }
+    return roots.has(id);
+  };
+  let budgetedCents = 0;
+  let spentCents = 0;
+  let excluded = 0;
+  for (const b of budgets?.budgets ?? []) {
+    if (excludedCat(b.categoryId)) {
+      excluded++;
+      continue;
+    }
+    budgetedCents += b.amountCents;
+    spentCents += b.spentCents;
+  }
+  return { leftCents: budgetedCents - spentCents, budgetedCents, spentCents, excluded };
+}
+
 /**
  * Where the plan meets the bank: the month's plan next to what actually
- * happened, and what's safe to spend — free cash (after set-asides) minus the
- * part of this month's remaining bills that hasn't been set aside yet.
+ * happened, and what's safe to spend — what's left in the spending budgets.
  */
 function ThisMonth({
   month,
@@ -603,7 +645,8 @@ function ThisMonth({
   incomeCents,
   budgetedCents,
   spentCents,
-  accounts,
+  budgets,
+  categories,
   bills,
   onNavigate,
 }: {
@@ -613,19 +656,14 @@ function ThisMonth({
   incomeCents: number;
   budgetedCents: number;
   spentCents: number;
-  accounts: Account[];
+  budgets: BudgetListResponse | null;
+  categories: Array<{ id: string; name: string; parentCategoryId: string | null }>;
   bills: Bill[];
   onNavigate: Navigate;
 }) {
   const daysLeft = daysLeftInMonth();
-  const freeCash = accounts
-    .filter((a) => !a.isLiability && CASH_TYPES.has(a.type))
-    .reduce((s, a) => s + availableCents(a), 0);
-  const billsDue = bills.filter((b) => b.daysUntilDue < daysLeft);
-  const unfundedBills = billsDue.reduce((s, b) => s + Math.max(0, b.amountCents - b.savedCents), 0);
-  const safeToSpend = freeCash - unfundedBills;
-  const leftToSpend = budgetedCents - spentCents;
-  const perDay = isCurrentMonth && leftToSpend > 0 ? Math.floor(leftToSpend / daysLeft) : null;
+  const safe = safeToSpend(budgets, categories, bills);
+  const perDay = isCurrentMonth && safe.leftCents > 0 ? Math.floor(safe.leftCents / daysLeft) : null;
 
   const rows: { label: string; planned: number; actual: number; goodWhenOver: boolean; page: PageId }[] = [
     { label: "Income", planned: plannedIncomeCents, actual: incomeCents, goodWhenOver: true, page: "income" },
@@ -638,18 +676,26 @@ function ThisMonth({
       <div className="grid">
         <div className="col-5">
           <div className="eyebrow">Safe to spend</div>
-          <div className="stat-value" style={{ color: safeToSpend < 0 ? "var(--color-negative)" : undefined }}>
-            {formatCentsWhole(safeToSpend)}
-          </div>
-          <div className="t-xs t-tertiary" style={{ marginTop: "var(--space-1)" }}>
-            {formatCentsWhole(freeCash)} free cash
-            {unfundedBills > 0 && ` − ${formatCentsWhole(unfundedBills)} for ${billsDue.length} bill${billsDue.length === 1 ? "" : "s"} still due`}
-          </div>
-          {budgetedCents > 0 && (
-            <div className="t-xs t-tertiary" style={{ marginTop: "var(--space-2)" }}>
-              Budget left: <b style={{ color: leftToSpend < 0 ? "var(--color-negative)" : "var(--content-primary)" }}>{formatCentsWhole(leftToSpend)}</b>
-              {perDay !== null && ` · ${formatCentsWhole(perDay)}/day`}
-            </div>
+          {safe.budgetedCents > 0 ? (
+            <>
+              <div className="stat-value" style={{ color: safe.leftCents < 0 ? "var(--color-negative)" : undefined }}>
+                {formatCentsWhole(safe.leftCents)}
+              </div>
+              <div className="t-xs t-tertiary" style={{ marginTop: "var(--space-1)" }}>
+                Left in your spending budgets
+                {perDay !== null && ` · ${formatCentsWhole(perDay)}/day`}
+              </div>
+              <div className="t-2xs t-tertiary" style={{ marginTop: "var(--space-2)" }}>
+                {formatCentsWhole(safe.spentCents)} of {formatCentsWhole(safe.budgetedCents)} spent · bills and savings aren't counted
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="stat-value t-tertiary">—</div>
+              <button type="button" className="panel-link" style={{ marginTop: "var(--space-1)" }} onClick={() => onNavigate("budgets")}>
+                Set spending budgets to see this
+              </button>
+            </>
           )}
         </div>
         <div className="col-7 stack">

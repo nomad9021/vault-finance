@@ -5,6 +5,7 @@ import EmbeddedPostgres from "embedded-postgres";
 import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { buildTestApp as buildApp } from "./helpers/test-app.js";
+import { autoSetAsideCents } from "../src/modules/bills/due.js";
 import { loadConfig } from "../src/config.js";
 
 /**
@@ -312,11 +313,13 @@ describe("giving, savings branches and derived views", () => {
     expect((await post("/api/v1/bills", { name: "Insurance", amountCents: 60_000, savedCents: 20_000, dueDay: 3, cadence: "yearly", accountId: acct.id })).statusCode).toBe(201);
     expect((await post("/api/v1/buckets", { accountId: acct.id, name: "Vacation", allocatedCents: 5_000 })).statusCode).toBe(201);
 
+    // Bills set money aside automatically as the due date nears (savedCents is ignored).
+    const billSaved = autoSetAsideCents({ amountCents: 60_000, dueDay: 3, cadence: "yearly" });
     const listed = (await get("/api/v1/accounts")).json().accounts.find((a: { id: string }) => a.id === acct.id);
     expect(listed.balanceCents).toBe(100_000);
-    expect(listed.setAsideCents).toBe(25_000);
-    expect(listed.setAside.map((p: { kind: string }) => p.kind).sort()).toEqual(["bill", "bucket"]);
-    expect((await get(`/api/v1/accounts/${acct.id}`)).json().setAsideCents).toBe(25_000);
+    expect(listed.setAsideCents).toBe(5_000 + billSaved);
+    expect(listed.setAside.map((p: { kind: string }) => p.kind).sort()).toEqual(billSaved > 0 ? ["bill", "bucket"] : ["bucket"]);
+    expect((await get(`/api/v1/accounts/${acct.id}`)).json().setAsideCents).toBe(5_000 + billSaved);
   });
 
   it("counts a paid bill once, under Bills, not also in its category", async () => {

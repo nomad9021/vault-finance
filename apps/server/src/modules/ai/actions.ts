@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
+  applyDashboardChange,
+  unknownWidgetIds,
   CLIENT_ACTION_TYPES,
   describeAiAction,
   UNCATEGORIZED,
@@ -227,7 +229,7 @@ export async function applyAction(app: FastifyInstance, request: FastifyRequest,
     case "set_budget": {
       const cat = resolveCategory(await categories(), a.category);
       if (a.amount <= 0) throw new ActionError("A budget needs an amount above zero — use remove_budget to drop one.");
-      await call(app, request, "POST", "/budgets", { categoryId: cat.id, amountCents: cents(a.amount) });
+      await call(app, request, "POST", "/budgets", { categoryId: cat.id, amountCents: cents(a.amount), period: a.period ?? "monthly" });
       return;
     }
     case "remove_budget": {
@@ -475,10 +477,50 @@ export async function applyAction(app: FastifyInstance, request: FastifyRequest,
       });
       return;
     }
+    case "set_guilt_free": {
+      const { people } = await call<{ people: GuiltFreeRef[] }>(app, request, "GET", "/guilt-free");
+      const person = resolvePerson(people, a.person);
+      await call(app, request, "PUT", "/guilt-free", { people: [{ userId: person.userId, weeklyCents: cents(a.weekly) }] });
+      return;
+    }
+    case "set_dashboard_layout": {
+      const unknown = unknownWidgetIds(a);
+      if (unknown.length) throw new ActionError(`The home screen has no ${unknown.map((id) => `"${id}"`).join(", ")}.`);
+      const prefs = await call<{ dashboard?: Array<{ id: string; hidden?: boolean; span?: number }> }>(app, request, "GET", "/me/preferences");
+      const dashboard = applyDashboardChange(prefs.dashboard, a);
+      await call(app, request, "PUT", "/me/preferences", {
+        dashboard,
+        ...(a.sankeyView ? { sankeyView: a.sankeyView } : {}),
+      });
+      return;
+    }
     case "set_theme":
     case "set_review_prefs":
       return; // unreachable — handled above
   }
+}
+
+interface GuiltFreeRef {
+  userId: string;
+  displayName: string;
+  isMe: boolean;
+}
+
+/** A household member by name ("Mason", "mason smith") or "me". */
+export function resolvePerson<T extends { displayName: string; isMe: boolean }>(people: T[], ref: string): T {
+  const r = ref.trim().toLowerCase();
+  if (/^(me|myself|i|mine|my|the user|user)$/.test(r)) {
+    const me = people.find((p) => p.isMe);
+    if (me) return me;
+  }
+  const exact = people.filter((p) => p.displayName.trim().toLowerCase() === r);
+  if (exact.length === 1) return exact[0]!;
+  const first = people.filter((p) => p.displayName.trim().toLowerCase().split(/\s+/)[0] === r.split(/\s+/)[0]);
+  if (exact.length === 0 && first.length === 1) return first[0]!;
+  if (exact.length + first.length === 0) {
+    throw new ActionError(`There's no one called "${ref}" in this household (${people.map((p) => p.displayName).join(", ")}).`);
+  }
+  throw new ActionError(`More than one person matches "${ref}"; use their full name.`);
 }
 
 /**
@@ -498,7 +540,11 @@ export async function loadCheckWorld(app: FastifyInstance, request: FastifyReque
     call<{ accounts: Array<{ accountName: string; buckets: Array<{ name: string }> }> }>(app, request, "GET", "/buckets"),
   ]);
   const preIncome = await call<PreIncome>(app, request, "GET", "/pre-income");
+  const people = await call<{ people: GuiltFreeRef[] }>(app, request, "GET", "/guilt-free")
+    .then((g) => g.people.map((p) => ({ displayName: p.displayName, isMe: p.isMe })))
+    .catch(() => undefined);
   return {
+    ...(people ? { people } : {}),
     categories,
     bills: bills.map((b) => b.name),
     goals: goals.map((g) => g.name),
@@ -523,6 +569,8 @@ export interface CheckWorld {
   taxState?: string | null;
   earners?: string[];
   preIncome?: string[];
+  /** Household members, for guilt-free spending. */
+  people?: Array<{ displayName: string; isMe: boolean }>;
 }
 
 export function checkActions(worldOrCategories: CheckWorld | Category[], actions: AiAction[]): Array<string | null> {
@@ -711,6 +759,13 @@ export function checkActions(worldOrCategories: CheckWorld | Category[], actions
           const err = named(preIncome, a.name, "before-income item");
           if (!err) preIncome.delete(a.name.trim().toLowerCase());
           return err;
+        }
+        case "set_guilt_free":
+          if (world.people) resolvePerson(world.people, a.person);
+          return null;
+        case "set_dashboard_layout": {
+          const unknown = unknownWidgetIds(a);
+          return unknown.length ? `The home screen has no ${unknown.map((id) => `"${id}"`).join(", ")}; use the widget ids from the dashboard look-up.` : null;
         }
         default:
           return null;

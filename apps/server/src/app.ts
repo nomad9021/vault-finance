@@ -19,6 +19,7 @@ import { startRetention } from "./lib/retention.js";
 import billRoutes from "./modules/bills/routes.js";
 import bucketRoutes from "./modules/buckets/routes.js";
 import budgetRoutes from "./modules/budgets/routes.js";
+import guiltFreeRoutes from "./modules/guiltFree/routes.js";
 import cashflowRoutes from "./modules/cashflow/routes.js";
 import categorizeRoutes from "./modules/categorize/routes.js";
 import categoryRoutes from "./modules/categories/routes.js";
@@ -158,6 +159,7 @@ export async function buildApp(opts: BuildAppOptions): Promise<FastifyInstance> 
       await api.register(categorizeRoutes, { config: opts.config });
       await api.register(bankRoutes, { config: opts.config });
       await api.register(budgetRoutes);
+      await api.register(guiltFreeRoutes);
       await api.register(taxRoutes);
       await api.register(bucketRoutes);
       await api.register(aiRoutes, { config: opts.config });

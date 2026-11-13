@@ -1,3 +1,4 @@
+import { autoSetAsideCents } from "../bills/due.js";
 import {
   CreateAccountRequest,
   LIABILITY_TYPES,
@@ -32,7 +33,7 @@ async function setAsideByAccount(db: Db): Promise<Map<string, AccountSetAside[]>
     list.push(item);
     out.set(accountId, list);
   };
-  for (const b of billRows) add(b.accountId!, { kind: "bill", id: b.id, name: b.name, cents: b.savedCents });
+  for (const b of billRows) add(b.accountId!, { kind: "bill", id: b.id, name: b.name, cents: autoSetAsideCents(b) });
   const claimed = new Set<string>();
   for (const f of fundRows) {
     // Two funds on one account share it; count the balance once.

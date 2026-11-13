@@ -1,4 +1,4 @@
-import { LOCALITIES_2026 } from "@vault/shared";
+import { DASHBOARD_WIDGETS, LOCALITIES_2026 } from "@vault/shared";
 
 /**
  * The assistant's specialist agents. Each one is a set of look-ups and
@@ -10,7 +10,7 @@ import { LOCALITIES_2026 } from "@vault/shared";
  * prompt; a request to organize everything turns them all on.
  */
 
-export type AgentId = "organizer" | "budget" | "tax" | "bills" | "goals" | "giving" | "debt" | "insights" | "app";
+export type AgentId = "organizer" | "budget" | "tax" | "bills" | "goals" | "giving" | "debt" | "insights" | "home" | "app";
 
 export interface AgentDef {
   id: AgentId;
@@ -76,13 +76,40 @@ export const AGENTS: AgentDef[] = [
   {
     id: "budget",
     name: "Budget",
-    keywords: /budg|buj|budj|bugdet|sankey|spend|overspen|limit|allocat|planned income|plan my|save money|afford|envelope/i,
+    keywords: /budg|buj|budj|bugdet|sankey|spend|overspen|limit|allocat|planned income|plan my|save money|afford|envelope|guilt|fun money|allowance|pocket money|blow money|spreadsheet|csv|excel|xlsx|import/i,
     actions: [
-      "  set_budget {category, amount: monthly dollars and cents, like 512.37}   remove_budget {category}",
+      '  set_budget {category, amount: dollars and cents, like 512.37, period?: "monthly"|"weekly" (default monthly)}   remove_budget {category}',
       "  set_planned_income {amount: monthly dollars and cents}   (skip if the tax profile keeps it in sync)",
+      '  set_guilt_free {person: household member\'s name or "me", weekly: dollars a week, 0 to remove}',
+      "    (each person's weekly guilt-free spending: resets every week, on the home screen and both Sankeys)",
     ],
-    queries: ["  budgets {}   (this month's budgets vs. spending)", "  category_totals {days? or months?: last N}"],
+    queries: [
+      "  budgets {}   (this month's budgets vs. spending)",
+      "  category_totals {days? or months?: last N}",
+      "  guilt_free {}   (each person's weekly guilt-free amount, spent and left this week)",
+    ],
     tips: [
+      "Guilt-free spending is its own thing: use set_guilt_free for it, never set_budget on the",
+      "\"Guilt-free spending\" categories (purchases are added from the home screen).",
+      "IMPORTING A SPREADSHEET: a <vault-file> in the user's message is a spreadsheet they attached",
+      "(rows as CSV). If it's a budget, import it in ONE reply: for every spending line propose",
+      "set_budget, first create_category for any category that doesn't exist yet (reuse an existing",
+      "category when it means the same thing — \"Food\" = \"Groceries\"; keep the sheet's groups as",
+      "parents with parent on the children). Amounts: monthly as-is; weekly lines may use period",
+      "weekly; yearly ÷ 12; every two weeks × 26 ÷ 12; twice a month × 2. Income lines (salary, pay,",
+      "take-home) → set_planned_income with their monthly total. Skip totals, subtotals, headers,",
+      "blank and zero rows, and anything that isn't a budget line. If a column says actual/spent",
+      "as well as budget/planned, use the budget column. Say in one sentence what you imported and",
+      "anything you skipped.",
+      "Budget sheets often have a group row with its subtotal (\"Housing Breakdown 1587\") then",
+      "its lines: make the group a parent category and budget only the lines under it. If the",
+      "same lines appear twice side by side (monthly and weekly columns), use the monthly ones",
+      "and don't set them twice. Percent-of-income columns and notes are context, not budgets;",
+      "a note like \"pay 661.50 every 6 months\" explains how a monthly figure was worked out.",
+      "Other sheets (a debt payment log, a balance) aren't budget lines: mention what's there and",
+      "offer a bill for a regular payment instead of budgeting it. If income is unclear (yearly",
+      "or monthly, one person or combined, gross or net), use the monthly net take-home and say",
+      "which figure you used.",
       "Base budgets on the last few months' category totals; leave room for savings.",
       "Use exactly the amount the user gives, cents included. Never round it.",
       "\"Budget Sankey like the actual one\" = set_budget for each spending category from its",
@@ -198,6 +225,27 @@ export const AGENTS: AgentDef[] = [
     ],
   },
   {
+    id: "home",
+    name: "Home screen",
+    keywords: /home ?(screen|page)|dashboard|front page|main (page|screen)|widget|layout|arrange|rearrange|move .* (up|down|to the top|to the bottom|first|last)|\bhide\b|bigger|smaller|wider|narrower|full width|half width/i,
+    actions: [
+      "  set_dashboard_layout {reset?: bool, order?: [widget ids, top first], show?: [ids], hide?: [ids],",
+      '    widths?: {id: "quarter"|"third"|"half"|"two-thirds"|"full"},',
+      '    sankeyView?: "actual"|"planned"|"both"|"combined" (combined = budget vs actual)}',
+      "    order: the widgets you list go first in that order; the rest keep their order after them.",
+      "  widget ids: " + DASHBOARD_WIDGETS.map((w) => w.id).join(", "),
+    ],
+    queries: ["  dashboard {}   (the home screen now: every widget in order, shown or hidden, its width and what it shows)"],
+    tips: [
+      "Look up dashboard first unless the request is a single show/hide. Widths only matter on a",
+      "computer or tablet; a phone shows one column. Use only the ids above.",
+    ],
+    examples: [
+      '  "Put my guilt-free money at the top and hide investments" →',
+      '    <vault-action>{"type":"set_dashboard_layout","order":["guilt-free"],"hide":["investments"]}</vault-action>',
+    ],
+  },
+  {
     id: "app",
     name: "App settings",
     keywords: /theme|dark|light|oled|contrast|review|slide|present|weekly review|monthly review/i,
@@ -232,9 +280,11 @@ export const STYLE_AND_LIMITS = [
   "  categories (tree, order, colours), auto-categorization rules, moving transactions",
   "  between categories, budgets and planned income, the tax profile, salaries and pre-tax",
   "  deductions, before-income items on the Sankeys, bills, savings goals and buckets,",
-  "  giving funds, the debt payoff plan, theme, finance-review settings, the household name;",
-  "  and look up transactions, merchants, totals, cash flow, accounts, bills, goals, debts",
-  "  and tax estimates.",
+  "  giving funds, the debt payoff plan, each person's weekly guilt-free spending, the home",
+  "  screen layout (order, show/hide, widths), theme, finance-review settings, the household",
+  "  name; read spreadsheets (CSV/Excel) the user attaches, such as an existing budget to",
+  "  import; and look up transactions, merchants, totals, cash flow, accounts, bills, goals,",
+  "  debts, guilt-free spending, the home screen and tax estimates.",
   "Creating new things — categories and sub-categories, budgets, rules, bills, goals,",
   "buckets, funds — is always allowed: never refuse it. Say \"can't\" ONLY for this list.",
   "You CAN'T do the following. If asked, say so in the first sentence (\"I can't do that.\"),",

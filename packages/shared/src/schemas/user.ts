@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { NewPassword } from "./password.js";
 import { UserRole } from "./common.js";
+import { SankeyView } from "./dashboard.js";
 
 /**
  * A profile picture: a JPEG, PNG or WebP data: URL. The app crops and shrinks
@@ -50,5 +51,7 @@ export type DashboardWidget = z.infer<typeof DashboardWidget>;
 export const UserPreferences = z.object({
   /** Dashboard widgets in order; unknown ids are ignored, missing ones appended. */
   dashboard: z.array(DashboardWidget).max(60).optional(),
+  /** Which cash-flow diagram the dashboard leads with. */
+  sankeyView: SankeyView.optional(),
 });
 export type UserPreferences = z.infer<typeof UserPreferences>;

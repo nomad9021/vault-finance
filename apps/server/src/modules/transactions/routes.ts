@@ -14,6 +14,7 @@ import { accounts, categories, transactions } from "../../db/schema.js";
 import { AppError, notFound } from "../../errors.js";
 import { loadCategorizer } from "../categorize/service.js";
 import { parseTransactionsCsv } from "./csv.js";
+import { detectTransfers } from "../../lib/transfers.js";
 
 function toApi(row: typeof transactions.$inferSelect): ApiTransaction {
   return {
@@ -27,6 +28,7 @@ function toApi(row: typeof transactions.$inferSelect): ApiTransaction {
     description: row.description,
     pending: row.pending,
     notes: row.notes,
+    isTransfer: row.isTransfer,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -157,7 +159,10 @@ export default async function transactionRoutes(app: FastifyInstance) {
         .where(eq(accounts.id, body.accountId));
       return inserted!;
     });
-    return reply.status(201).send(toApi(row));
+    // The other half of a transfer may already be there (or this is it).
+    await detectTransfers(app.db);
+    const fresh = await app.db.query.transactions.findFirst({ where: eq(transactions.id, row.id) });
+    return reply.status(201).send(toApi(fresh ?? row));
   });
 
   app.get<{ Params: { id: string } }>("/transactions/:id", async (request) => {
@@ -188,6 +193,8 @@ export default async function transactionRoutes(app: FastifyInstance) {
           ...(body.description !== undefined ? { description: body.description } : {}),
           ...(body.pending !== undefined ? { pending: body.pending } : {}),
           ...(body.notes !== undefined ? { notes: body.notes } : {}),
+          // Marked by hand: detection won't change it back.
+          ...(body.isTransfer !== undefined ? { isTransfer: body.isTransfer, transferManual: true } : {}),
           updatedAt: new Date(),
         })
         .where(eq(transactions.id, request.params.id))
@@ -310,6 +317,7 @@ export default async function transactionRoutes(app: FastifyInstance) {
       }
     });
 
+    if (result.imported > 0) await detectTransfers(app.db);
     return reply.status(200).send(result);
   });
 }

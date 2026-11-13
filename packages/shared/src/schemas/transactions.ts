@@ -15,6 +15,11 @@ export const Transaction = z.object({
   description: z.string().nullable(),
   pending: z.boolean(),
   notes: z.string().nullable(),
+  /**
+   * Money moving between the household's own accounts: left out of income
+   * and spending everywhere. Absent on older servers.
+   */
+  isTransfer: z.boolean().optional(),
   createdAt: z.string().datetime(),
 });
 export type Transaction = z.infer<typeof Transaction>;
@@ -33,7 +38,9 @@ export type CreateTransactionRequest = z.infer<typeof CreateTransactionRequest>;
 
 export const UpdateTransactionRequest = CreateTransactionRequest.omit({
   accountId: true,
-}).partial();
+})
+  .extend({ isTransfer: z.boolean() })
+  .partial();
 export type UpdateTransactionRequest = z.infer<typeof UpdateTransactionRequest>;
 
 /** Move every transaction whose merchant contains `merchant` to one category. */

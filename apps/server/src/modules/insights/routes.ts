@@ -1,4 +1,5 @@
 import type { Insight, InsightListResponse } from "@vault/shared";
+import { notTransfer } from "../../lib/transfers.js";
 import { and, gte, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { weekBounds } from "../budgets/period.js";
@@ -62,7 +63,7 @@ export default async function insightRoutes(app: FastifyInstance) {
         spending: sql<string>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)`,
       })
       .from(transactions)
-      .where(and(gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst), notArchived));
+      .where(and(notTransfer, gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst), notArchived));
     const incomeCents = Number(flow?.income ?? 0);
     const spendingCents = Number(flow?.spending ?? 0);
 
@@ -108,7 +109,7 @@ export default async function insightRoutes(app: FastifyInstance) {
         spent: sql<string>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)`,
       })
       .from(transactions)
-      .where(and(gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst), notArchived))
+      .where(and(notTransfer, gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst), notArchived))
       .groupBy(transactions.categoryId);
     const spentByCategory = new Map(spentRows.map((r) => [r.categoryId ?? "none", Number(r.spent)]));
 
@@ -127,7 +128,7 @@ export default async function insightRoutes(app: FastifyInstance) {
           spent: sql<string>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)`,
         })
         .from(transactions)
-        .where(and(gte(transactions.postedAt, week.start), lt(transactions.postedAt, week.end), notArchived))
+        .where(and(notTransfer, gte(transactions.postedAt, week.start), lt(transactions.postedAt, week.end), notArchived))
         .groupBy(transactions.categoryId);
       for (const r of rows) weekSpentByCategory.set(r.categoryId ?? "none", Number(r.spent));
     }
@@ -172,13 +173,14 @@ export default async function insightRoutes(app: FastifyInstance) {
       // that falls early next month.
       const daysAway = daysUntilDue(bill.dueDay, today);
       if (daysAway > 7 || bill.autopay) continue;
-      const short = bill.amountCents - bill.savedCents;
+      // Set-asides are automatic now, so this is a reminder to pay, not a shortfall.
+      const short = bill.amountCents;
       if (short > 0) {
         insights.push({
           id: `bill-underfunded-${bill.id}`,
           severity: daysAway <= 3 ? "critical" : "warning",
           title: `${bill.name} is due in ${daysAway} day${daysAway === 1 ? "" : "s"}`,
-          detail: `${money(bill.savedCents)} set aside of ${money(bill.amountCents)} — ${money(short)} short.`,
+          detail: `${money(bill.amountCents)} to pay — it isn't on autopay.`,
           page: "bills",
           categoryId: bill.categoryId,
           accountId: bill.accountId,
@@ -300,7 +302,7 @@ export default async function insightRoutes(app: FastifyInstance) {
       })
       .from(transactions)
       .where(
-        and(
+        and(notTransfer, 
           gte(transactions.postedAt, first),
           lt(transactions.postedAt, nextFirst),
           lt(transactions.amountCents, 0),

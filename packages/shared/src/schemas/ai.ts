@@ -238,6 +238,15 @@ export const UpdateAiSettingsRequest = z
   .refine((v) => !plainHttpToPublicHost(v.baseUrl), { message: PUBLIC_HTTP_MESSAGE, path: ["baseUrl"] });
 export type UpdateAiSettingsRequest = z.infer<typeof UpdateAiSettingsRequest>;
 
+/** How an attached spreadsheet is kept in a user message (shown as a chip, not as text). */
+export const FILE_BLOCK_RE = /\n*<vault-file name="([^"]*)"[^>]*>[\s\S]*?<\/vault-file>/g;
+
+/** A user message's text without attached files, and the files' names. */
+export function splitUserMessage(content: string): { text: string; files: string[] } {
+  const files = [...content.matchAll(FILE_BLOCK_RE)].map((m) => m[1] ?? "file");
+  return { text: content.replace(FILE_BLOCK_RE, "").trim(), files };
+}
+
 export const AiMessage = z.object({
   id: z.string().uuid(),
   role: z.enum(["user", "assistant"]),
@@ -266,9 +275,20 @@ export const ConversationDetail = Conversation.extend({
 });
 export type ConversationDetail = z.infer<typeof ConversationDetail>;
 
+/**
+ * A spreadsheet attached to a chat message (an existing budget to import, a
+ * list of bills…), as CSV text. The app turns .xlsx files into CSV first.
+ */
+export const ChatAttachment = z.object({
+  name: z.string().trim().min(1).max(200),
+  content: z.string().min(1).max(200_000),
+});
+export type ChatAttachment = z.infer<typeof ChatAttachment>;
+
 export const ChatRequest = z.object({
   conversationId: z.string().uuid().optional(),
   message: z.string().min(1).max(4000),
+  attachment: ChatAttachment.optional(),
   /**
    * Auto mode: apply the assistant's proposed changes straight away instead
    * of waiting for approval. Changes the app applies itself (theme, review

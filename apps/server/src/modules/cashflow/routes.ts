@@ -1,4 +1,5 @@
 import type { MonthSummary, SankeyLink, SankeyNode, SankeyResponse, TrendsResponse } from "@vault/shared";
+import { notTransfer } from "../../lib/transfers.js";
 import { and, eq, gt, gte, isNull, lt, notInArray, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -83,7 +84,7 @@ export default async function cashflowRoutes(app: FastifyInstance) {
         spending: sql<string>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)`,
       })
       .from(transactions)
-      .where(and(gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst)))
+      .where(and(notTransfer, gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst)))
       .groupBy(sql`1`);
     const byMonth = new Map(rows.map((r) => [r.month, r]));
 
@@ -136,7 +137,7 @@ export default async function cashflowRoutes(app: FastifyInstance) {
         net: sql<string>`coalesce(sum(${transactions.amountCents}), 0)`,
       })
       .from(transactions)
-      .where(and(gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst), notArchived))
+      .where(and(notTransfer, gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst), notArchived))
       .groupBy(sql`1`);
     const byMonth = new Map(rows.map((r) => [r.month, r]));
 
@@ -192,7 +193,7 @@ export default async function cashflowRoutes(app: FastifyInstance) {
       })
       .from(transactions)
       .where(
-        and(gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst), notArchived),
+        and(notTransfer, gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst), notArchived),
       )
       .groupBy(transactions.categoryId);
 
@@ -203,7 +204,7 @@ export default async function cashflowRoutes(app: FastifyInstance) {
       })
       .from(transactions)
       .where(
-        and(
+        and(notTransfer, 
           gte(transactions.postedAt, first),
           lt(transactions.postedAt, nextFirst),
           gt(transactions.amountCents, 0),
@@ -284,7 +285,7 @@ export default async function cashflowRoutes(app: FastifyInstance) {
       })
       .from(transactions)
       .where(
-        and(
+        and(notTransfer, 
           gte(transactions.postedAt, first),
           lt(transactions.postedAt, nextFirst),
           lt(transactions.amountCents, 0),

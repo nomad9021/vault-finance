@@ -1,4 +1,4 @@
-import type { DashboardWidget } from "@vault/shared";
+import { resolveWidgets, type DashboardWidget } from "@vault/shared";
 
 export type Span = 3 | 4 | 6 | 8 | 12;
 export const SPANS: ReadonlyArray<{ value: Span; label: string }> = [
@@ -19,20 +19,11 @@ export interface ResolvedWidget {
  * The person's saved dashboard layout over the default one: saved widgets in
  * their order (unknown ids from older/newer versions dropped), then any
  * widget they've never arranged, in default order. Spans fall back to the
- * widget's default.
+ * widget's default. Shared with the server, which applies the assistant's
+ * layout changes the same way.
  */
 export function resolveLayout(defaults: ReadonlyArray<{ id: string; span: Span }>, saved: DashboardWidget[] | undefined): ResolvedWidget[] {
-  const byId = new Map(defaults.map((d) => [d.id, d]));
-  const out: ResolvedWidget[] = [];
-  const seen = new Set<string>();
-  for (const w of saved ?? []) {
-    const d = byId.get(w.id);
-    if (!d || seen.has(w.id)) continue;
-    seen.add(w.id);
-    out.push({ id: w.id, hidden: w.hidden ?? false, span: (w.span as Span | undefined) ?? d.span });
-  }
-  for (const d of defaults) if (!seen.has(d.id)) out.push({ id: d.id, hidden: false, span: d.span });
-  return out;
+  return resolveWidgets(defaults, saved);
 }
 
 /** Move one widget up or down by one place. */

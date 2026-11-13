@@ -1,3 +1,4 @@
+import { notTransfer } from "../../lib/transfers.js";
 import {
   type BudgetPlan,
   BudgetListQuery,
@@ -71,7 +72,7 @@ export default async function budgetRoutes(app: FastifyInstance) {
         spent: sql<number>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)::bigint`,
       })
       .from(transactions)
-      .where(and(gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst)))
+      .where(and(notTransfer, gte(transactions.postedAt, first), lt(transactions.postedAt, nextFirst)))
       .groupBy(transactions.categoryId);
     const spentByCategory = new Map(
       spentRows.map((r) => [r.categoryId ?? "none", Number(r.spent)]),
@@ -91,7 +92,7 @@ export default async function budgetRoutes(app: FastifyInstance) {
           spent: sql<number>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)::bigint`,
         })
         .from(transactions)
-        .where(and(gte(transactions.postedAt, start), lt(transactions.postedAt, end)))
+        .where(and(notTransfer, gte(transactions.postedAt, start), lt(transactions.postedAt, end)))
         .groupBy(transactions.categoryId);
       weekSpend.set(w, new Map(rows.map((r) => [r.categoryId ?? "none", Number(r.spent)])));
     }

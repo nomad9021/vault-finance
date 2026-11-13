@@ -22,6 +22,7 @@ import {
   type LoginRequest,
 } from "../schemas/auth.js";
 import { Household } from "../schemas/household.js";
+import { GuiltFreeResponse, type UpdateGuiltFreeRequest } from "../schemas/guiltFree.js";
 import { SetupStatusResponse, type SetupCompleteRequest } from "../schemas/setup.js";
 import { User, UserPreferences, type UpdateMeRequest } from "../schemas/user.js";
 import { VersionResponse } from "../schemas/version.js";
@@ -594,6 +595,10 @@ export class ApiClient {
   moveCategory(id: string, direction: "up" | "down") {
     return this.request(CategoryListResponse, "POST", `/categories/${id}/move`, { direction });
   }
+  /** Put siblings in this order; ones left out keep their order after them. */
+  reorderCategories(orderedIds: string[]) {
+    return this.request(CategoryListResponse, "POST", "/categories/reorder", { orderedIds });
+  }
 
   // ── Auto-categorization (local rules) ──
   categorizationRules() {
@@ -1012,6 +1017,13 @@ export class ApiClient {
   }
   budgetPlan() {
     return this.request(BudgetPlan, "GET", "/budget-plan");
+  }
+  /** Everyone's weekly guilt-free spending, this week. */
+  guiltFree(weekStart?: "monday" | "sunday") {
+    return this.request(GuiltFreeResponse, "GET", `/guilt-free${weekStart ? `?weekStart=${weekStart}` : ""}`);
+  }
+  saveGuiltFree(body: UpdateGuiltFreeRequest, weekStart?: "monday" | "sunday") {
+    return this.request(GuiltFreeResponse, "PUT", `/guilt-free${weekStart ? `?weekStart=${weekStart}` : ""}`, body);
   }
   updateBudgetPlan(body: UpdateBudgetPlanRequest) {
     return this.request(BudgetPlan, "PUT", "/budget-plan", body);

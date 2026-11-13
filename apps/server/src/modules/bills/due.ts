@@ -37,3 +37,32 @@ export function daysUntilDue(dueDay: number, today = new Date()): number {
   const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
   return Math.round((Date.parse(`${next}T00:00:00Z`) - todayUtc) / 86_400_000);
 }
+
+/**
+ * How much is set aside for a bill right now, worked out rather than entered:
+ * money builds up evenly from the last due date to the next, so a monthly
+ * $300 bill is half set aside halfway through its month and fully on the day
+ * it's due. Weekly, quarterly and yearly bills build up over their own cycle.
+ */
+export function autoSetAsideCents(
+  bill: { amountCents: number; dueDay: number; cadence: string },
+  today = new Date(),
+): number {
+  const next = Date.parse(`${nextDueDate(bill.dueDay, today)}T00:00:00Z`);
+  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const DAY = 86_400_000;
+  let cycleDays: number;
+  if (bill.cadence === "weekly") cycleDays = 7;
+  else if (bill.cadence === "quarterly") cycleDays = 91;
+  else if (bill.cadence === "yearly") cycleDays = 365;
+  else {
+    // The same day a month earlier, clamped to that month's length.
+    const n = new Date(next);
+    const prevMonth = new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth() - 1, 1));
+    const prev = Date.UTC(prevMonth.getUTCFullYear(), prevMonth.getUTCMonth(), Math.min(bill.dueDay, daysInMonth(prevMonth.getUTCFullYear(), prevMonth.getUTCMonth())));
+    cycleDays = Math.round((next - prev) / DAY);
+  }
+  const left = Math.max(0, Math.round((next - todayUtc) / DAY));
+  const elapsed = Math.max(0, Math.min(cycleDays, cycleDays - left));
+  return Math.floor((bill.amountCents * elapsed) / Math.max(1, cycleDays));
+}

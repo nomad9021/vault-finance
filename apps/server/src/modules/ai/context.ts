@@ -1,4 +1,5 @@
 import { monthlyAmountCents } from "../budgets/period.js";
+import { notTransfer } from "../../lib/transfers.js";
 import { and, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import {
   accounts,
@@ -45,7 +46,7 @@ export async function buildFinancialContext(db: Db): Promise<string> {
     })
     .from(transactions)
     .where(
-      and(gte(transactions.postedAt, monthFirst), lt(transactions.postedAt, nextMonthFirst)),
+      and(notTransfer, gte(transactions.postedAt, monthFirst), lt(transactions.postedAt, nextMonthFirst)),
     )
     .groupBy(transactions.categoryId);
 

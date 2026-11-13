@@ -1,3 +1,4 @@
+import { notTransfer } from "../../lib/transfers.js";
 import type {
   Subscription as ApiSubscription,
   SubscriptionCadence,
@@ -93,7 +94,7 @@ export default async function subscriptionRoutes(app: FastifyInstance) {
       })
       .from(transactions)
       .where(
-        and(gte(transactions.postedAt, cutoff), lt(transactions.amountCents, 0), notArchived),
+        and(notTransfer, gte(transactions.postedAt, cutoff), lt(transactions.amountCents, 0), notArchived),
       );
 
     const groups = new Map<string, typeof rows>();

@@ -19,8 +19,10 @@ import {
   Tabs,
   Tag,
 } from "@vault/ui";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { periodFigures } from "../../lib/budgetPeriod.js";
+import { readSpreadsheet, SPREADSHEET_ACCEPT, SpreadsheetError } from "../../lib/spreadsheet.js";
+import { useChat } from "../../state/chat.js";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 import type { Navigate } from "./AppShell.js";
@@ -98,6 +100,26 @@ function BudgetsTab({ onNavigate }: { onNavigate: Navigate }) {
 
   const [editing, setEditing] = useState<BudgetWithSpend | "new" | null>(null);
 
+  // Bring an existing budget over from a spreadsheet: the assistant reads it
+  // and proposes the categories and budgets, which you approve.
+  const aiVisible = useApp((s) => s.aiVisible);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const importSheet = async (file: File | undefined) => {
+    if (!file) return;
+    setImportError(null);
+    try {
+      const sheet = await readSpreadsheet(file);
+      const chat = useChat.getState();
+      chat.newChat();
+      chat.attach(sheet);
+      onNavigate("assistant");
+      void chat.send(`Import the budget in this spreadsheet (${sheet.name}).`);
+    } catch (err) {
+      setImportError(err instanceof SpreadsheetError ? err.message : "Couldn't read that file. Save it as CSV and try again.");
+    }
+  };
+
   const budgets = data?.budgets ?? [];
   const totalBudgeted = data?.totalBudgetedCents ?? 0;
   const totalSpent = data?.totalSpentCents ?? 0;
@@ -125,12 +147,34 @@ function BudgetsTab({ onNavigate }: { onNavigate: Navigate }) {
           onClick={() => setMonth(shiftMonth(month, 1))}
           aria-label="Next month"
         />
-        <div className="spacer">
+        <div className="spacer row" style={{ gap: "var(--space-2)", justifyContent: "flex-end" }}>
+          {aiVisible && (
+            <>
+              <input
+                ref={fileRef}
+                type="file"
+                accept={SPREADSHEET_ACCEPT}
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  void importSheet(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+              <Button variant="secondary" icon="upload" title="Import an existing budget from a CSV or Excel file — the assistant sets it up" onClick={() => fileRef.current?.click()}>
+                Import
+              </Button>
+            </>
+          )}
           <Button variant="primary" icon="plus" onClick={() => setEditing("new")}>
             Add budget
           </Button>
         </div>
       </div>
+      {importError && (
+        <div role="alert" className="t-sm" style={{ color: "var(--color-negative)" }}>
+          {importError}
+        </div>
+      )}
 
       <div className="panel row wrap" style={{ gap: "var(--space-6)", alignItems: "baseline" }}>
         <div className="stat">
