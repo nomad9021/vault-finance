@@ -65,7 +65,7 @@ export function LoginScreen() {
       setError(null);
       try {
         const r = await unlockWithBiometric(profile.id);
-        if (!r.ok && r.reason !== "cancelled") {
+        if (!r.ok && r.reason !== "cancelled" && r.reason !== "interrupted") {
           setError(
             r.message ??
               (r.reason === "failed"
@@ -86,26 +86,58 @@ export function LoginScreen() {
   const faceIdFirst = !!lockedUser && biometricUserIds.includes(lockedUser.id);
   const [veilLifted, setVeilLifted] = useState(false);
   const autoPrompted = useRef(false);
+  // "Still on screen", kept apart from the prompt effect: that effect may
+  // re-run (e.g. once the Face ID label loads) and must not drop a result.
+  const onScreen = useRef(true);
+  useEffect(() => {
+    onScreen.current = true;
+    return () => {
+      onScreen.current = false;
+    };
+  }, []);
+  const labelRef = useRef(bioLabel);
+  labelRef.current = bioLabel;
   useEffect(() => {
     if (autoPrompted.current || !faceIdFirst || !lockedUser) return;
     autoPrompted.current = true;
+    // Ask only once the app is in front (iOS refuses Face ID while it's
+    // leaving or away). If leaving the app interrupted the prompt, keep the
+    // padlock and ask again on return; only a real cancel or a failed match
+    // brings up the sign-in page.
+    let tries = 0;
+    const attempt = async (): Promise<Awaited<ReturnType<typeof unlockWithBiometric>>> => {
+      // A retry pauses briefly, so a prompt the system keeps refusing can't spin.
+      if (tries++ > 0) await new Promise((r) => setTimeout(r, 400));
+      await platform.whenActive?.();
+      if (!onScreen.current) return { ok: false, reason: "cancelled" };
+      const r = await unlockWithBiometric(lockedUser.id);
+      // Interrupted by the system (or a cancel that landed as the app left):
+      // keep the padlock up and ask again once the app is back in front.
+      const interrupted =
+        !r.ok &&
+        (r.reason === "interrupted" || (r.reason === "cancelled" && !!platform.isActive && !platform.isActive()));
+      if (interrupted && onScreen.current && tries < 3) {
+        return attempt();
+      }
+      return r;
+    };
     setScanning(true);
-    void unlockWithBiometric(lockedUser.id)
+    void attempt()
       .then((r) => {
-        if (r.ok) return;
+        if (r.ok || !onScreen.current) return;
         setVeilLifted(true);
-        if (r.reason !== "cancelled") {
+        if (r.reason !== "cancelled" && r.reason !== "interrupted") {
           setError(
             r.message ??
               (r.reason === "failed"
-                ? `${bioLabel} didn't recognize you — try again or use your password.`
-                : `${bioLabel} isn't available right now — use your password.`),
+                ? `${labelRef.current} didn't recognize you — try again or use your password.`
+                : `${labelRef.current} isn't available right now — use your password.`),
           );
         }
       })
       .catch(() => setVeilLifted(true))
       .finally(() => setScanning(false));
-  }, [faceIdFirst, lockedUser, unlockWithBiometric, bioLabel]);
+  }, [faceIdFirst, lockedUser, unlockWithBiometric, platform]);
 
   useEffect(() => {
     if (selected && !biometricUserIds.includes(selected.id)) passwordRef.current?.focus();

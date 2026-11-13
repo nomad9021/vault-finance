@@ -15,6 +15,9 @@ use tauri::{AppHandle, Emitter};
 
 /// Event the webview listens for (platform/tauri.ts → onSystemLock).
 pub const EVENT: &str = "vault-system-lock";
+/// iOS: the app is active (in front, able to show Face ID) again.
+#[allow(dead_code)] // emitted only by the iOS watcher
+pub const ACTIVE_EVENT: &str = "vault-app-active";
 
 pub fn start(app: AppHandle) {
     imp::start(app);
@@ -259,11 +262,17 @@ mod imp {
             let center: *mut AnyObject = msg_send![class!(NSNotificationCenter), defaultCenter];
             let queue: *mut AnyObject = msg_send![class!(NSOperationQueue), mainQueue];
 
+            let app_resign = app.clone();
             let resign = RcBlock::new(move |_note: NonNull<AnyObject>| {
                 show_cover();
-                notify(&app, "app-inactive");
+                notify(&app_resign, "app-inactive");
             });
-            let active = RcBlock::new(|_note: NonNull<AnyObject>| hide_cover());
+            // Face ID can only be asked for once the app is active again, so
+            // the lock screen waits for this before prompting.
+            let active = RcBlock::new(move |_note: NonNull<AnyObject>| {
+                hide_cover();
+                let _ = app.emit(super::ACTIVE_EVENT, ());
+            });
 
             // The centre keeps the observers (and copies the blocks) for the
             // life of the app; nothing ever removes them.

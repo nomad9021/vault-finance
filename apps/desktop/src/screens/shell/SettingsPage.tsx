@@ -2879,7 +2879,7 @@ function BiometricSection() {
     setError(null);
     try {
       const r = await enableBiometric();
-      if (!r.ok && r.reason !== "cancelled") {
+      if (!r.ok && r.reason !== "cancelled" && r.reason !== "interrupted") {
         setError(r.message ?? (r.reason === "failed" ? `${label} didn't recognize you.` : `${label} isn't available.`));
       }
     } catch {

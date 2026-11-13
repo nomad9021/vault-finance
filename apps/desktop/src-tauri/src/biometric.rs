@@ -23,6 +23,11 @@ pub struct BiometricStatus {
 pub enum BiometricError {
     #[error("cancelled")]
     Cancelled,
+    /// The system or the app called it off (iOS: the app left the screen
+    /// mid-prompt), not the person. Callers retry once the app is back.
+    #[allow(dead_code)] // only iOS produces it
+    #[error("interrupted")]
+    Interrupted,
     #[error("not recognized")]
     Failed,
     #[error("{0}")]
@@ -34,6 +39,7 @@ impl Serialize for BiometricError {
         // The frontend switches on these prefixes, not free text.
         s.serialize_str(&match self {
             BiometricError::Cancelled => "cancelled".to_string(),
+            BiometricError::Interrupted => "interrupted".to_string(),
             BiometricError::Failed => "failed".to_string(),
             BiometricError::Unavailable(why) => format!("unavailable: {why}"),
         })
@@ -351,8 +357,11 @@ mod imp {
     use tauri::Manager;
     use tauri_plugin_biometric::{AuthOptions, BiometricExt, BiometryType};
 
-    // LAError names the Swift side rejects with that mean "the user backed out".
-    const CANCEL_CODES: [&str; 4] = ["userCancel", "userFallback", "systemCancel", "appCancel"];
+    // LAError names the Swift side rejects with: the person backed out...
+    const CANCEL_CODES: [&str; 2] = ["userCancel", "userFallback"];
+    // ...or iOS / the app called it off, e.g. the app left the screen
+    // mid-prompt or wasn't in front to show it.
+    const INTERRUPT_CODES: [&str; 3] = ["systemCancel", "appCancel", "notInteractive"];
 
     fn label(kind: &BiometryType) -> &'static str {
         match kind {
@@ -396,6 +405,15 @@ mod imp {
                 .is_some_and(|c| CANCEL_CODES.contains(&c)) =>
             {
                 Err(BiometricError::Cancelled)
+            }
+            Err(tauri_plugin_biometric::Error::PluginInvoke(PluginInvokeError::InvokeRejected(
+                rejected,
+            ))) if rejected
+                .code
+                .as_deref()
+                .is_some_and(|c| INTERRUPT_CODES.contains(&c)) =>
+            {
+                Err(BiometricError::Interrupted)
             }
             Err(tauri_plugin_biometric::Error::PluginInvoke(PluginInvokeError::InvokeRejected(
                 rejected,
