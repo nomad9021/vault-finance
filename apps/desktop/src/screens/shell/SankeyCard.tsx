@@ -72,7 +72,7 @@ export function SankeyCard({
   onNavigate,
   onChanged,
   title = "Cash flow",
-  hint = "Click any node to drill in",
+  hint = "Tap or click a category to see its details",
   compact = false,
   precise = false,
   singlePeriod = false,
@@ -109,8 +109,8 @@ export function SankeyCard({
       >
         <div className="panel-title">{title}</div>
         {!compact && (
-          <div className="row" style={{ gap: "var(--space-4)" }}>
-            <span className="t-xs t-tertiary">{hint}</span>
+          <div className="row sankey-head-tools" style={{ gap: "var(--space-4)" }}>
+            <span className="t-xs t-tertiary sankey-hint">{hint}</span>
             {!singlePeriod && <div className="seg">
               {(["weekly", "monthly", "yearly"] as const).map((p) => (
                 <button
@@ -232,6 +232,9 @@ function FocusPanel({
 
   return (
     <div
+      className="sankey-focus"
+      role="dialog"
+      aria-label={node.label}
       style={{
         position: "absolute",
         top: 0,

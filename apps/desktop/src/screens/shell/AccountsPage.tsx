@@ -190,7 +190,7 @@ export function AccountsPage({ onNavigate }: { onNavigate: Navigate }) {
               key={group.title}
               flush
               title={
-                <button
+                <button className="tap-target"
                   onClick={() => toggleGroup(group.title)}
                   aria-expanded={!isCollapsed}
                   style={{ display: "flex", alignItems: "center", gap: 8, background: "none", border: 0, font: "inherit", color: "inherit", cursor: "pointer", padding: 0 }}

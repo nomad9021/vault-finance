@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * Interactive multi-level cash-flow Sankey. Columns come from each node's
@@ -192,7 +192,38 @@ function layout(nodes: SankeyNodeDatum[], links: SankeyLinkDatum[]) {
   return { nodes: [...placed.values()], links: placedLinks, maxDepth, height: H };
 }
 
-export function Sankey({
+/** Below this width the full multi-column diagram can't label legibly. */
+const PHONE_MAX_W = 600;
+
+/**
+ * Picks the drawing for the space available: the full multi-column diagram,
+ * or on a phone-width card a simplified one drawn at real pixel size (the
+ * full one is a 1240-wide drawing scaled down, which shrinks its labels to a
+ * few pixels on a phone).
+ */
+export function Sankey(props: SankeyProps) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState<number | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setWidth(Math.round(e!.contentRect.width)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const hasHub = props.nodes.some((n) => n.kind === "hub");
+  return (
+    <div ref={ref}>
+      {width === null ? null : width < PHONE_MAX_W && hasHub ? (
+        <PhoneSankey {...props} width={width} />
+      ) : (
+        <FullSankey {...props} />
+      )}
+    </div>
+  );
+}
+
+function FullSankey({
   nodes,
   links,
   format,
@@ -336,6 +367,135 @@ export function Sankey({
           </g>
         );
       })}
+    </svg>
+  );
+}
+
+// ── Phone ──
+
+const P_ROWS = 7; // categories shown; the rest are grouped as "Other"
+const P_ROW = 52; // px per category row: 15px name + 13px amount + air
+const P_BAR = 8; // node bar width
+const P_GAP = 8; // gap between category bars
+
+/**
+ * Phone cash flow: total income on the left flowing into the largest
+ * spending categories (and savings) on the right, drawn in real pixels so
+ * names are 15px and amounts 13px. Smaller categories fold into "Other".
+ * Tapping a category focuses it, like the full diagram.
+ */
+function PhoneSankey({
+  nodes,
+  links,
+  format,
+  focus,
+  onFocus,
+  hubColor = "#9397ab",
+  ariaLabel = "Cash flow diagram",
+  width,
+}: SankeyProps & { width: number }) {
+  const hub = nodes.find((n) => n.kind === "hub")!;
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const outs = links
+    .filter((l) => l.from === hub.id && l.value > 0)
+    .map((l) => ({ node: byId.get(l.to), value: l.value }))
+    .filter((x): x is { node: SankeyNodeDatum; value: number } => !!x.node)
+    .sort((a, b) => b.value - a.value);
+  const shown = outs.slice(0, outs.length > P_ROWS + 1 ? P_ROWS : P_ROWS + 1);
+  const rest = outs.slice(shown.length);
+  const rows: Array<{ id: string | null; label: string; value: number; color: string }> = shown.map((o) => ({
+    id: o.node.id,
+    label: o.node.label,
+    value: o.value,
+    color: o.node.color,
+  }));
+  if (rest.length) {
+    rows.push({
+      id: null,
+      label: `Other (${rest.length})`,
+      value: rest.reduce((sum, o) => sum + o.value, 0),
+      color: hubColor,
+    });
+  }
+  const total = rows.reduce((sum, r) => sum + r.value, 0);
+  if (total <= 0) return null;
+
+  const HEAD = 28; // "Where $X of income went" line above the bands
+  const height = rows.length * P_ROW;
+  const rightX = Math.round(width * 0.36);
+  const labelX = rightX + P_BAR + 12;
+  // Right bars: value-proportional heights inside each row's slot, centred.
+  const usable = height - P_GAP * rows.length;
+  let leftY = 0;
+  const placed = rows.map((r, i) => {
+    const h = Math.max(3, (r.value / total) * usable);
+    const rowTop = i * P_ROW;
+    const ry = rowTop + (P_ROW - Math.min(h, P_ROW - 4)) / 2;
+    const rh = Math.min(h, P_ROW - 4);
+    const lh = (r.value / total) * height;
+    const band = { ly: leftY, lh, ry, rh };
+    leftY += lh;
+    return { ...r, ...band, cy: rowTop + P_ROW / 2 };
+  });
+  const midX = (P_BAR + rightX) / 2;
+  const ribbon = (p: (typeof placed)[number]) =>
+    `M${P_BAR},${p.ly} C${midX},${p.ly} ${midX},${p.ry} ${rightX},${p.ry}` +
+    ` L${rightX},${p.ry + p.rh} C${midX},${p.ry + p.rh} ${midX},${p.ly + p.lh} ${P_BAR},${p.ly + p.lh} Z`;
+  const dim = (id: string | null) => focus !== null && focus !== id && focus !== hub.id;
+
+  return (
+    <svg
+      viewBox={`0 ${-HEAD} ${width} ${height + HEAD}`}
+      width={width}
+      height={height + HEAD}
+      style={{ display: "block" }}
+      role="img"
+      aria-label={`${ariaLabel}: ${placed.map((p) => `${p.label} ${format(p.value)}`).join(", ")}`}
+    >
+      <text
+        x={0}
+        y={-HEAD + 15}
+        style={{ fontFamily: "var(--font-body)", fontSize: 13, fill: "var(--content-tertiary)" }}
+      >
+        Where {format(hub.value)} of income went
+      </text>
+      <rect
+        x={0}
+        y={0}
+        width={P_BAR}
+        height={height}
+        rx={2}
+        fill={hub.color || hubColor}
+        style={{ cursor: "pointer" }}
+        onClick={() => onFocus(focus === hub.id ? null : hub.id)}
+      />
+      {placed.map((p) => (
+        <g
+          key={p.id ?? "other"}
+          opacity={dim(p.id) ? 0.3 : 1}
+          style={{ cursor: p.id ? "pointer" : "default", transition: "opacity .2s" }}
+          onClick={() => p.id && onFocus(focus === p.id ? null : p.id)}
+        >
+          <path d={ribbon(p)} fill={rgba(p.color, 0.32)} />
+          <rect x={rightX} y={p.ry} width={P_BAR} height={p.rh} rx={2} fill={p.color} />
+          {/* Full-row hit area, so every row is an easy tap. */}
+          <rect x={rightX} y={p.cy - P_ROW / 2} width={width - rightX} height={P_ROW} fill="transparent" />
+          <text
+            x={labelX}
+            y={p.cy - 3}
+            style={{ fontFamily: "var(--font-heading)", fontWeight: 500, fontSize: 15, fill: "var(--color-text)" }}
+          >
+            {p.label}
+          </text>
+          <text
+            x={labelX}
+            y={p.cy + 15}
+            style={{ fontFamily: "var(--font-body)", fontSize: 13, fill: "var(--content-tertiary)", fontVariantNumeric: "tabular-nums" }}
+          >
+            {format(p.value)} · {Math.round((p.value / total) * 100)}%
+          </text>
+        </g>
+      ))}
     </svg>
   );
 }

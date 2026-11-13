@@ -1532,3 +1532,165 @@ button.list-row:active, .list-row[role="button"]:active {
   border-top: 1px solid var(--hairline);
 }
 .phone-summary-figure { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+/* ── Phone tap targets: at least 44×44pt (Apple HIG, accessibility.md) ──
+   Buttons get a little taller, and every small control gets an invisible
+   hit area that reaches 44pt in each direction without changing the layout
+   (the ::after grows outward only when the control is smaller than 44). */
+@media (max-width: 900px) {
+  .btn { min-height: 40px; }
+  .btn-sm { min-height: 36px; }
+  .btn-icon { width: 40px; min-height: 40px; }
+  .btn-icon.btn-sm { width: 36px; min-height: 36px; }
+  .seg-opt { min-height: 36px; }
+
+  .btn, .panel-link, .seg-opt, .tabs [role="tab"], .phone-summary button,
+  .tap-target, label.radio, label.check, .avatar, [role="button"] {
+    position: relative;
+  }
+  .btn::after, .panel-link::after, .seg-opt::after, .tabs [role="tab"]::after,
+  .phone-summary button::after, .tap-target::after, label.radio::after, label.check::after,
+  .avatar::after, [role="button"]::after {
+    content: "";
+    position: absolute;
+    top: min(0px, calc((100% - 44px) / 2));
+    bottom: min(0px, calc((100% - 44px) / 2));
+    left: min(0px, calc((100% - 44px) / 2));
+    right: min(0px, calc((100% - 44px) / 2));
+  }
+}
+
+/* ── Phone: dialogs are bottom sheets ──
+   Slide up from the bottom edge, a grabber on top, drag down to dismiss
+   (Dialog.tsx), full-width actions within thumb reach. */
+.dialog-grabber { display: none; }
+@media (max-width: 640px) {
+  .dialog-backdrop { align-items: end; padding: 0; }
+  .dialog {
+    width: 100%;
+    max-height: calc(100dvh - var(--safe-top) - var(--space-4));
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    padding: var(--space-2) var(--space-4) calc(var(--space-4) + var(--safe-bottom));
+    animation: sheetUp var(--dur) var(--ease-out) both;
+    transition: transform var(--dur) var(--ease-out);
+  }
+  .dialog-drag { touch-action: none; cursor: grab; padding-bottom: var(--space-1); }
+  .dialog-grabber {
+    display: block;
+    width: 36px;
+    height: 5px;
+    margin: 0 auto var(--space-3);
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--color-text) 22%, transparent);
+  }
+  .dialog-actions { flex-wrap: wrap; }
+  .dialog-actions > .btn { flex: 1 1 0; min-height: 48px; }
+}
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dialog { animation: none; } }
+
+/* Phone: the cash-flow drill-in opens as a bottom sheet instead of a side
+   panel over a card that's too narrow to hold it. Overrides inline styles. */
+@media (max-width: 640px) {
+  .sankey-focus {
+    position: fixed !important;
+    top: auto !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    max-height: 72dvh;
+    z-index: var(--z-modal);
+    border: 0 !important;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    padding-bottom: var(--safe-bottom);
+    background: var(--color-surface) !important;
+    animation: sheetUp var(--dur) var(--ease-out) both !important;
+  }
+}
+
+/* Pull to refresh (usePullToRefresh): a spinner revealed above the page. */
+.ptr {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  margin-top: calc(var(--space-4) * -1);
+  transition: height var(--dur) var(--ease-out), opacity var(--dur) var(--ease-out);
+}
+.ptr-spin {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--color-text) 15%, transparent);
+  border-top-color: var(--content-secondary);
+}
+.ptr-spin.is-spinning { animation: ptrSpin .8s linear infinite; }
+@keyframes ptrSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ptr-spin.is-spinning { animation-duration: 2.4s; } }
+
+/* Swipe actions on phone list rows (SwipeRow.tsx). */
+.swipe-row { position: relative; overflow: hidden; }
+.swipe-row + .swipe-row { border-top: 1px solid var(--hairline); }
+.swipe-row .phone-row + .phone-row { border-top: 0; }
+.swipe-front {
+  position: relative;
+  background: var(--color-surface);
+  touch-action: pan-y;
+  transition: transform var(--dur) var(--ease-out);
+}
+.swipe-actions { position: absolute; top: 0; right: 0; bottom: 0; display: flex; }
+.swipe-action {
+  flex: 1;
+  border: 0;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: #fff;
+  background: var(--color-neutral-600, #6b6f80);
+  cursor: pointer;
+}
+.swipe-action.is-danger { background: var(--color-negative); }
+.swipe-action:focus-visible { outline: 2px solid #fff; outline-offset: -4px; }
+
+/* Phone large title: the page name is large while the page is at the top
+   and settles to the bar size once it scrolls (iOS navigation bar). A
+   transform, so nothing below it moves. */
+@media (max-width: 900px) {
+  .header-title {
+    transform-origin: left center;
+    transition: transform var(--dur) var(--ease-out);
+  }
+  .app-main[data-scrolled="false"] .header-title { transform: scale(1.5); font-weight: 700; }
+}
+@media (max-width: 900px) and (prefers-reduced-motion: reduce) {
+  .header-title { transition: none; }
+}
+
+/* Phone: a row of number cards becomes one compact two-column block instead
+   of a stack of tall cards (a grid whose every cell is a .stat card). */
+@media (max-width: 640px) {
+  .grid:has(> [class*="col-"] > .stat):not(:has(> [class*="col-"] > :not(.stat))) {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-2);
+  }
+  .grid:has(> [class*="col-"] > .stat):not(:has(> [class*="col-"] > :not(.stat))) > [class*="col-"] {
+    grid-column: auto;
+  }
+  .grid:has(> [class*="col-"] > .stat):not(:has(> [class*="col-"] > :not(.stat))) .stat {
+    padding: var(--space-3) var(--space-4);
+    height: 100%;
+  }
+  /* An odd last card spans both columns rather than leaving a hole. */
+  .grid:has(> [class*="col-"] > .stat):not(:has(> [class*="col-"] > :not(.stat))) > [class*="col-"]:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Phone: the cash-flow card's hint and period switch each get a full line,
+   so large text sizes don't squeeze them into a thin column. */
+@media (max-width: 640px) {
+  .sankey-head-tools { flex-wrap: wrap; width: 100%; gap: var(--space-2) !important; }
+  .sankey-hint { flex-basis: 100%; line-height: 1.35; }
+  .sankey-head-tools .seg { width: 100%; }
+  .sankey-head-tools .seg-opt { flex: 1; }
+}

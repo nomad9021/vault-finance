@@ -35,6 +35,8 @@ interface ChatState {
   listVersion: number;
   /** Bumped when a change was applied, so open pages can refresh their data. */
   dataVersion: number;
+  /** Ask every open page to refetch (pull to refresh). */
+  refreshData(): void;
   newChat(): void;
   open(id: string): Promise<void>;
   send(text: string): Promise<void>;
@@ -70,6 +72,10 @@ export const useChat = create<ChatState>((set, get) => {
     error: null,
     listVersion: 0,
     dataVersion: 0,
+
+    refreshData() {
+      set((s) => ({ dataVersion: s.dataVersion + 1 }));
+    },
 
     newChat() {
       if (get().busy) return;

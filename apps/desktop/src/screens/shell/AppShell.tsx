@@ -1,7 +1,9 @@
 import { Banner, Button, CommandPalette, ErrorBoundary, type Command } from "@vault/ui";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLayoutMode } from "../../lib/useLayout.js";
 import { useAutoLock } from "../../lib/autoLock.js";
+import { PULL_TRIGGER, usePullToRefresh } from "../../lib/usePullToRefresh.js";
+import { useChat } from "../../state/chat.js";
 import { useApp } from "../../state/store.js";
 import { AccountsPage } from "./AccountsPage.js";
 import { AssistantBubble } from "./AssistantBubble.js";
@@ -102,6 +104,19 @@ export function AppShell() {
   const group = groupOf(page);
   const meta = pageMeta(page);
   const narrow = mode === "narrow";
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const refreshData = useChat((s) => s.refreshData);
+  const { pull, refreshing } = usePullToRefresh(scrollRef, refreshData, narrow);
+  // Phone large title: big at the top of a page, shrinks once it scrolls.
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => setScrolled(el.scrollTop > 8);
+    onScroll();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [page]);
 
   return (
     <div
@@ -118,7 +133,7 @@ export function AppShell() {
       {mode === "wide" && sidebarMini && <Rail page={page} onNavigate={navigate} expandable />}
       {mode === "medium" && <Rail page={page} onNavigate={navigate} />}
 
-      <main className="app-main">
+      <main className="app-main" data-scrolled={scrolled ? "true" : "false"}>
         {connection === "offline" && (
           <Banner tone="warning" action={<ReconnectAction />}>
             Connection to the server lost — reconnecting. Your data is safe on the
@@ -139,7 +154,21 @@ export function AppShell() {
           </div>
         )}
 
-        <div className="app-scroll">
+        <div className="app-scroll" ref={scrollRef}>
+          {narrow && (
+            <div
+              className="ptr"
+              aria-hidden={!refreshing}
+              role="status"
+              style={{ height: pull, opacity: Math.min(1, pull / PULL_TRIGGER) }}
+            >
+              <span
+                className={refreshing ? "ptr-spin is-spinning" : "ptr-spin"}
+                style={refreshing ? undefined : { transform: `rotate(${pull * 4}deg)` }}
+              />
+              {refreshing && <span className="sr-only">Refreshing</span>}
+            </div>
+          )}
           {/* Scoped to the page body so a crash leaves the sidebar, header and
               command palette usable — you can just navigate away. Keyed on the
               page so moving elsewhere clears the error automatically. */}

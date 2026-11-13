@@ -151,8 +151,9 @@
 
   /* Text hierarchy — use these instead of ad-hoc color-mix on --color-text. */
   --content-primary: var(--color-text);
-  --content-secondary: color-mix(in srgb, var(--color-text) 68%, transparent);
-  --content-tertiary: color-mix(in srgb, var(--color-text) 45%, transparent);
+  --content-secondary: color-mix(in srgb, var(--color-text) 78%, transparent);
+  /* ≥5.75:1 on the dark surfaces (was 45% ≈ 3.8:1, under WCAG's 4.5:1). */
+  --content-tertiary: color-mix(in srgb, var(--color-text) 60%, transparent);
   --content-accent: var(--color-accent);
 
   --color-neutral-100: #f3f5fe;
@@ -245,8 +246,9 @@
   --surface-sunken: #eceef6;
 
   --content-primary: var(--color-text);
-  --content-secondary: color-mix(in srgb, var(--color-text) 65%, transparent);
-  --content-tertiary: color-mix(in srgb, var(--color-text) 45%, transparent);
+  --content-secondary: color-mix(in srgb, var(--color-text) 76%, transparent);
+  /* ≥4.64:1 on white and the page ground (was 45% = 2.84:1, under WCAG's 4.5:1). */
+  --content-tertiary: color-mix(in srgb, var(--color-text) 62%, transparent);
 
   /* Ramps flipped: 900 stays nearest the (now light) ground. */
   --color-neutral-100: #292b31;
@@ -415,4 +417,30 @@
   --sheen-line: transparent;
   --scrim: rgba(0, 0, 0, 0.85);
   --focus-ring-width: 3px;
+}
+
+/* ── iPhone: text follows the system text size (Dynamic Type) ──
+   WebKit's -apple-system-body font is the user's body size (17pt at the
+   default setting, larger or smaller with Settings → Display → Text Size),
+   so the root font size tracks it and every text token is a share of it.
+   The scale is a touch larger than desktop's, towards Apple's 17pt body.
+   Other engines (the browser preview) ignore -apple-system-body and keep the
+   17px fallback. Family and line height are reset after the shorthand. */
+:root[data-platform="ios"] {
+  font-size: 17px;
+  font: -apple-system-body;
+  font-family: var(--font-body);
+  line-height: normal;
+  --text-3xs: 0.588rem;  /* 10 at the default size (tab bar labels, like iOS) */
+  --text-2xs: 0.706rem;  /* 12 */
+  --text-xs: 0.765rem;   /* 13 */
+  --text-sm: 0.882rem;   /* 15 */
+  --text-base: 0.941rem; /* 16 */
+  --text-md: 1rem;       /* 17 */
+  --text-lg: 1.059rem;   /* 18 */
+  --text-xl: 1.235rem;   /* 21 */
+  --text-2xl: 1.471rem;  /* 25 */
+  --text-3xl: 1.824rem;  /* 31 */
+  --text-4xl: 2.235rem;  /* 38 */
+  --text-5xl: 2.824rem;  /* 48 */
 }

@@ -272,7 +272,7 @@ function BudgetBar({
             {formatCents(spent)} of {formatCents(limit)}
             {over && " — over"}
           </span>
-          <button
+          <button className="tap-target"
             title="View this category's transactions"
             onClick={(e) => {
               e.stopPropagation();

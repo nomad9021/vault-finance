@@ -32,6 +32,7 @@
 </head>
 <body>
   <div class="bar" id="devices"></div>
+  <div class="bar" id="sizes"></div>
   <div class="bar">
     <button id="reload" type="button">Reload</button>
     <button id="fit" type="button" aria-pressed="true">Fit to window</button>
@@ -60,6 +61,15 @@
   const save = (k, v) => { try { localStorage.setItem("phone-preview." + k, v); } catch {} };
   let current = DEVICES.find((d) => d.id === saved("device", "16")) ?? DEVICES[0];
   let fit = saved("fit", "on") === "on";
+  // iPhone Settings → Display → Text Size, as the body size in points.
+  const TEXT = [
+    { pt: 15, name: "Text: small" },
+    { pt: 17, name: "Default" },
+    { pt: 19, name: "Large" },
+    { pt: 21, name: "Larger" },
+    { pt: 23, name: "Largest" },
+  ];
+  let textPt = Number(saved("text", "17")) || 17;
 
   function render() {
     const d = current;
@@ -72,7 +82,14 @@
     }
     const app = $("app");
     app.width = d.w; app.height = d.h;
-    const src = `/?preview=ios&safe=${d.top},${d.bottom}`;
+    $("sizes").innerHTML = "";
+    for (const t of TEXT) {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = t.name; b.setAttribute("aria-pressed", String(t.pt === textPt));
+      b.onclick = () => { textPt = t.pt; save("text", String(t.pt)); render(); };
+      $("sizes").append(b);
+    }
+    const src = `/?preview=ios&safe=${d.top},${d.bottom}&text=${textPt}`;
     if (app.getAttribute("src") !== src) app.setAttribute("src", src);
     $("phone").classList.toggle("home-button", !!d.homeButton);
     $("status").style.height = d.top + "px";

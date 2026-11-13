@@ -1,5 +1,4 @@
 import {
-  formatCents,
   formatCentsWhole,
   type Account,
   type Bill,
@@ -332,7 +331,6 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
               <div className="col-6">
                 <SankeyCard
                   compact
-                  precise
                   title="Actual"
                   nodes={actualSankey!.nodes}
                   links={actualSankey!.links}
@@ -344,7 +342,6 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
               <div className="col-6">
                 <SankeyCard
                   compact
-                  precise
                   title="Planned"
                   nodes={planSankey.nodes}
                   links={planSankey.links}
@@ -355,7 +352,6 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
             </div>
           ) : effectiveView === "combined" ? (
             <SankeyCard
-              precise
               singlePeriod
               title="Budget vs actual"
               hint="Budget flows in on the left, spending out on the right"
@@ -366,7 +362,6 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
             />
           ) : effectiveView === "planned" ? (
             <SankeyCard
-              precise
               title="Budget plan"
               hint="Click a category to see this month's actual spending"
               nodes={planSankey.nodes}
@@ -643,8 +638,8 @@ function ThisMonth({
           </div>
           {budgetedCents > 0 && (
             <div className="t-xs t-tertiary" style={{ marginTop: "var(--space-2)" }}>
-              Budget left: <b style={{ color: leftToSpend < 0 ? "var(--color-negative)" : "var(--content-primary)" }}>{formatCents(leftToSpend)}</b>
-              {perDay !== null && ` · ${formatCents(perDay)}/day`}
+              Budget left: <b style={{ color: leftToSpend < 0 ? "var(--color-negative)" : "var(--content-primary)" }}>{formatCentsWhole(leftToSpend)}</b>
+              {perDay !== null && ` · ${formatCentsWhole(perDay)}/day`}
             </div>
           )}
         </div>
@@ -653,7 +648,7 @@ function ThisMonth({
             const off = r.actual - r.planned;
             const good = r.goodWhenOver ? off >= 0 : off <= 0;
             return (
-              <button
+              <button className="tap-target"
                 key={r.label}
                 type="button"
                 onClick={() => onNavigate(r.page)}
@@ -662,8 +657,8 @@ function ThisMonth({
                 <div className="row-between t-sm" style={{ marginBottom: "var(--space-1)" }}>
                   <span className="t-medium">{r.label}</span>
                   <span className="num t-tertiary">
-                    {formatCents(r.actual)}
-                    {r.planned > 0 && ` / ${formatCents(r.planned)}`}
+                    {formatCentsWhole(r.actual)}
+                    {r.planned > 0 && ` / ${formatCentsWhole(r.planned)}`}
                   </span>
                 </div>
                 {r.planned > 0 ? (
@@ -677,7 +672,7 @@ function ThisMonth({
                 )}
                 {r.planned > 0 && (
                   <div className="t-2xs" style={{ marginTop: 2, color: good ? "var(--content-tertiary)" : "var(--color-negative)" }}>
-                    {off === 0 ? "On plan" : `${formatCents(Math.abs(off))} ${off > 0 ? "over" : "under"} plan`}
+                    {off === 0 ? "On plan" : `${formatCentsWhole(Math.abs(off))} ${off > 0 ? "over" : "under"} plan`}
                   </div>
                 )}
               </button>
@@ -850,14 +845,14 @@ function BudgetOverview({
               className="stat-value num"
               style={{ fontSize: "var(--text-xl)", color: over ? "var(--color-negative)" : undefined }}
             >
-              {formatCents(Math.abs(left))}
+              {formatCentsWhole(Math.abs(left))}
             </span>
             <span className="t-sm t-tertiary">{over ? "over budget" : "left to spend"}</span>
           </div>
           <div className="t-xs t-tertiary" style={{ marginBottom: "var(--space-3)" }}>
-            {formatCents(spent)} of {formatCents(budgeted)}
+            {formatCentsWhole(spent)} of {formatCentsWhole(budgeted)}
             {daysLeft > 0 && ` · ${daysLeft} day${daysLeft === 1 ? "" : "s"} left`}
-            {daysLeft > 0 && left > 0 && ` · ${formatCents(Math.floor(left / daysLeft))} a day`}
+            {daysLeft > 0 && left > 0 && ` · ${formatCentsWhole(Math.floor(left / daysLeft))} a day`}
           </div>
           <ProgressBar value={spent / budgeted} over={over} label="Total budget used" />
           <div className="stack" style={{ marginTop: "var(--space-4)" }}>
@@ -880,7 +875,7 @@ function BudgetOverview({
                       className="num"
                       style={{ color: catLeft < 0 ? "var(--color-negative)" : "var(--content-tertiary)", flex: "none" }}
                     >
-                      {catLeft < 0 ? `${formatCents(-catLeft)} over` : `${formatCents(catLeft)} left`}
+                      {catLeft < 0 ? `${formatCentsWhole(-catLeft)} over` : `${formatCentsWhole(catLeft)} left`}
                     </span>
                   </div>
                   <ProgressBar

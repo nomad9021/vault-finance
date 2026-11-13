@@ -20,14 +20,18 @@ export function isPhonePreview(): boolean {
 
 /**
  * The previewed phone's safe areas (`&safe=top,bottom` from preview.html;
- * iPhone 16 by default), so the notch and home-bar padding show up.
+ * iPhone 16 by default), so the notch and home-bar padding show up, and its
+ * text size (`&text=`, 17 by default) in place of iOS Dynamic Type.
  */
 function previewCss(): string {
   const [top = 59, bottom = 34] = (new URLSearchParams(location.search).get("safe") ?? "")
     .split(",")
     .map((n) => Number.parseInt(n, 10))
     .filter((n) => Number.isFinite(n) && n >= 0 && n <= 100);
-  return `:root[data-preview="ios"] { --safe-top: ${top}px; --safe-bottom: ${bottom}px; }`;
+  // `&text=` stands in for the iPhone's Text Size setting (body size in pt).
+  const text = Number.parseInt(new URLSearchParams(location.search).get("text") ?? "17", 10);
+  const body = Number.isFinite(text) && text >= 12 && text <= 28 ? text : 17;
+  return `:root[data-preview="ios"] { --safe-top: ${top}px; --safe-bottom: ${bottom}px; font-size: ${body}px; }`;
 }
 
 /** Make the browser look like the iPhone app: iOS styling + safe areas. */

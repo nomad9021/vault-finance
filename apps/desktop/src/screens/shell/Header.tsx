@@ -43,7 +43,7 @@ export function Header({
   return (
     <header className="app-header">
       <div className="row" style={{ minWidth: 0, gap: "var(--space-3)" }}>
-        <h1 className="truncate" style={{ font: "inherit", fontWeight: 600, fontSize: "var(--text-lg)", margin: 0 }}>
+        <h1 className="truncate header-title" style={{ font: "inherit", fontWeight: 600, fontSize: "var(--text-lg)", margin: 0 }}>
           {title}
         </h1>
       </div>
