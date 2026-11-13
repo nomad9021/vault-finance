@@ -121,7 +121,8 @@ export interface HostPlatform {
    * lockwatch.rs). Returns an unsubscribe function. Undefined where the host
    * can't tell (browser dev); the app's own sleep and idle checks still apply.
    */
-  onSystemLock?(onLock: () => void): () => void;
+  /** `reason` "away": the app itself left the screen (iOS swipe away). */
+  onSystemLock?(onLock: (reason?: "away" | "system") => void): () => void;
   /**
    * Resolves once the app is in front and able to show a Face ID / Touch ID
    * prompt (iOS: after UIApplicationDidBecomeActive). Absent = always able.

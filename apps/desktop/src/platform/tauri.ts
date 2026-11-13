@@ -201,12 +201,14 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
     onSystemLock(onLock) {
       let stop: (() => void) | null = null;
       let cancelled = false;
-      void listen("vault-system-lock", () => onLock()).then((un) => (cancelled ? un() : (stop = un)));
+      void listen<string>("vault-system-lock", (e) => onLock(e.payload === "app-inactive" ? "away" : "system")).then(
+        (un) => (cancelled ? un() : (stop = un)),
+      );
       // iOS: lock the moment the app leaves the screen (home swipe, app
       // switch, phone locked), so the app switcher's snapshot shows the lock
       // screen rather than balances.
       const onHidden = () => {
-        if (document.visibilityState === "hidden") onLock();
+        if (document.visibilityState === "hidden") onLock("away");
       };
       if (ios) document.addEventListener("visibilitychange", onHidden);
       return () => {

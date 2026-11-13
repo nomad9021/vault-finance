@@ -149,7 +149,10 @@ interface AppState {
   setReviewPrefs(prefs: ReviewPrefs): Promise<void>;
   setAiAutoApply(on: boolean): Promise<void>;
   /** Hide everything behind the unlock screen; the session is kept for a quick unlock. */
-  lock(): void;
+  /** "away": the app left the screen (iPhone), so unlocking shows only a padlock first. */
+  lock(reason?: "away"): void;
+  /** The current lock happened because the app left the screen. */
+  lockedAway: boolean;
   setAutoLockMinutes(minutes: number): Promise<void>;
   setAiLevel(level: AiLevel): Promise<void>;
   changeServer(): Promise<void>;
@@ -478,7 +481,7 @@ export const useApp = create<AppState>((set, get) => ({
   },
 
   signedIn(user) {
-    set({ user, lockedUser: null, screen: { name: "shell" } });
+    set({ user, lockedUser: null, lockedAway: false, screen: { name: "shell" } });
     // Only the owner sees the start-up checks on this device from now on.
     const showStartupChecks = user.role === "owner";
     set({ showStartupChecks });
@@ -646,10 +649,12 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
 
-  lock() {
+  lockedAway: false,
+
+  lock(reason) {
     const { user, screen } = get();
     if (!user || screen.name !== "shell") return;
-    set({ user: null, lockedUser: user, aiVisible: false, screen: { name: "login" } });
+    set({ user: null, lockedUser: user, aiVisible: false, lockedAway: reason === "away", screen: { name: "login" } });
   },
 
   async setNavCollapsed(navCollapsed) {

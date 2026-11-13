@@ -55,12 +55,16 @@ export function LoginScreen() {
     };
   }, [client]);
 
+  // The automatic Face ID attempt may retry only until the person takes over.
+  const autoActive = useRef(true);
   const bioLabel = biometric?.label ?? "biometrics";
   const selectedHasBiometric = !!selected && biometricUserIds.includes(selected.id);
 
   const doBiometric = useCallback(
     async (profile: PublicProfile) => {
-      if (busy || scanning) return;
+      // A tap always works: it takes over from the automatic attempt.
+      autoActive.current = false;
+      if (busy) return;
       setScanning(true);
       setError(null);
       try {
@@ -77,14 +81,28 @@ export function LoginScreen() {
         setScanning(false);
       }
     },
-    [busy, scanning, unlockWithBiometric, bioLabel],
+    [busy, unlockWithBiometric, bioLabel],
   );
 
-  // Locked with Face ID / Touch ID set up for this profile: ask straight away,
-  // behind a blank lock page. Recognised = straight back in, no sign-in page;
-  // failed, cancelled or unavailable = the sign-in page below.
-  const faceIdFirst = !!lockedUser && biometricUserIds.includes(lockedUser.id);
+  // Locked with Face ID / Touch ID set up for this profile: ask for it
+  // straight away. Coming back to the app after leaving it (iPhone swipe
+  // away), that happens behind a blank padlock page; recognised = straight
+  // back in. A failed match, a cancel, or 4 seconds without getting in shows
+  // the sign-in page. Any other lock (fresh start, Ctrl/Cmd+L, idle) shows the
+  // sign-in page from the start, with the prompt on top of it.
+  const lockedAway = useApp((s) => s.lockedAway);
+  const biometricFirst = !!lockedUser && biometricUserIds.includes(lockedUser.id);
+  const faceIdFirst = biometricFirst && lockedAway;
   const [veilLifted, setVeilLifted] = useState(false);
+  useEffect(() => {
+    if (!faceIdFirst || veilLifted) return;
+    const t = setTimeout(() => {
+      autoActive.current = false;
+      setScanning(false);
+      setVeilLifted(true);
+    }, 4000);
+    return () => clearTimeout(t);
+  }, [faceIdFirst, veilLifted]);
   const autoPrompted = useRef(false);
   // "Still on screen", kept apart from the prompt effect: that effect may
   // re-run (e.g. once the Face ID label loads) and must not drop a result.
@@ -98,7 +116,7 @@ export function LoginScreen() {
   const labelRef = useRef(bioLabel);
   labelRef.current = bioLabel;
   useEffect(() => {
-    if (autoPrompted.current || !faceIdFirst || !lockedUser) return;
+    if (autoPrompted.current || !biometricFirst || !lockedUser) return;
     autoPrompted.current = true;
     // Ask only once the app is in front (iOS refuses Face ID while it's
     // leaving or away). If leaving the app interrupted the prompt, keep the
@@ -109,14 +127,14 @@ export function LoginScreen() {
       // A retry pauses briefly, so a prompt the system keeps refusing can't spin.
       if (tries++ > 0) await new Promise((r) => setTimeout(r, 400));
       await platform.whenActive?.();
-      if (!onScreen.current) return { ok: false, reason: "cancelled" };
+      if (!onScreen.current || !autoActive.current) return { ok: false, reason: "cancelled" };
       const r = await unlockWithBiometric(lockedUser.id);
       // Interrupted by the system (or a cancel that landed as the app left):
       // keep the padlock up and ask again once the app is back in front.
       const interrupted =
         !r.ok &&
         (r.reason === "interrupted" || (r.reason === "cancelled" && !!platform.isActive && !platform.isActive()));
-      if (interrupted && onScreen.current && tries < 3) {
+      if (interrupted && onScreen.current && autoActive.current && tries < 3) {
         return attempt();
       }
       return r;
@@ -124,7 +142,9 @@ export function LoginScreen() {
     setScanning(true);
     void attempt()
       .then((r) => {
-        if (r.ok || !onScreen.current) return;
+        // The person took over (tapped the button, or the 4 seconds passed):
+        // leave the result of this attempt alone.
+        if (r.ok || !onScreen.current || !autoActive.current) return;
         setVeilLifted(true);
         if (r.reason !== "cancelled" && r.reason !== "interrupted") {
           setError(
@@ -136,8 +156,10 @@ export function LoginScreen() {
         }
       })
       .catch(() => setVeilLifted(true))
-      .finally(() => setScanning(false));
-  }, [faceIdFirst, lockedUser, unlockWithBiometric, platform]);
+      .finally(() => {
+        if (autoActive.current) setScanning(false);
+      });
+  }, [biometricFirst, lockedUser, unlockWithBiometric, platform]);
 
   useEffect(() => {
     if (selected && !biometricUserIds.includes(selected.id)) passwordRef.current?.focus();
