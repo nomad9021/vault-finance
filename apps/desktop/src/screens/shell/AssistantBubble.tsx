@@ -43,11 +43,11 @@ export function AssistantBubble({ onOpenPage, phone = false }: { onOpenPage: () 
         onClick={() => (phone ? onOpenPage() : setOpen(true))}
         title="Ask the assistant (Ctrl+J)"
         aria-label="Open the assistant"
-        style={{
+        className={phone ? "ai-bubble glass" : undefined}
+        style={phone ? undefined : {
           position: "fixed",
           right: 20,
-          // Phone: sit above the tab bar instead of on top of it.
-          bottom: phone ? "calc(var(--tabbar-h) + var(--tabbar-safe) + 16px)" : 20,
+          bottom: 20,
           zIndex: "var(--z-rail)",
           width: 52,
           height: 52,
@@ -62,7 +62,10 @@ export function AssistantBubble({ onOpenPage, phone = false }: { onOpenPage: () 
           fontSize: 22,
         }}
       >
-        {busy ? <span style={{ animation: "blink 1s infinite" }}>✦</span> : "✦"}
+        {/* Blinks only while the assistant is actually working. */}
+        <span style={busy ? { animation: "blink 1s infinite", display: "grid" } : { display: "grid" }}>
+          <Icon name="sparkle" size={22} />
+        </span>
       </button>
     );
   }

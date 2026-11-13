@@ -23,6 +23,8 @@
    ══════════════════════════════════════════════════════════════════════ */
 
 :root {
+  /* The app icon for the current theme (AppMark). */
+  --app-icon: url("/app-icon-light.png");
   /* Device safe areas (notch, home bar). Always read these instead of env()
      directly, so the browser phone preview can stand in for an iPhone. */
   --safe-top: env(safe-area-inset-top, 0px);
@@ -134,20 +136,21 @@
 
 :root,
 :root[data-theme="dark"] {
+  --app-icon: url("/app-icon-dark.png");
   color-scheme: dark;
 
-  --color-bg: #14151f;
-  --color-surface: #1c1e2b;
-  --color-text: #e9e9ed;
-  --color-accent: #9184d9;
-  --color-accent-2: #a7a1db;
-  --color-divider: color-mix(in srgb, #e9e9ed 14%, transparent);
+  --color-bg: #111113;
+  --color-surface: #1b1b1e;
+  --color-text: #ececee;
+  --color-accent: #ededf0;
+  --color-accent-2: #c7c7cc;
+  --color-divider: color-mix(in srgb, #ececee 14%, transparent);
 
   /* Layered surfaces: each step reads as one plane closer to the viewer. */
-  --surface-1: #1c1e2b;
-  --surface-2: #232535;
-  --surface-3: #2b2d3f;
-  --surface-sunken: #101119;
+  --surface-1: #1b1b1e;
+  --surface-2: #232326;
+  --surface-3: #2c2c30;
+  --surface-sunken: #0c0c0d;
 
   /* Text hierarchy — use these instead of ad-hoc color-mix on --color-text. */
   --content-primary: var(--color-text);
@@ -156,39 +159,39 @@
   --content-tertiary: color-mix(in srgb, var(--color-text) 60%, transparent);
   --content-accent: var(--color-accent);
 
-  --color-neutral-100: #f3f5fe;
-  --color-neutral-200: #e4e7f5;
-  --color-neutral-300: #cfd3e5;
-  --color-neutral-400: #b2b6ca;
-  --color-neutral-500: #9397ab;
-  --color-neutral-600: #75798c;
-  --color-neutral-700: #595d6c;
-  --color-neutral-800: #3f424d;
-  --color-neutral-900: #292b31;
+  --color-neutral-100: #f4f4f5;
+  --color-neutral-200: #e4e4e7;
+  --color-neutral-300: #d0d0d4;
+  --color-neutral-400: #b3b3b9;
+  --color-neutral-500: #94949b;
+  --color-neutral-600: #76767d;
+  --color-neutral-700: #5a5a60;
+  --color-neutral-800: #404045;
+  --color-neutral-900: #2a2a2d;
 
-  --color-accent-100: #f5f4ff;
-  --color-accent-200: #e7e5fe;
-  --color-accent-300: #d2cefd;
-  --color-accent-400: #b5abfc;
-  --color-accent-500: #968ae0;
-  --color-accent-600: #796cbf;
-  --color-accent-700: #5d5294;
-  --color-accent-800: #423a6a;
-  --color-accent-900: #2b2741;
+  --color-accent-100: #f5f5f6;
+  --color-accent-200: #e7e7e9;
+  --color-accent-300: #d2d2d6;
+  --color-accent-400: #b6b6bb;
+  --color-accent-500: #98989e;
+  --color-accent-600: #7a7a80;
+  --color-accent-700: #5d5d63;
+  --color-accent-800: #424246;
+  --color-accent-900: #2b2b2e;
 
-  --color-accent-2-100: #f5f4ff;
-  --color-accent-2-200: #e7e5fe;
-  --color-accent-2-300: #d2cefd;
-  --color-accent-2-400: #b5afe8;
-  --color-accent-2-500: #9690c9;
-  --color-accent-2-600: #7972a9;
-  --color-accent-2-700: #5c5783;
-  --color-accent-2-800: #423e5d;
-  --color-accent-2-900: #2b293a;
+  --color-accent-2-100: #f5f5f6;
+  --color-accent-2-200: #e7e7e9;
+  --color-accent-2-300: #d2d2d6;
+  --color-accent-2-400: #b6b6bb;
+  --color-accent-2-500: #98989e;
+  --color-accent-2-600: #7a7a80;
+  --color-accent-2-700: #5d5d63;
+  --color-accent-2-800: #424246;
+  --color-accent-2-900: #2b2b2e;
 
-  --color-section: #262a60;
-  --color-section-glow: #353b80;
-  --color-section-ghost: #4c5397;
+  --color-section: #242427;
+  --color-section-glow: #2e2e32;
+  --color-section-ghost: #45454b;
 
   /* — semantic — */
   --color-positive: #3ecf8e;
@@ -202,7 +205,7 @@
 
   /* Data-viz series. Ordered for maximum adjacent contrast — charts should
      walk this list rather than inventing colours. */
-  --viz-1: #9184d9;
+  --viz-1: #9aa3b5;
   --viz-2: #3ecf8e;
   --viz-3: #6f8ef2;
   --viz-4: #e0a83c;
@@ -224,6 +227,7 @@
   --shadow-lg: 0 0 0 1px var(--hairline), inset 0 1px 0 var(--sheen-line), 0 18px 44px rgba(0, 0, 0, 0.55);
   --shadow-overlay: 0 0 0 1px var(--color-divider), inset 0 1px 0 var(--sheen-line), 0 24px 60px rgba(0, 0, 0, 0.65);
   --scrim: rgba(8, 9, 14, 0.62);
+  --color-on-accent: #111113;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -232,18 +236,19 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
+  --app-icon: url("/app-icon-light.png");
 
-  --color-bg: #f5f6fb;
+  --color-bg: #f5f5f7;
   --color-surface: #ffffff;
-  --color-text: #1a1c28;
-  --color-accent: #6a5cc0;
-  --color-accent-2: #7a6fc4;
-  --color-divider: color-mix(in srgb, #1a1c28 12%, transparent);
+  --color-text: #1c1c1e;
+  --color-accent: #1c1c1e;
+  --color-accent-2: #3a3a3c;
+  --color-divider: color-mix(in srgb, #1c1c1e 12%, transparent);
 
   --surface-1: #ffffff;
   --surface-2: #ffffff;
   --surface-3: #ffffff;
-  --surface-sunken: #eceef6;
+  --surface-sunken: #ebebee;
 
   --content-primary: var(--color-text);
   --content-secondary: color-mix(in srgb, var(--color-text) 76%, transparent);
@@ -251,46 +256,46 @@
   --content-tertiary: color-mix(in srgb, var(--color-text) 62%, transparent);
 
   /* Ramps flipped: 900 stays nearest the (now light) ground. */
-  --color-neutral-100: #292b31;
-  --color-neutral-200: #3f424d;
-  --color-neutral-300: #595d6c;
-  --color-neutral-400: #75798c;
-  --color-neutral-500: #7d8195;
-  --color-neutral-600: #b2b6ca;
-  --color-neutral-700: #cfd3e5;
-  --color-neutral-800: #e4e7f5;
-  --color-neutral-900: #eef0f8;
+  --color-neutral-100: #2a2a2d;
+  --color-neutral-200: #404045;
+  --color-neutral-300: #5a5a60;
+  --color-neutral-400: #76767d;
+  --color-neutral-500: #94949b;
+  --color-neutral-600: #b3b3b9;
+  --color-neutral-700: #d0d0d4;
+  --color-neutral-800: #e4e4e7;
+  --color-neutral-900: #f4f4f5;
 
-  --color-accent-100: #2b2741;
-  --color-accent-200: #423a6a;
-  --color-accent-300: #5d5294;
-  --color-accent-400: #796cbf;
-  --color-accent-500: #8479cf;
-  --color-accent-600: #b5abfc;
-  --color-accent-700: #d2cefd;
-  --color-accent-800: #e7e5fe;
-  --color-accent-900: #f0effe;
+  --color-accent-100: #2b2b2e;
+  --color-accent-200: #424246;
+  --color-accent-300: #5d5d63;
+  --color-accent-400: #7a7a80;
+  --color-accent-500: #98989e;
+  --color-accent-600: #b6b6bb;
+  --color-accent-700: #d2d2d6;
+  --color-accent-800: #e7e7e9;
+  --color-accent-900: #f5f5f6;
 
-  --color-accent-2-100: #2b293a;
-  --color-accent-2-200: #423e5d;
-  --color-accent-2-300: #5c5783;
-  --color-accent-2-400: #7972a9;
-  --color-accent-2-500: #8781b9;
-  --color-accent-2-600: #b5afe8;
-  --color-accent-2-700: #d2cefd;
-  --color-accent-2-800: #e7e5fe;
-  --color-accent-2-900: #f0effe;
+  --color-accent-2-100: #2b2b2e;
+  --color-accent-2-200: #424246;
+  --color-accent-2-300: #5d5d63;
+  --color-accent-2-400: #7a7a80;
+  --color-accent-2-500: #98989e;
+  --color-accent-2-600: #b6b6bb;
+  --color-accent-2-700: #d2d2d6;
+  --color-accent-2-800: #e7e7e9;
+  --color-accent-2-900: #f5f5f6;
 
-  --color-section: #dcdff5;
-  --color-section-glow: #c8cdf0;
-  --color-section-ghost: #aab1e3;
+  --color-section: #e8e8eb;
+  --color-section-glow: #dcdce0;
+  --color-section-ghost: #bdbdc3;
 
   --color-positive: #1d9f66;
   --color-negative: #c94444;
   --color-warning: #b3801d;
   --color-info: #4a6fdb;
 
-  --viz-1: #6a5cc0;
+  --viz-1: #5b6578;
   --viz-2: #1d9f66;
   --viz-3: #4a6fdb;
   --viz-4: #b3801d;
@@ -309,6 +314,7 @@
   --shadow-overlay: 0 0 0 1px #e0e3ee, 0 24px 60px rgba(20, 23, 38, 0.18);
   --sheen-line: transparent;
   --scrim: rgba(26, 28, 40, 0.34);
+  --color-on-accent: #ffffff;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -316,19 +322,20 @@
    ══════════════════════════════════════════════════════════════════════ */
 
 :root[data-theme="oled"] {
+  --app-icon: url("/app-icon-dark.png");
   color-scheme: dark;
 
   --color-bg: #000000;
-  --color-surface: #0e0f16;
-  --surface-1: #0e0f16;
-  --surface-2: #16171f;
-  --surface-3: #1e1f29;
+  --color-surface: #0f0f10;
+  --surface-1: #0f0f10;
+  --surface-2: #17171a;
+  --surface-3: #1f1f22;
   --surface-sunken: #000000;
   --color-divider: color-mix(in srgb, #e9e9ed 18%, transparent);
   --color-neutral-900: #16171c;
-  --color-accent-900: #1d1a2e;
-  --color-section: #14173a;
-  --color-section-glow: #1e2254;
+  --color-accent-900: #1c1c1e;
+  --color-section: #141416;
+  --color-section-glow: #1d1d20;
   --hairline: color-mix(in srgb, var(--color-text) 14%, transparent);
   --shadow-sm: 0 0 0 1px var(--hairline);
   --shadow-md: 0 0 0 1px var(--hairline);
@@ -336,6 +343,8 @@
   --shadow-overlay: 0 0 0 1px color-mix(in srgb, var(--color-text) 28%, transparent);
   --sheen-line: transparent;
   --scrim: rgba(0, 0, 0, 0.8);
+  --color-accent: #ededf0;
+  --color-on-accent: #000000;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -343,6 +352,7 @@
    ══════════════════════════════════════════════════════════════════════ */
 
 :root[data-theme="contrast"] {
+  --app-icon: url("/app-icon-dark.png");
   color-scheme: dark;
 
   --color-bg: #000000;
@@ -352,8 +362,8 @@
   --surface-3: #161616;
   --surface-sunken: #000000;
   --color-text: #ffffff;
-  --color-accent: #beb3ff;
-  --color-accent-2: #beb3ff;
+  --color-accent: #ffffff;
+  --color-accent-2: #ffffff;
   --color-divider: #9b9b9b;
 
   --content-primary: #ffffff;
@@ -371,26 +381,26 @@
   --color-neutral-900: #161616;
 
   --color-accent-100: #ffffff;
-  --color-accent-200: #efecff;
-  --color-accent-300: #dcd6ff;
-  --color-accent-400: #beb3ff;
-  --color-accent-500: #beb3ff;
-  --color-accent-600: #9c8df2;
-  --color-accent-700: #6a5cc0;
-  --color-accent-800: #3a3175;
-  --color-accent-900: #1d1849;
+  --color-accent-200: #f2f2f2;
+  --color-accent-300: #e0e0e0;
+  --color-accent-400: #c8c8c8;
+  --color-accent-500: #c8c8c8;
+  --color-accent-600: #a0a0a0;
+  --color-accent-700: #707070;
+  --color-accent-800: #3c3c3c;
+  --color-accent-900: #1e1e1e;
 
   --color-accent-2-100: #ffffff;
-  --color-accent-2-200: #efecff;
-  --color-accent-2-300: #dcd6ff;
-  --color-accent-2-400: #beb3ff;
-  --color-accent-2-500: #beb3ff;
-  --color-accent-2-600: #9c8df2;
-  --color-accent-2-700: #6a5cc0;
-  --color-accent-2-800: #3a3175;
-  --color-accent-2-900: #1d1849;
+  --color-accent-2-200: #f2f2f2;
+  --color-accent-2-300: #e0e0e0;
+  --color-accent-2-400: #c8c8c8;
+  --color-accent-2-500: #c8c8c8;
+  --color-accent-2-600: #a0a0a0;
+  --color-accent-2-700: #707070;
+  --color-accent-2-800: #3c3c3c;
+  --color-accent-2-900: #1e1e1e;
 
-  --color-section: #1d1849;
+  --color-section: #1e1e1e;
   --color-section-glow: #2b2467;
   --color-section-ghost: #4c5397;
 
@@ -399,7 +409,7 @@
   --color-warning: #ffcc4d;
   --color-info: #8fb0ff;
 
-  --viz-1: #beb3ff;
+  --viz-1: #b9c3d6;
   --viz-2: #4dff9f;
   --viz-3: #8fb0ff;
   --viz-4: #ffcc4d;
@@ -417,6 +427,7 @@
   --sheen-line: transparent;
   --scrim: rgba(0, 0, 0, 0.85);
   --focus-ring-width: 3px;
+  --color-on-accent: #000000;
 }
 
 /* ── iPhone: text follows the system text size (Dynamic Type) ──

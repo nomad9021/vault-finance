@@ -272,7 +272,7 @@
 .btn-primary {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: #14151f;
+  color: var(--color-on-accent);
 }
 .btn-primary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--color-accent) 86%, white);
@@ -281,8 +281,6 @@
 .btn-primary:active:not(:disabled) {
   background: color-mix(in srgb, var(--color-accent) 88%, black);
 }
-:root[data-theme="light"] .btn-primary { color: #ffffff; }
-:root[data-theme="contrast"] .btn-primary { color: #000000; }
 
 /* Outlined, not filled. A filled grey slab competes with the cards it sits on
    and reads cheap next to the filled primary; a hairline outline that only
@@ -499,7 +497,7 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading-
 .datefield-day[data-selected="true"] {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: #fff;
+  color: var(--color-on-accent);
   font-weight: 600;
 }
 .datefield-day[data-selected="true"]:hover { background: var(--color-accent); }
@@ -1669,4 +1667,119 @@ button.list-row:active, .list-row[role="button"]:active {
   .grid:has(> [class*="col-"] > .stat):not(:has(> [class*="col-"] > :not(.stat))) > [class*="col-"]:last-child:nth-child(odd) {
     grid-column: 1 / -1;
   }
+}
+
+/* Lock screen padlock (LoginScreen while locked). */
+.lock-mark { width: 56px; height: auto; display: block; }
+
+/* ══ Phone: Liquid Glass on the floating layer only (Apple HIG,
+   liquid-glass.md): the tab bar, the title bar and the assistant button.
+   Content scrolls beneath them; cards and lists stay opaque. ══ */
+.contents { display: contents; }
+.glass {
+  background: color-mix(in srgb, var(--color-surface) 58%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.8);
+  backdrop-filter: blur(22px) saturate(1.8);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+}
+:root {
+  --glass-edge: color-mix(in srgb, #ffffff 14%, transparent);
+  --glass-highlight: color-mix(in srgb, #ffffff 10%, transparent);
+  --glass-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+:root[data-theme="light"] {
+  --glass-edge: color-mix(in srgb, #ffffff 70%, transparent);
+  --glass-highlight: color-mix(in srgb, #ffffff 80%, transparent);
+  --glass-shadow: 0 8px 28px rgba(0, 0, 0, 0.10), 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+@media (max-width: 900px) {
+  :root {
+    --tabbar-float-h: 62px;
+    --tabbar-float-bottom: max(12px, calc(var(--safe-bottom) - 12px));
+  }
+  .app-main { position: relative; }
+
+  /* Floating tab bar: a glass capsule above the home indicator. */
+  .tabbar {
+    position: absolute;
+    left: var(--space-4);
+    right: var(--space-4);
+    bottom: var(--tabbar-float-bottom);
+    z-index: var(--z-rail);
+    height: var(--tabbar-float-h);
+    padding: var(--space-1);
+    border-radius: calc(var(--tabbar-float-h) / 2);
+    border-top: 0;
+    background: color-mix(in srgb, var(--color-surface) 58%, transparent);
+    -webkit-backdrop-filter: blur(22px) saturate(1.8);
+    backdrop-filter: blur(22px) saturate(1.8);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+  }
+  .tab-item {
+    border-radius: calc((var(--tabbar-float-h) - var(--space-2)) / 2);
+    color: var(--content-secondary);
+    transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+  }
+  /* Selected: monochrome label on a soft lozenge, like iOS. */
+  .tab-item[data-active],
+  .tab-item[data-active]:active {
+    color: var(--content-primary);
+    background: color-mix(in srgb, var(--color-text) 9%, transparent);
+  }
+
+  /* Title bar + page tabs: one layer over the page. Clear at rest, glass once
+     the page scrolls beneath it (the scroll edge). */
+  .phone-topbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: var(--z-rail);
+    transition: background-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  }
+  .phone-topbar .app-header { background: transparent; border-bottom: 0; }
+  .phone-topbar .tabs { border-bottom: 0; }
+  .app-main[data-scrolled="true"] .phone-topbar {
+    background: color-mix(in srgb, var(--color-bg) 62%, transparent);
+    -webkit-backdrop-filter: blur(22px) saturate(1.8);
+    backdrop-filter: blur(22px) saturate(1.8);
+    box-shadow: 0 1px 0 var(--hairline);
+  }
+  .app-scroll {
+    padding-top: calc(var(--topbar-h, 0px) + var(--space-3));
+    padding-bottom: calc(var(--tabbar-float-bottom) + var(--tabbar-float-h) + var(--space-6));
+  }
+  /* The page sits under the top bar, so scroll targets clear it. */
+  .app-scroll { scroll-padding-top: var(--topbar-h, 0px); }
+
+  /* Assistant button: a glass circle above the tab bar. */
+  .ai-bubble {
+    position: fixed;
+    right: var(--space-4);
+    bottom: calc(var(--tabbar-float-bottom) + var(--tabbar-float-h) + var(--space-3));
+    z-index: var(--z-rail);
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    color: var(--content-primary);
+    cursor: pointer;
+  }
+}
+
+/* Increase Contrast / no backdrop support: solid bars instead of glass. */
+@media (max-width: 900px) and (prefers-contrast: more) {
+  .tabbar, .glass, .app-main[data-scrolled="true"] .phone-topbar {
+    background: var(--color-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border-color: var(--color-divider);
+  }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tabbar, .glass, .app-main[data-scrolled="true"] .phone-topbar { background: var(--color-surface); }
 }

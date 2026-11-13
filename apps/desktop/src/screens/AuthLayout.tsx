@@ -1,17 +1,13 @@
 import type { ReactNode } from "react";
 
-/**
- * Centered card on the radial-glow ground — the design's login/splash
- * treatment (design/reference/Finance App v3.dc.html, isLogin block).
- */
+/** Centered card on the plain page ground: the sign-in / splash treatment. */
 export function AuthLayout({ children, width = 380 }: { children: ReactNode; width?: number }) {
   return (
     <div
       style={{
         position: "fixed",
         inset: 0,
-        background:
-          "radial-gradient(900px 500px at 50% -10%, color-mix(in srgb, var(--color-section) 45%, var(--color-bg)) 0%, var(--color-bg) 70%)",
+        background: "var(--color-bg)",
         display: "flex",
         // Clear the iPhone notch / home indicator (env() is 0 on desktop).
         padding:
@@ -41,7 +37,10 @@ export function AuthLayout({ children, width = 380 }: { children: ReactNode; wid
   );
 }
 
-/** The gradient app mark used on the login card and sidebar. */
+/**
+ * The app icon, light or dark to match the theme (--app-icon in
+ * tokens.css), used on the sign-in card and in the sidebar.
+ */
 export function AppMark({ size = 40 }: { size?: number }) {
   return (
     <span
@@ -49,10 +48,8 @@ export function AppMark({ size = 40 }: { size?: number }) {
       style={{
         width: size,
         height: size,
-        borderRadius: size * 0.3,
-        background:
-          "linear-gradient(135deg, var(--color-accent) 0%, var(--color-section-glow) 100%)",
-        boxShadow: "0 0 20px color-mix(in srgb, var(--color-accent) 45%, transparent)",
+        backgroundImage: "var(--app-icon)",
+        backgroundSize: "cover",
         display: "inline-block",
         flex: "none",
       }}
@@ -60,7 +57,16 @@ export function AppMark({ size = 40 }: { size?: number }) {
   );
 }
 
-export function AuthHeading({ title, subtitle }: { title: string; subtitle: string }) {
+export function AuthHeading({
+  title,
+  subtitle,
+  mark,
+}: {
+  title: string;
+  subtitle: string;
+  /** Replaces the app icon, e.g. the padlock on the lock screen. */
+  mark?: ReactNode;
+}) {
   return (
     <div
       style={{
@@ -72,7 +78,7 @@ export function AuthHeading({ title, subtitle }: { title: string; subtitle: stri
         textAlign: "center",
       }}
     >
-      <AppMark />
+      {mark ?? <AppMark />}
       <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: "var(--text-xl)" }}>
         {title}
       </div>

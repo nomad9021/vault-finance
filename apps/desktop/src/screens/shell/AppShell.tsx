@@ -1,5 +1,5 @@
 import { Banner, Button, CommandPalette, ErrorBoundary, type Command } from "@vault/ui";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useLayoutMode } from "../../lib/useLayout.js";
 import { useAutoLock } from "../../lib/autoLock.js";
 import { PULL_TRIGGER, usePullToRefresh } from "../../lib/usePullToRefresh.js";
@@ -110,6 +110,16 @@ export function AppShell() {
   useSyncOnOpen();
   const refreshData = useChat((s) => s.refreshData);
   const { pull, refreshing } = usePullToRefresh(scrollRef, refreshData, narrow);
+  // Phone: the glass top bar overlays the page, so the page pads by its height.
+  const topbarRef = useRef<HTMLDivElement>(null);
+  const [topbarH, setTopbarH] = useState(0);
+  useEffect(() => {
+    const el = topbarRef.current;
+    if (!el || !narrow) return;
+    const ro = new ResizeObserver(() => setTopbarH(Math.round(el.getBoundingClientRect().height)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [narrow]);
   // Phone large title: big at the top of a page, shrinks once it scrolls.
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
@@ -136,7 +146,11 @@ export function AppShell() {
       {mode === "wide" && sidebarMini && <Rail page={page} onNavigate={navigate} expandable />}
       {mode === "medium" && <Rail page={page} onNavigate={navigate} />}
 
-      <main className="app-main" data-scrolled={scrolled ? "true" : "false"}>
+      <main
+        className="app-main"
+        data-scrolled={scrolled ? "true" : "false"}
+        style={narrow ? ({ "--topbar-h": `${topbarH}px` } as CSSProperties) : undefined}
+      >
         {connection === "offline" && (
           <Banner tone="warning" action={<ReconnectAction />}>
             Connection to the server lost — reconnecting. Your data is safe on the
@@ -144,18 +158,22 @@ export function AppShell() {
           </Banner>
         )}
 
-        <Header
-          title={meta.title}
-          mode={mode}
-          onOpenPalette={() => setPaletteOpen(true)}
-          onNavigate={navigate}
-        />
+        {/* Phone: the title bar and page tabs float as one glass layer over the
+            page, which scrolls beneath it (components.css, .phone-topbar). */}
+        <div className={narrow ? "phone-topbar" : "contents"} ref={topbarRef}>
+          <Header
+            title={meta.title}
+            mode={mode}
+            onOpenPalette={() => setPaletteOpen(true)}
+            onNavigate={navigate}
+          />
 
-        {narrow && (
-          <div style={{ padding: "0 var(--space-4)", flex: "none", background: "var(--color-bg)" }}>
-            <GroupTabs group={group} page={page} onNavigate={navigate} />
-          </div>
-        )}
+          {narrow && (
+            <div style={{ padding: "0 var(--space-4)", flex: "none" }}>
+              <GroupTabs group={group} page={page} onNavigate={navigate} />
+            </div>
+          )}
+        </div>
 
         <div className="app-scroll" ref={scrollRef}>
           {narrow && (

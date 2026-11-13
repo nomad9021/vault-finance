@@ -142,7 +142,7 @@ export function SettingsPage({ initialTab }: { initialTab?: string } = {}) {
   );
 }
 
-const PROFILE_COLORS = ["#9184d9", "#6f8ef2", "#43cfc0", "#3ecf8e", "#d8b23c", "#f08a4b", "#ec6a9c", "#8a94a6"];
+const PROFILE_COLORS = ["#8a94a6", "#9184d9", "#6f8ef2", "#43cfc0", "#3ecf8e", "#d8b23c", "#f08a4b", "#ec6a9c"];
 
 /** Square-crop and shrink a picture to 256×256 JPEG in the app, so uploads stay small. */
 async function toAvatarDataUrl(file: File): Promise<string> {
@@ -757,7 +757,7 @@ function MembersSection() {
               <tr key={m.id}>
                 <td>
                   <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                    <Avatar name={m.displayName} color={m.avatarColor ?? "#9184d9"} image={m.avatarImage ?? null} size={26} />
+                    <Avatar name={m.displayName} color={m.avatarColor ?? "#8a94a6"} image={m.avatarImage ?? null} size={26} />
                     {m.displayName}
                   </span>
                 </td>

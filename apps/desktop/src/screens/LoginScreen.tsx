@@ -146,6 +146,8 @@ export function LoginScreen() {
       <AuthHeading
         title={householdName ? `Sign in to ${householdName}` : "Sign in to Vault Finance"}
         subtitle={serverAddress?.replace(/^https?:\/\//, "") ?? "self-hosted"}
+        // Locked (the session is kept, only hidden): the padlock instead of the app icon.
+        {...(lockedUser ? { mark: <img src="/padlock.png" alt="" className="lock-mark" /> } : {})}
       />
 
       {profiles === null ? (

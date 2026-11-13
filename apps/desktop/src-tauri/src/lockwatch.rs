@@ -186,6 +186,9 @@ mod imp {
         CGRect { origin: CGPoint { x, y }, size: CGSize { width, height } }
     }
 
+    /// The lock-screen padlock (icons/lock-cover.png), built into the binary.
+    static LOCK_PNG: &[u8] = include_bytes!("../icons/lock-cover.png");
+
     /// Marks the cover view so it can be found and removed again.
     const COVER_TAG: isize = 0x5641_554C; // "VAUL"
 
@@ -225,14 +228,17 @@ mod imp {
         let bg: *mut AnyObject = msg_send![class!(UIColor), systemBackgroundColor];
         let _: () = msg_send![&*cover, setBackgroundColor: bg];
 
-        // A lock and the app's name, centred: "just the app", nothing else.
-        let img: *mut AnyObject = msg_send![class!(UIImage), systemImageNamed: nsstring(c"lock.fill")];
+        // The app's padlock and name, centred: "just the app", nothing else.
+        let data: *mut AnyObject = msg_send![
+            class!(NSData),
+            dataWithBytes: LOCK_PNG.as_ptr().cast::<std::ffi::c_void>(),
+            length: LOCK_PNG.len()
+        ];
+        let img: *mut AnyObject = msg_send![class!(UIImage), imageWithData: data];
         let icon: Allocated<AnyObject> = msg_send![class!(UIImageView), alloc];
         let icon: Retained<AnyObject> = msg_send![icon, initWithImage: img];
-        let _: () = msg_send![&*icon, setFrame: rect(w / 2.0 - 20.0, h / 2.0 - 52.0, 40.0, 40.0)];
+        let _: () = msg_send![&*icon, setFrame: rect(w / 2.0 - 28.0, h / 2.0 - 72.0, 56.0, 58.0)];
         let _: () = msg_send![&*icon, setContentMode: 1isize]; // scale aspect fit
-        let tint: *mut AnyObject = msg_send![class!(UIColor), secondaryLabelColor];
-        let _: () = msg_send![&*icon, setTintColor: tint];
         let _: () = msg_send![&*icon, setAutoresizingMask: 45usize]; // keep centred on rotation
 
         let label: Allocated<AnyObject> = msg_send![class!(UILabel), alloc];
