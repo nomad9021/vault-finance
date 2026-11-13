@@ -130,6 +130,8 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
   const client = useApp((s) => s.client);
   const phone = useLayoutMode() === "narrow";
   const weekStart = useApp((s) => s.reviewPrefs.weekStartsOn);
+  // iPhone: the cash-flow diagram can be switched off in Settings → Appearance.
+  const hideSankey = useApp((s) => s.platform.platformName === "ios" && !s.showSankey);
 
   // Trends come first: they carry six months of income/spending, which is
   // enough to choose a sensible default month without another request.
@@ -451,7 +453,7 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
     prefs?.dashboard,
   );
   const PHONE_FIRST = ["budgets", "goals"];
-  const shown = layout.filter((w) => !w.hidden);
+  const shown = layout.filter((w) => !w.hidden && !(hideSankey && w.id === "sankey"));
   const ordered = phone
     ? [
         ...PHONE_FIRST.flatMap((id) => shown.filter((w) => w.id === id)),

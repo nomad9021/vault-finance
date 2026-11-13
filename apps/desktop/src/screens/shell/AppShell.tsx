@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLayoutMode } from "../../lib/useLayout.js";
 import { useAutoLock } from "../../lib/autoLock.js";
 import { PULL_TRIGGER, usePullToRefresh } from "../../lib/usePullToRefresh.js";
+import { useSyncOnOpen } from "../../lib/useSyncOnOpen.js";
 import { useChat } from "../../state/chat.js";
 import { useApp } from "../../state/store.js";
 import { AccountsPage } from "./AccountsPage.js";
@@ -105,6 +106,8 @@ export function AppShell() {
   const meta = pageMeta(page);
   const narrow = mode === "narrow";
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Opening or unlocking the app (iPhone or computer) syncs the bank data.
+  useSyncOnOpen();
   const refreshData = useChat((s) => s.refreshData);
   const { pull, refreshing } = usePullToRefresh(scrollRef, refreshData, narrow);
   // Phone large title: big at the top of a page, shrinks once it scrolls.

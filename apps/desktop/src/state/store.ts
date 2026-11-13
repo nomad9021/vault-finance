@@ -89,8 +89,11 @@ interface AppState {
   /** Sidebar groups the user folded up, and whether the sidebar is shrunk to icons. Per device. */
   navCollapsed: string[];
   sidebarMini: boolean;
+  /** iPhone: show the cash-flow diagram on Home (per device; on by default). */
+  showSankey: boolean;
   setNavCollapsed(groups: string[]): Promise<void>;
   setSidebarMini(mini: boolean): Promise<void>;
+  setShowSankey(show: boolean): Promise<void>;
   /** Lock after this many idle minutes (0 = never). Per device. */
   autoLockMinutes: number;
   /** Assistant AI level: Low (fast) … High (thinks first). Per device. */
@@ -185,6 +188,7 @@ const AI_LEVEL_KEY = "ai-level";
 const AUTO_LOCK_KEY = "auto-lock-minutes";
 const NAV_COLLAPSED_KEY = "nav-collapsed";
 const SIDEBAR_MINI_KEY = "sidebar-mini";
+const SHOW_SANKEY_KEY = "show-cashflow-diagram";
 export const AUTO_LOCK_DEFAULT = 5;
 export function parseStringList(raw: string | null): string[] {
   try {
@@ -282,6 +286,7 @@ export const useApp = create<AppState>((set, get) => ({
   autoLockMinutes: AUTO_LOCK_DEFAULT,
   navCollapsed: [],
   sidebarMini: false,
+  showSankey: true,
   aiVisible: false,
   householdName: null,
   lockedUser: null,
@@ -634,6 +639,11 @@ export const useApp = create<AppState>((set, get) => ({
     await get().platform.saveValue(NAV_COLLAPSED_KEY, JSON.stringify(navCollapsed));
   },
 
+  async setShowSankey(showSankey) {
+    set({ showSankey });
+    await get().platform.saveValue(SHOW_SANKEY_KEY, showSankey ? "on" : "off");
+  },
+
   async setSidebarMini(sidebarMini) {
     set({ sidebarMini });
     await get().platform.saveValue(SIDEBAR_MINI_KEY, sidebarMini ? "on" : "off");
@@ -912,6 +922,7 @@ export async function bootstrap(): Promise<void> {
       autoLockMinutes: parseAutoLock(await platform.loadValue(AUTO_LOCK_KEY)),
       navCollapsed: parseStringList(await platform.loadValue(NAV_COLLAPSED_KEY)),
       sidebarMini: (await platform.loadValue(SIDEBAR_MINI_KEY)) === "on",
+      showSankey: (await platform.loadValue(SHOW_SANKEY_KEY)) !== "off",
     });
   } catch (err) {
     console.error("loading review preferences failed; using defaults", err);

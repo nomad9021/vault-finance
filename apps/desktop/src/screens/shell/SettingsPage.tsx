@@ -2556,6 +2556,9 @@ function NetworkSection() {
 function AppearanceSection() {
   const theme = useApp((s) => s.theme);
   const setTheme = useApp((s) => s.setTheme);
+  const ios = useApp((s) => s.platform.platformName === "ios");
+  const showSankey = useApp((s) => s.showSankey);
+  const setShowSankey = useApp((s) => s.setShowSankey);
   return (
     <Card kicker="Appearance" title="Theme">
       <p className="card-body">
@@ -2567,6 +2570,22 @@ function AppearanceSection() {
         value={theme}
         onChange={(t) => void setTheme(t)}
       />
+      {ios && (
+        <label className="check" style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "var(--text-sm)", marginTop: "var(--space-4)" }}>
+          <input
+            type="checkbox"
+            checked={showSankey}
+            onChange={(e) => void setShowSankey(e.target.checked)}
+            style={{ marginTop: 3 }}
+          />
+          <span>
+            Show the cash-flow diagram on Home
+            <span className="t-xs t-tertiary" style={{ display: "block" }}>
+              This iPhone only. Your computer keeps its own setting.
+            </span>
+          </span>
+        </label>
+      )}
     </Card>
   );
 }

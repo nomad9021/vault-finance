@@ -217,3 +217,30 @@ export async function syncAllConnections(
   await aiCategorizeUncategorized(app, config).catch(() => {});
   return { connections: conns.length, imported };
 }
+
+/** Opening the app syncs at most this often, however many devices open it. */
+export const OPEN_SYNC_MIN_MS = 2 * 60_000;
+let lastOpenSync = 0;
+let openSyncInFlight: Promise<{ connections: number; imported: number }> | null = null;
+
+/**
+ * Sync-on-open: run syncAllConnections unless one ran recently, and join a
+ * sync that's already running instead of starting a second. Process-local
+ * state, like autoSyncFaults; a restart just allows one more sync.
+ */
+export async function syncOnOpen(
+  app: FastifyInstance,
+  config: AppConfig,
+  now: number = Date.now(),
+): Promise<{ ran: boolean; imported: number }> {
+  if (openSyncInFlight) return { ran: true, imported: (await openSyncInFlight).imported };
+  if (now - lastOpenSync < OPEN_SYNC_MIN_MS) return { ran: false, imported: 0 };
+  lastOpenSync = now;
+  openSyncInFlight = syncAllConnections(app, config);
+  try {
+    const r = await openSyncInFlight;
+    return { ran: r.connections > 0, imported: r.imported };
+  } finally {
+    openSyncInFlight = null;
+  }
+}

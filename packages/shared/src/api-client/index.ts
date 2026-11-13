@@ -96,6 +96,7 @@ import {
 import {
   BankStatus,
   BankSyncResponse,
+  BankOpenSyncResponse,
   type UpdateBankSettingsRequest,
   BankLinkStartResponse,
   BankLinkStatus,
@@ -624,6 +625,10 @@ export class ApiClient {
   }
   bankLinkStatus(sessionId: string) {
     return this.request(BankLinkStatus, "GET", `/bank/link/${encodeURIComponent(sessionId)}`);
+  }
+  /** App opened or unlocked: bring bank data up to date (throttled server-side). */
+  bankSyncOnOpen() {
+    return this.request(BankOpenSyncResponse, "POST", "/bank/sync-on-open");
   }
   bankSync(connectionId: string) {
     return this.request(BankSyncResponse, "POST", `/bank/connections/${connectionId}/sync`);

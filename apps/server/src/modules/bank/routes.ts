@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { BankConnection, BankLinkStartResponse, BankLinkStatus, BankStatus, BankSyncResponse } from "@vault/shared";
+import type { BankConnection, BankLinkStartResponse, BankLinkStatus, BankOpenSyncResponse, BankStatus, BankSyncResponse } from "@vault/shared";
 import { BankLinkStartRequest, UpdateBankSettingsRequest } from "@vault/shared";
 import { eq, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
@@ -15,6 +15,7 @@ import {
   loadBankSettings,
   providerConfig,
   syncConnection,
+  syncOnOpen,
   type BankSettingsRow,
 } from "./service.js";
 
@@ -189,6 +190,14 @@ export default async function bankRoutes(
         skippedDuplicates: outcome.skippedDuplicates,
       };
     },
+  );
+
+  // Any signed-in member: opening the app pulls in new bank transactions.
+  // Throttled and coalesced in syncOnOpen, so it can't hammer the bank.
+  app.post(
+    "/bank/sync-on-open",
+    { preHandler: [app.requireAuth] },
+    async (): Promise<BankOpenSyncResponse> => syncOnOpen(app, opts.config),
   );
 
   app.post<{ Params: { id: string } }>(

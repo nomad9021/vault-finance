@@ -6,6 +6,9 @@
 //! Linux: logind on the system bus (PrepareForSleep, the session's Lock signal
 //! and LockedHint) and the screensaver on the session bus (KDE, GNOME).
 //! Windows: the input desktop can't be opened while the workstation is locked.
+//! iOS: the moment the app stops being active (swiping up to the app
+//! switcher or home, Control Centre, a call) it locks and covers its window,
+//! so the app switcher's snapshot shows only the app's name.
 //! macOS: not watched here (sleep and idle locking still apply).
 
 use tauri::{AppHandle, Emitter};
@@ -134,7 +137,152 @@ mod imp {
     }
 }
 
-#[cfg(not(any(target_os = "linux", windows)))]
+/// iOS privacy cover. iOS takes the app-switcher snapshot as the app resigns
+/// active, before the web page hears anything, so the cover is a native view
+/// added on UIApplicationWillResignActive and removed on DidBecomeActive.
+/// Locking at the same moment means coming back always asks for Face ID or
+/// the password, and the cover hides the unlock screen's transition too.
+#[cfg(target_os = "ios")]
+mod imp {
+    use super::notify;
+    use block2::RcBlock;
+    use objc2::encode::{Encode, Encoding};
+    use objc2::rc::{Allocated, Retained};
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    use std::ptr::{self, NonNull};
+    use tauri::AppHandle;
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct CGPoint {
+        x: f64,
+        y: f64,
+    }
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct CGSize {
+        width: f64,
+        height: f64,
+    }
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct CGRect {
+        origin: CGPoint,
+        size: CGSize,
+    }
+    // SAFETY: layouts match CoreGraphics' 64-bit CGPoint/CGSize/CGRect.
+    unsafe impl Encode for CGPoint {
+        const ENCODING: Encoding = Encoding::Struct("CGPoint", &[f64::ENCODING, f64::ENCODING]);
+    }
+    unsafe impl Encode for CGSize {
+        const ENCODING: Encoding = Encoding::Struct("CGSize", &[f64::ENCODING, f64::ENCODING]);
+    }
+    unsafe impl Encode for CGRect {
+        const ENCODING: Encoding = Encoding::Struct("CGRect", &[CGPoint::ENCODING, CGSize::ENCODING]);
+    }
+
+    fn rect(x: f64, y: f64, width: f64, height: f64) -> CGRect {
+        CGRect { origin: CGPoint { x, y }, size: CGSize { width, height } }
+    }
+
+    /// Marks the cover view so it can be found and removed again.
+    const COVER_TAG: isize = 0x5641_554C; // "VAUL"
+
+    #[link(name = "UIKit", kind = "framework")]
+    extern "C" {
+        static UIApplicationWillResignActiveNotification: *const AnyObject;
+        static UIApplicationDidBecomeActiveNotification: *const AnyObject;
+    }
+
+    unsafe fn nsstring(s: &std::ffi::CStr) -> *mut AnyObject {
+        msg_send![class!(NSString), stringWithUTF8String: s.as_ptr()]
+    }
+
+    /// The app's window (one window, one scene).
+    unsafe fn window() -> *mut AnyObject {
+        let app: *mut AnyObject = msg_send![class!(UIApplication), sharedApplication];
+        let windows: *mut AnyObject = msg_send![app, windows];
+        msg_send![windows, firstObject]
+    }
+
+    unsafe fn show_cover() {
+        let win = window();
+        if win.is_null() {
+            return;
+        }
+        let existing: *mut AnyObject = msg_send![win, viewWithTag: COVER_TAG];
+        if !existing.is_null() {
+            return;
+        }
+        let b: CGRect = msg_send![win, bounds];
+        let (w, h) = (b.size.width, b.size.height);
+
+        let cover: Allocated<AnyObject> = msg_send![class!(UIView), alloc];
+        let cover: Retained<AnyObject> = msg_send![cover, initWithFrame: b];
+        let _: () = msg_send![&*cover, setTag: COVER_TAG];
+        let _: () = msg_send![&*cover, setAutoresizingMask: 18usize]; // flexible width + height
+        let bg: *mut AnyObject = msg_send![class!(UIColor), systemBackgroundColor];
+        let _: () = msg_send![&*cover, setBackgroundColor: bg];
+
+        // A lock and the app's name, centred: "just the app", nothing else.
+        let img: *mut AnyObject = msg_send![class!(UIImage), systemImageNamed: nsstring(c"lock.fill")];
+        let icon: Allocated<AnyObject> = msg_send![class!(UIImageView), alloc];
+        let icon: Retained<AnyObject> = msg_send![icon, initWithImage: img];
+        let _: () = msg_send![&*icon, setFrame: rect(w / 2.0 - 20.0, h / 2.0 - 52.0, 40.0, 40.0)];
+        let _: () = msg_send![&*icon, setContentMode: 1isize]; // scale aspect fit
+        let tint: *mut AnyObject = msg_send![class!(UIColor), secondaryLabelColor];
+        let _: () = msg_send![&*icon, setTintColor: tint];
+        let _: () = msg_send![&*icon, setAutoresizingMask: 45usize]; // keep centred on rotation
+
+        let label: Allocated<AnyObject> = msg_send![class!(UILabel), alloc];
+        let label: Retained<AnyObject> = msg_send![label, initWithFrame: rect(0.0, h / 2.0, w, 32.0)];
+        let _: () = msg_send![&*label, setText: nsstring(c"Vault Finance")];
+        let _: () = msg_send![&*label, setTextAlignment: 1isize]; // centre
+        let font: *mut AnyObject = msg_send![class!(UIFont), boldSystemFontOfSize: 22.0f64];
+        let _: () = msg_send![&*label, setFont: font];
+        let fg: *mut AnyObject = msg_send![class!(UIColor), labelColor];
+        let _: () = msg_send![&*label, setTextColor: fg];
+        let _: () = msg_send![&*label, setAutoresizingMask: 42usize]; // flexible width + top/bottom margins
+
+        let _: () = msg_send![&*cover, addSubview: &*icon];
+        let _: () = msg_send![&*cover, addSubview: &*label];
+        let _: () = msg_send![win, addSubview: &*cover];
+    }
+
+    unsafe fn hide_cover() {
+        let win = window();
+        if win.is_null() {
+            return;
+        }
+        let cover: *mut AnyObject = msg_send![win, viewWithTag: COVER_TAG];
+        if !cover.is_null() {
+            let _: () = msg_send![cover, removeFromSuperview];
+        }
+    }
+
+    pub fn start(app: AppHandle) {
+        // SAFETY: called from Tauri's setup on the main thread; the blocks
+        // run on the main queue, where UIKit may be used.
+        unsafe {
+            let center: *mut AnyObject = msg_send![class!(NSNotificationCenter), defaultCenter];
+            let queue: *mut AnyObject = msg_send![class!(NSOperationQueue), mainQueue];
+
+            let resign = RcBlock::new(move |_note: NonNull<AnyObject>| {
+                show_cover();
+                notify(&app, "app-inactive");
+            });
+            let active = RcBlock::new(|_note: NonNull<AnyObject>| hide_cover());
+
+            // The centre keeps the observers (and copies the blocks) for the
+            // life of the app; nothing ever removes them.
+            let _: *mut AnyObject = msg_send![center, addObserverForName: UIApplicationWillResignActiveNotification, object: ptr::null::<AnyObject>(), queue: queue, usingBlock: &*resign];
+            let _: *mut AnyObject = msg_send![center, addObserverForName: UIApplicationDidBecomeActiveNotification, object: ptr::null::<AnyObject>(), queue: queue, usingBlock: &*active];
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "linux", windows, target_os = "ios")))]
 mod imp {
     pub fn start(_app: tauri::AppHandle) {}
 }
