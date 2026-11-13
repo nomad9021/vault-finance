@@ -264,6 +264,12 @@ mod imp {
 
             let app_resign = app.clone();
             let resign = RcBlock::new(move |_note: NonNull<AnyObject>| {
+                // Our own Face ID prompt makes the app inactive too: that's
+                // not the person leaving (and the sign-in page behind it
+                // shows nothing), so no cover and no lock signal.
+                if crate::biometric::prompting() {
+                    return;
+                }
                 show_cover();
                 notify(&app_resign, "app-inactive");
             });

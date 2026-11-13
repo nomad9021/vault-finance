@@ -350,12 +350,30 @@ mod imp {
 
 // ── iOS: Face ID or Touch ID via tauri-plugin-biometric (LocalAuthentication) ──
 
+/// Is our own Face ID prompt on screen? It makes iOS mark the app inactive,
+/// which the lock watcher (lockwatch.rs) must not mistake for the person
+/// leaving: no privacy cover, no "app left" lock signal.
+#[cfg(target_os = "ios")]
+pub fn prompting() -> bool {
+    imp::PROMPTING.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 #[cfg(target_os = "ios")]
 mod imp {
     use super::*;
     use tauri::plugin::mobile::PluginInvokeError;
     use tauri::Manager;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use tauri_plugin_biometric::{AuthOptions, BiometricExt, BiometryType};
+
+    pub(super) static PROMPTING: AtomicBool = AtomicBool::new(false);
+    /// Clears PROMPTING however the prompt ends.
+    struct Prompting;
+    impl Drop for Prompting {
+        fn drop(&mut self) {
+            PROMPTING.store(false, Ordering::SeqCst);
+        }
+    }
 
     // LAError names the Swift side rejects with: the person backed out...
     const CANCEL_CODES: [&str; 2] = ["userCancel", "userFallback"];
@@ -393,8 +411,14 @@ mod imp {
             // Face ID only — the passcode fallback would let anyone who has
             // watched the passcode being typed sign in.
             allow_device_credential: false,
+            // A way out to the app's own password sign-in (reported as
+            // userFallback, i.e. a cancel: the sign-in page shows).
+            fallback_title: Some("Use Password".into()),
+            cancel_title: Some("Cancel".into()),
             ..Default::default()
         };
+        PROMPTING.store(true, Ordering::SeqCst);
+        let _prompting = Prompting;
         match window.app_handle().biometric().authenticate(reason.to_owned(), options) {
             Ok(()) => Ok(()),
             Err(tauri_plugin_biometric::Error::PluginInvoke(PluginInvokeError::InvokeRejected(

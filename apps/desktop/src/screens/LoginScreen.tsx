@@ -94,6 +94,16 @@ export function LoginScreen() {
   const biometricFirst = !!lockedUser && biometricUserIds.includes(lockedUser.id);
   const faceIdFirst = biometricFirst && lockedAway;
   const [veilLifted, setVeilLifted] = useState(false);
+  // "Use password instead": no Face ID for this unlock, password up front.
+  const [passwordOnly, setPasswordOnly] = useState(false);
+  const usePassword = () => {
+    autoActive.current = false;
+    setPasswordOnly(true);
+    setVeilLifted(true);
+    setScanning(false);
+    setError(null);
+    void platform.biometricCancel();
+  };
   useEffect(() => {
     if (!faceIdFirst || veilLifted) return;
     const t = setTimeout(() => {
@@ -129,11 +139,10 @@ export function LoginScreen() {
       await platform.whenActive?.();
       if (!onScreen.current || !autoActive.current) return { ok: false, reason: "cancelled" };
       const r = await unlockWithBiometric(lockedUser.id);
-      // Interrupted by the system (or a cancel that landed as the app left):
-      // keep the padlock up and ask again once the app is back in front.
-      const interrupted =
-        !r.ok &&
-        (r.reason === "interrupted" || (r.reason === "cancelled" && !!platform.isActive && !platform.isActive()));
+      // Interrupted by the system (the app left the screen mid-prompt): keep
+      // the padlock up and ask again once the app is back. A cancel, or
+      // "Use Password", is the person's choice and goes to the sign-in page.
+      const interrupted = !r.ok && r.reason === "interrupted";
       if (interrupted && onScreen.current && autoActive.current && tries < 3) {
         return attempt();
       }
@@ -245,7 +254,7 @@ export function LoginScreen() {
                 setNeedsTotp(false);
                 setTotpCode("");
                 setError(null);
-                if (biometricUserIds.includes(p.id)) void doBiometric(p);
+                if (biometricUserIds.includes(p.id) && !passwordOnly) void doBiometric(p);
               }}
               style={{
                 display: "flex",
@@ -273,7 +282,7 @@ export function LoginScreen() {
         </div>
       )}
 
-      {selected && selectedHasBiometric && (
+      {selected && selectedHasBiometric && !passwordOnly && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
           <Button
             variant="primary"
@@ -292,11 +301,9 @@ export function LoginScreen() {
               </Button>
             </div>
           )}
-          {!scanning && (
-            <div style={{ textAlign: "center", fontSize: "var(--text-2xs)", color: "var(--content-tertiary)", textTransform: "uppercase", letterSpacing: ".05em" }}>
-              or use your password
-            </div>
-          )}
+          <Button variant="ghost" block onClick={usePassword}>
+            Use password instead
+          </Button>
         </div>
       )}
 
@@ -344,7 +351,7 @@ export function LoginScreen() {
             </div>
           )}
           <Button
-            variant={selectedHasBiometric ? "secondary" : "primary"}
+            variant={selectedHasBiometric && !passwordOnly ? "secondary" : "primary"}
             block
             type="submit"
             disabled={busy || !password || (needsTotp && totpCode.length < 6)}
