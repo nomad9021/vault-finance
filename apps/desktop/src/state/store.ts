@@ -32,8 +32,9 @@ import {
   type ServerRoute,
 } from "../lib/serverRoute.js";
 import { describeProbeFailure, runChecks, type UiCheck } from "../lib/startupChecks.js";
+import { applyPhonePreviewLook, isPreview, signInPhonePreview } from "../platform/phonePreview.js";
 
-export const APP_VERSION = "0.1.20";
+export const APP_VERSION = "0.2.0";
 
 export type Screen =
   | { name: "boot" }
@@ -88,8 +89,17 @@ interface AppState {
   /** Sidebar groups the user folded up, and whether the sidebar is shrunk to icons. Per device. */
   navCollapsed: string[];
   sidebarMini: boolean;
+  /** Show the cash-flow diagram on Home (per device; on by default). */
+  showSankey: boolean;
+  /**
+   * Show the start-up checks? Only for the household owner: remembered per
+   * device from the last sign-in (startup runs before anyone signs in). On
+   * until someone has signed in here, since a fresh install is the owner's.
+   */
+  showStartupChecks: boolean;
   setNavCollapsed(groups: string[]): Promise<void>;
   setSidebarMini(mini: boolean): Promise<void>;
+  setShowSankey(show: boolean): Promise<void>;
   /** Lock after this many idle minutes (0 = never). Per device. */
   autoLockMinutes: number;
   /** Assistant AI level: Low (fast) … High (thinks first). Per device. */
@@ -184,6 +194,8 @@ const AI_LEVEL_KEY = "ai-level";
 const AUTO_LOCK_KEY = "auto-lock-minutes";
 const NAV_COLLAPSED_KEY = "nav-collapsed";
 const SIDEBAR_MINI_KEY = "sidebar-mini";
+const SHOW_SANKEY_KEY = "show-cashflow-diagram";
+const STARTUP_CHECKS_KEY = "startup-checks";
 export const AUTO_LOCK_DEFAULT = 5;
 export function parseStringList(raw: string | null): string[] {
   try {
@@ -281,6 +293,8 @@ export const useApp = create<AppState>((set, get) => ({
   autoLockMinutes: AUTO_LOCK_DEFAULT,
   navCollapsed: [],
   sidebarMini: false,
+  showSankey: true,
+  showStartupChecks: true,
   aiVisible: false,
   householdName: null,
   lockedUser: null,
@@ -433,6 +447,17 @@ export const useApp = create<AppState>((set, get) => ({
       if (tokens) {
         try {
           const user = await client.me();
+          // Dev-only design preview: straight in (phonePreview.ts).
+          if (import.meta.env.DEV && isPreview()) {
+            // The preview device has Face ID on for this profile.
+            const address = get().serverAddress;
+            if (address) {
+              set({ biometricUserIds: [user.id] });
+              void get().platform.saveValue(biometricUsersKey(address), JSON.stringify([user.id]));
+            }
+            get().signedIn(user);
+            return;
+          }
           // The app always opens locked: keep the session, but make the
           // user prove it's them first (biometrics or their password).
           set({ user: null, lockedUser: user, screen: { name: "login" } });
@@ -454,6 +479,10 @@ export const useApp = create<AppState>((set, get) => ({
 
   signedIn(user) {
     set({ user, lockedUser: null, screen: { name: "shell" } });
+    // Only the owner sees the start-up checks on this device from now on.
+    const showStartupChecks = user.role === "owner";
+    set({ showStartupChecks });
+    void get().platform.saveValue(STARTUP_CHECKS_KEY, showStartupChecks ? "on" : "off").catch(() => {});
     void get().refreshAiEnabled();
     get()
       .client.household()
@@ -626,6 +655,11 @@ export const useApp = create<AppState>((set, get) => ({
   async setNavCollapsed(navCollapsed) {
     set({ navCollapsed });
     await get().platform.saveValue(NAV_COLLAPSED_KEY, JSON.stringify(navCollapsed));
+  },
+
+  async setShowSankey(showSankey) {
+    set({ showSankey });
+    await get().platform.saveValue(SHOW_SANKEY_KEY, showSankey ? "on" : "off");
   },
 
   async setSidebarMini(sidebarMini) {
@@ -872,6 +906,20 @@ export async function bootstrap(): Promise<void> {
   }
   platformRef = platform;
   useApp.setState({ platform });
+  // Dev-only design preview (phonePreview.ts). The DEV check is here, at the
+  // call site, so release builds drop the preview code entirely.
+  if (import.meta.env.DEV) {
+    applyPhonePreviewLook();
+    await signInPhonePreview({
+      getSecret: (k) => platform.getSecret(k),
+      saveValue: (k, v) => platform.saveValue(k, v),
+      setSecret: (k, v) => platform.setSecret(k, v),
+      addressKey: ADDRESS_KEY,
+      tokensKey: TOKENS_KEY,
+      identityKey: deviceIdentityKey,
+      biometricUsersKey,
+    }).catch((err: unknown) => console.error("phone preview sign-in failed", err));
+  }
   void platform.biometricStatus().then((biometric) => useApp.setState({ biometric }));
   startUpdateChecks();
 
@@ -893,6 +941,8 @@ export async function bootstrap(): Promise<void> {
       autoLockMinutes: parseAutoLock(await platform.loadValue(AUTO_LOCK_KEY)),
       navCollapsed: parseStringList(await platform.loadValue(NAV_COLLAPSED_KEY)),
       sidebarMini: (await platform.loadValue(SIDEBAR_MINI_KEY)) === "on",
+      showSankey: (await platform.loadValue(SHOW_SANKEY_KEY)) !== "off",
+      showStartupChecks: (await platform.loadValue(STARTUP_CHECKS_KEY)) !== "off",
     });
   } catch (err) {
     console.error("loading review preferences failed; using defaults", err);

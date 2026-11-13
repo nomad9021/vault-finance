@@ -1,9 +1,10 @@
 // Local dev stack without Docker: embedded Postgres + the built server with
 // TLS off, for browser-mode frontend development and verification.
 //
-//   node scripts/dev-stack.mjs [--port 8787] [--fresh]
+//   node scripts/dev-stack.mjs [--port 8787] [--fresh] [--state .dev-stack]
 //
-// State lives in .dev-stack/ (gitignored). --fresh wipes it first.
+// State lives in .dev-stack/ (gitignored) unless --state names another folder
+// in the repo. --fresh wipes it first.
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,11 +12,13 @@ import { spawn } from "node:child_process";
 
 const repo = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const serverDir = path.join(repo, "apps/server");
-const stateDir = path.join(repo, ".dev-stack");
+const args = process.argv.slice(2);
+const stateArg = args.includes("--state") ? args[args.indexOf("--state") + 1] : ".dev-stack";
+const stateDir = path.resolve(repo, stateArg);
+if (!stateDir.startsWith(repo + path.sep)) throw new Error("--state must be a folder inside the repo");
 const pgDir = path.join(stateDir, "pg");
 const dataDir = path.join(stateDir, "data");
 
-const args = process.argv.slice(2);
 const port = Number(args[args.indexOf("--port") + 1]) || 8787;
 const pgPort = port + 1;
 

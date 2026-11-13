@@ -1,0 +1,117 @@
+<!doctype html>
+<!--
+  Dev-only iPhone design preview: the real app, signed in to a local demo
+  server, in a phone-sized frame. Start with `node scripts/phone-preview.mjs`.
+  Not part of any build (Vite only bundles index.html).
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Phone Preview</title>
+<style>
+  :root { --bg: #eceef2; --fg: #1c1f24; --muted: #6b7280; --chip: #fff; --line: #d5d8de; --bezel: #111; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #15171b; --fg: #e8eaed; --muted: #9aa0a6; --chip: #23262b; --line: #34383f; --bezel: #000; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 16px; }
+  .bar { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; align-items: center; }
+  .bar button { border: 1px solid var(--line); background: var(--chip); color: var(--fg); border-radius: 999px; padding: 6px 14px; font: inherit; cursor: pointer; }
+  .bar button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .hint { color: var(--muted); font-size: 12px; }
+  .stage { display: flex; justify-content: center; transform-origin: top center; }
+  .phone { position: relative; padding: 12px; border-radius: 64px; background: var(--bezel); box-shadow: 0 30px 80px rgba(0,0,0,.35); }
+  .screen { position: relative; overflow: hidden; border-radius: 52px; background: #000; }
+  .phone.home-button { border-radius: 48px; padding: 64px 14px; }
+  .phone.home-button .screen { border-radius: 4px; }
+  iframe { display: block; border: 0; background: #fff; }
+  /* Status bar + Dynamic Island drawn over the app, like the real phone. */
+  .status { position: absolute; inset: 0 0 auto 0; display: flex; justify-content: space-between; align-items: center; padding: 0 34px; font: 600 16px system-ui, sans-serif; pointer-events: none; color: var(--status, #111); mix-blend-mode: difference; filter: invert(1); }
+  .island { position: absolute; left: 50%; transform: translateX(-50%); width: 124px; height: 36px; border-radius: 20px; background: #000; pointer-events: none; }
+  .homebar { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); width: 140px; height: 5px; border-radius: 3px; background: #111; opacity: .55; pointer-events: none; mix-blend-mode: difference; filter: invert(1); }
+</style>
+</head>
+<body>
+  <div class="bar" id="devices"></div>
+  <div class="bar" id="sizes"></div>
+  <div class="bar">
+    <button id="reload" type="button">Reload</button>
+    <button id="fit" type="button" aria-pressed="true">Fit to window</button>
+    <span class="hint">Demo data · no login · edits to the app show up live</span>
+  </div>
+  <div class="stage" id="stage">
+    <div class="phone" id="phone">
+      <div class="screen" id="screen">
+        <iframe id="app" title="Vault Finance on iPhone"></iframe>
+        <div class="status" id="status"><span id="clock">9:41</span><span>●●● ▮</span></div>
+        <div class="island" id="island"></div>
+        <div class="homebar" id="homebar"></div>
+      </div>
+    </div>
+  </div>
+<script type="module">
+  // width × height in points, safe areas top/bottom, Dynamic Island or not.
+  const DEVICES = [
+    { id: "16", name: "iPhone 16", w: 393, h: 852, top: 59, bottom: 34, island: true },
+    { id: "16pm", name: "iPhone 16 Pro Max", w: 440, h: 956, top: 62, bottom: 34, island: true },
+    { id: "13m", name: "iPhone 13 mini", w: 375, h: 812, top: 50, bottom: 34, island: false },
+    { id: "se", name: "iPhone SE", w: 375, h: 667, top: 20, bottom: 0, island: false, homeButton: true },
+  ];
+  const $ = (id) => document.getElementById(id);
+  const saved = (k, d) => { try { return localStorage.getItem("phone-preview." + k) ?? d; } catch { return d; } };
+  const save = (k, v) => { try { localStorage.setItem("phone-preview." + k, v); } catch {} };
+  let current = DEVICES.find((d) => d.id === saved("device", "16")) ?? DEVICES[0];
+  let fit = saved("fit", "on") === "on";
+  // iPhone Settings → Display → Text Size, as the body size in points.
+  const TEXT = [
+    { pt: 15, name: "Text: small" },
+    { pt: 17, name: "Default" },
+    { pt: 19, name: "Large" },
+    { pt: 21, name: "Larger" },
+    { pt: 23, name: "Largest" },
+  ];
+  let textPt = Number(saved("text", "17")) || 17;
+
+  function render() {
+    const d = current;
+    $("devices").innerHTML = "";
+    for (const dev of DEVICES) {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = dev.name; b.setAttribute("aria-pressed", String(dev === d));
+      b.onclick = () => { current = dev; save("device", dev.id); render(); };
+      $("devices").append(b);
+    }
+    const app = $("app");
+    app.width = d.w; app.height = d.h;
+    $("sizes").innerHTML = "";
+    for (const t of TEXT) {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = t.name; b.setAttribute("aria-pressed", String(t.pt === textPt));
+      b.onclick = () => { textPt = t.pt; save("text", String(t.pt)); render(); };
+      $("sizes").append(b);
+    }
+    const src = `/?preview=ios&safe=${d.top},${d.bottom}&text=${textPt}`;
+    if (app.getAttribute("src") !== src) app.setAttribute("src", src);
+    $("phone").classList.toggle("home-button", !!d.homeButton);
+    $("status").style.height = d.top + "px";
+    $("island").style.display = d.island ? "" : "none";
+    $("island").style.top = "11px";
+    $("homebar").style.display = d.bottom ? "" : "none";
+    $("fit").setAttribute("aria-pressed", String(fit));
+    scale();
+  }
+  function scale() {
+    const stage = $("stage"), phone = $("phone");
+    const avail = window.innerHeight - stage.getBoundingClientRect().top - 16;
+    const s = fit ? Math.min(1, avail / phone.offsetHeight, (window.innerWidth - 32) / phone.offsetWidth) : 1;
+    stage.style.transform = `scale(${s})`;
+    stage.style.height = phone.offsetHeight * s + "px";
+  }
+  $("reload").onclick = () => $("app").contentWindow.location.reload();
+  $("fit").onclick = () => { fit = !fit; save("fit", fit ? "on" : "off"); render(); };
+  addEventListener("resize", scale);
+  const tick = () => { const n = new Date(); $("clock").textContent = `${n.getHours() % 12 || 12}:${String(n.getMinutes()).padStart(2, "0")}`; };
+  tick(); setInterval(tick, 15000);
+  render();
+</script>
+</body>
+</html>

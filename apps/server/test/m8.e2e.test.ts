@@ -111,6 +111,16 @@ describe("bank linking (mock provider)", () => {
     expect(resync.json()).toMatchObject({ imported: 0, skippedDuplicates: 80 });
   });
 
+  it("opening the app syncs, then holds off for a couple of minutes", async () => {
+    const first = await req("POST", "/api/v1/bank/sync-on-open");
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toMatchObject({ ran: true, imported: 0 }); // already imported above
+    const again = await req("POST", "/api/v1/bank/sync-on-open");
+    expect(again.json()).toEqual({ ran: false, imported: 0 });
+    const anon = await app.inject({ method: "POST", url: "/api/v1/bank/sync-on-open" });
+    expect(anon.statusCode).toBe(401);
+  });
+
   it("disconnecting keeps the imported accounts but drops the connection", async () => {
     const before = await req("GET", "/api/v1/bank/status");
     const connId = before.json().connections[0].id;

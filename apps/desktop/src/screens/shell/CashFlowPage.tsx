@@ -68,7 +68,7 @@ function TrendsTab() {
               In
             </span>
             <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 8, height: 8, borderRadius: "var(--radius-sm)", background: "var(--color-accent)" }} />
+              <span style={{ width: 8, height: 8, borderRadius: "var(--radius-sm)", background: "var(--color-neutral-500)" }} />
               Out
             </span>
           </div>
@@ -83,7 +83,7 @@ function TrendsTab() {
             height: 220,
           }}
         >
-          {months.map((m) => (
+          {months.map((m, i) => (
             <div
               key={m.month}
               style={{
@@ -108,24 +108,28 @@ function TrendsTab() {
               >
                 <div
                   title={`Income ${formatCentsWhole(m.incomeCents)}`}
+                  className="grow-up"
                   style={{
+                    animationDelay: `${Math.min(i, 5) * 20}ms`,
                     width: "26%",
                     maxWidth: 30,
                     height: `${(m.incomeCents / max) * 100}%`,
                     minHeight: m.incomeCents > 0 ? 3 : 0,
                     borderRadius: "5px 5px 2px 2px",
-                    background: "linear-gradient(180deg, #3ecf8e, #2a9a69)",
+                    background: "var(--color-positive)",
                   }}
                 />
                 <div
                   title={`Spending ${formatCentsWhole(m.spendingCents)}`}
+                  className="grow-up"
                   style={{
+                    animationDelay: `${Math.min(i, 5) * 20}ms`,
                     width: "26%",
                     maxWidth: 30,
                     height: `${(m.spendingCents / max) * 100}%`,
                     minHeight: m.spendingCents > 0 ? 3 : 0,
                     borderRadius: "5px 5px 2px 2px",
-                    background: "linear-gradient(180deg, #9184d9, #6a5fb0)",
+                    background: "var(--color-neutral-500)",
                   }}
                 />
               </div>

@@ -13,19 +13,29 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_process::init());
-    // Auto-update is desktop-only; the Phase 2 iOS build updates via the App Store.
+    // Auto-update and the one-copy rule are desktop-only; iOS installs the
+    // app itself and never starts a second copy.
     #[cfg(desktop)]
     {
-        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+        builder = builder
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            // Second launch focuses the existing window instead of a new process.
+            .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }));
+    }
+    // Face ID / Touch ID, and Safari for outside links. Only the Rust side
+    // calls these plugins, so the webview gets no permissions for them.
+    #[cfg(target_os = "ios")]
+    {
+        builder = builder
+            .plugin(tauri_plugin_biometric::init())
+            .plugin(tauri_plugin_opener::Builder::new().open_js_links_on_click(false).build());
     }
     builder
-        // Second launch focuses the existing window instead of a new process.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
-        }))
         .invoke_handler(tauri::generate_handler![
             commands::http_request,
             commands::http_request_stream,
@@ -48,6 +58,10 @@ pub fn run() {
         .setup(|app| {
             // Lock the app when the screen locks or the computer sleeps.
             lockwatch::start(app.handle().clone());
+            #[cfg(target_os = "ios")]
+            if let Some(window) = app.get_webview_window("main") {
+                full_bleed_webview(&window);
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -61,4 +75,24 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// iPhone: let the page fill the whole screen. By default the WKWebView's
+/// scroll view insets its content by the safe areas (notch + home bar), which
+/// shrinks the page by ~96pt and leaves the bare web-view background showing
+/// at the bottom. The stylesheet already pads with `env(safe-area-inset-*)`
+/// (index.html sets `viewport-fit=cover`), so turn the automatic inset off.
+#[cfg(target_os = "ios")]
+fn full_bleed_webview(window: &tauri::WebviewWindow) {
+    use objc2::{msg_send, runtime::AnyObject};
+    // UIScrollViewContentInsetAdjustmentBehavior.never
+    const NEVER: isize = 2;
+    let result = window.with_webview(|webview| unsafe {
+        let wk = webview.inner() as *mut AnyObject;
+        let scroll: *mut AnyObject = msg_send![wk, scrollView];
+        let _: () = msg_send![scroll, setContentInsetAdjustmentBehavior: NEVER];
+    });
+    if let Err(e) = result {
+        eprintln!("couldn't make the web view full screen: {e}");
+    }
 }

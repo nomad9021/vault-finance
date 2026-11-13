@@ -63,6 +63,8 @@ export function BillsPage({ initialTab }: { initialTab?: string }) {
 
   return (
     <div className="page">
+      {/* Nothing to total until a bill exists: the list below says how to start. */}
+      {bills.length > 0 && (
       <div className="page-head">
         <div className="grid" style={{ flex: 1, minWidth: 0 }}>
           <div className="col-4">
@@ -76,6 +78,7 @@ export function BillsPage({ initialTab }: { initialTab?: string }) {
           </div>
         </div>
       </div>
+      )}
 
       <Tabs items={TABS} value={tab} onChange={setTab} aria-label="Bill views" />
 

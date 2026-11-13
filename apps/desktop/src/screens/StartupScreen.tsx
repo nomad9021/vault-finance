@@ -19,8 +19,15 @@ export function StartupScreen() {
   const changeServer = useApp((s) => s.changeServer);
   const { busy, message, run } = useCheckActions(() => void runStartup());
   const [countdown, setCountdown] = useState<number | null>(null);
+  // Members don't see the checks (only the owner does): warnings just open.
+  const showChecks = useApp((s) => s.showStartupChecks);
 
   useEffect(() => {
+    if (!showChecks && startup.phase === "review") void continueFromStartup();
+  }, [showChecks, startup.phase, continueFromStartup]);
+
+  useEffect(() => {
+    if (!showChecks) return;
     if (startup.phase !== "review") {
       setCountdown(null);
       return;
@@ -38,7 +45,50 @@ export function StartupScreen() {
       });
     }, 1_000);
     return () => clearInterval(t);
-  }, [startup.phase, continueFromStartup]);
+  }, [showChecks, startup.phase, continueFromStartup]);
+
+  if (!showChecks) {
+    if (startup.phase !== "blocked") {
+      // Checking quietly: the page ground and the app icon, nothing to read.
+      return (
+        <div className="quiet-splash" role="status" aria-label="Opening Vault Finance">
+          <AppMark size={64} />
+        </div>
+      );
+    }
+    // Something stops the app opening: a plain explanation, no checklist.
+    const problem = startup.checks.find((c) => c.level === "error")?.id;
+    const explain =
+      problem === "identity"
+        ? "Your household's server presented a different security certificate than before. To keep your data safe the app won't connect until the household owner has checked it."
+        : problem === "version"
+          ? "This copy of the app is too old for your household's server. Update Vault Finance, then try again."
+          : "The household's server isn't answering. Check you're online (and connected to Tailscale if you're away from home), then try again. If it keeps happening, let the household owner know.";
+    return (
+      <AuthLayout>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, textAlign: "center" }}>
+          <AppMark size={48} />
+          <h1 className="auth-title" style={{ fontSize: "var(--text-2xl)" }}>
+            Can't open Vault Finance right now
+          </h1>
+          <p style={{ margin: 0, color: "var(--content-secondary)", fontSize: "var(--text-sm)", lineHeight: 1.5 }}>
+            {explain}
+          </p>
+          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", justifyContent: "center" }}>
+            {/* Never offered past a changed certificate: that's the owner's call. */}
+            {startup.canContinue && problem !== "identity" && (
+              <Button variant="ghost" onClick={() => void continueFromStartup()}>
+                Continue anyway
+              </Button>
+            )}
+            <Button variant="primary" onClick={() => void runStartup()} disabled={busy !== null}>
+              Try again
+            </Button>
+          </div>
+        </div>
+      </AuthLayout>
+    );
+  }
 
   const title =
     startup.phase === "blocked"

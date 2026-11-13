@@ -73,8 +73,12 @@ export function GivingPage({ onNavigate }: { onNavigate: Navigate }) {
     .filter((f) => f.kind === "gift" && f.targetCents)
     .reduce((s, f) => s + Math.max(0, f.targetCents! - f.savedCents), 0);
 
+  // Four $0 cards say nothing: show the totals once there's giving to total.
+  const hasGiving = funds.length > 0 || (data?.givenThisYearCents ?? 0) > 0;
+
   return (
     <div className="page">
+      {hasGiving && (
       <div className="page-head">
         <div className="grid" style={{ flex: 1, minWidth: 0 }}>
           <div className="col-3">
@@ -109,6 +113,7 @@ export function GivingPage({ onNavigate }: { onNavigate: Navigate }) {
           </div>
         </div>
       </div>
+      )}
 
       <Tabs items={TABS} value={tab} onChange={setTab} aria-label="Giving views" />
 

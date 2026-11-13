@@ -6,6 +6,13 @@
 const BASE = process.env.VAULT_URL ?? "http://127.0.0.1:8787";
 const EMAIL = process.env.VAULT_EMAIL ?? "alex@example.com";
 const PASSWORD = process.env.VAULT_PASSWORD ?? "a-long-enough-password";
+// Every sign-in needs a device identity (ADR-0009). The owner's first device on
+// a fresh server is approved automatically, so seed as that device; pass the
+// same identity to the app (scripts/phone-preview.mjs does) to share it.
+const DEVICE = {
+  deviceId: process.env.VAULT_DEVICE_ID ?? crypto.randomUUID(),
+  deviceSecret: process.env.VAULT_DEVICE_SECRET ?? crypto.randomUUID() + crypto.randomUUID(),
+};
 
 const api = async (method, path, body, token) => {
   const res = await fetch(`${BASE}/api/v1${path}`, {
@@ -35,6 +42,7 @@ const login = await api("POST", "/auth/login", {
   password: PASSWORD,
   deviceName: "seed script",
   platform: "linux",
+  ...DEVICE,
 });
 const token = login.accessToken;
 

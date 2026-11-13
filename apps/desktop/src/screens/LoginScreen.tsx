@@ -80,14 +80,32 @@ export function LoginScreen() {
     [busy, scanning, unlockWithBiometric, bioLabel],
   );
 
-  // Opened locked: ask for biometrics straight away, once.
+  // Locked with Face ID / Touch ID set up for this profile: ask straight away,
+  // behind a blank lock page. Recognised = straight back in, no sign-in page;
+  // failed, cancelled or unavailable = the sign-in page below.
+  const faceIdFirst = !!lockedUser && biometricUserIds.includes(lockedUser.id);
+  const [veilLifted, setVeilLifted] = useState(false);
   const autoPrompted = useRef(false);
   useEffect(() => {
-    if (autoPrompted.current || !selected || !lockedUser || selected.id !== lockedUser.id) return;
-    if (!biometricUserIds.includes(selected.id)) return;
+    if (autoPrompted.current || !faceIdFirst || !lockedUser) return;
     autoPrompted.current = true;
-    void doBiometric(selected);
-  }, [selected, lockedUser, biometricUserIds, doBiometric]);
+    setScanning(true);
+    void unlockWithBiometric(lockedUser.id)
+      .then((r) => {
+        if (r.ok) return;
+        setVeilLifted(true);
+        if (r.reason !== "cancelled") {
+          setError(
+            r.message ??
+              (r.reason === "failed"
+                ? `${bioLabel} didn't recognize you — try again or use your password.`
+                : `${bioLabel} isn't available right now — use your password.`),
+          );
+        }
+      })
+      .catch(() => setVeilLifted(true))
+      .finally(() => setScanning(false));
+  }, [faceIdFirst, lockedUser, unlockWithBiometric, bioLabel]);
 
   useEffect(() => {
     if (selected && !biometricUserIds.includes(selected.id)) passwordRef.current?.focus();
@@ -141,10 +159,12 @@ export function LoginScreen() {
     }
   };
 
+  if (faceIdFirst && !veilLifted) return <LockVeil />;
+
   return (
     <AuthLayout>
       <AuthHeading
-        title={householdName ? `Sign in to ${householdName}` : "Sign in to Vault Finance"}
+        title={householdName ?? "Vault Finance"}
         subtitle={serverAddress?.replace(/^https?:\/\//, "") ?? "self-hosted"}
       />
 
@@ -298,5 +318,17 @@ export function LoginScreen() {
         Connect to a different server
       </Button>
     </AuthLayout>
+  );
+}
+
+/**
+ * Locked, waiting on Face ID: an empty page with the padlock, nothing else
+ * (no names, no text), so a glance at the phone gives nothing away.
+ */
+function LockVeil() {
+  return (
+    <div className="lock-veil" role="img" aria-label="Vault Finance is locked">
+      <img src="/padlock.png" alt="" className="lock-veil-mark" />
+    </div>
   );
 }

@@ -1,6 +1,7 @@
 import type { Insight, InsightListResponse } from "@vault/shared";
 import { and, gte, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
+import { weekBounds } from "../budgets/period.js";
 import {
   accounts,
   bills,
@@ -114,16 +115,35 @@ export default async function insightRoutes(app: FastifyInstance) {
     const cats = await app.db.select().from(categories);
     const catName = new Map(cats.map((c) => [c.id, c.name]));
 
+    // Weekly budgets are judged on this week (Monday-start, like the
+    // budgets endpoint's default), monthly ones on the month.
+    const week = weekBounds(new Date().toISOString().slice(0, 10), "monday");
+    const hasWeekly = [...latestBudget.values()].some((b) => b.period === "weekly");
+    const weekSpentByCategory = new Map<string, number>();
+    if (hasWeekly) {
+      const rows = await app.db
+        .select({
+          categoryId: transactions.categoryId,
+          spent: sql<string>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)`,
+        })
+        .from(transactions)
+        .where(and(gte(transactions.postedAt, week.start), lt(transactions.postedAt, week.end), notArchived))
+        .groupBy(transactions.categoryId);
+      for (const r of rows) weekSpentByCategory.set(r.categoryId ?? "none", Number(r.spent));
+    }
+
     for (const [categoryId, budget] of latestBudget) {
-      const spent = spentByCategory.get(categoryId) ?? 0;
+      const weeklyBudget = budget.period === "weekly";
+      const spent = (weeklyBudget ? weekSpentByCategory : spentByCategory).get(categoryId) ?? 0;
       if (budget.amountCents <= 0) continue;
       const name = catName.get(categoryId) ?? "A category";
+      const span = weeklyBudget ? "week" : "month";
       if (spent > budget.amountCents) {
         insights.push({
           id: `budget-over-${categoryId}`,
           severity: "warning",
           title: `${name} is over budget`,
-          detail: `${exactMoney(spent)} spent against a ${exactMoney(budget.amountCents)} budget — ${exactMoney(spent - budget.amountCents)} over with the month still running.`,
+          detail: `${exactMoney(spent)} spent against a ${exactMoney(budget.amountCents)} ${weeklyBudget ? "weekly " : ""}budget — ${exactMoney(spent - budget.amountCents)} over with the ${span} still running.`,
           page: "budgets",
           categoryId,
           accountId: null,
@@ -134,7 +154,7 @@ export default async function insightRoutes(app: FastifyInstance) {
           id: `budget-near-${categoryId}`,
           severity: "info",
           title: `${name} is nearly spent`,
-          detail: `${exactMoney(spent)} of ${exactMoney(budget.amountCents)} used — ${exactMoney(budget.amountCents - spent)} left this month.`,
+          detail: `${exactMoney(spent)} of ${exactMoney(budget.amountCents)} used — ${exactMoney(budget.amountCents - spent)} left this ${span}.`,
           page: "budgets",
           categoryId,
           accountId: null,

@@ -62,6 +62,7 @@ import {
 import {
   Budget,
   BudgetListResponse,
+  type WeekStart,
   BudgetPlan,
   PreIncome,
   type CreateBudgetRequest,
@@ -95,6 +96,7 @@ import {
 import {
   BankStatus,
   BankSyncResponse,
+  BankOpenSyncResponse,
   type UpdateBankSettingsRequest,
   BankLinkStartResponse,
   BankLinkStatus,
@@ -624,6 +626,10 @@ export class ApiClient {
   bankLinkStatus(sessionId: string) {
     return this.request(BankLinkStatus, "GET", `/bank/link/${encodeURIComponent(sessionId)}`);
   }
+  /** App opened or unlocked: bring bank data up to date (throttled server-side). */
+  bankSyncOnOpen() {
+    return this.request(BankOpenSyncResponse, "POST", "/bank/sync-on-open");
+  }
   bankSync(connectionId: string) {
     return this.request(BankSyncResponse, "POST", `/bank/connections/${connectionId}/sync`);
   }
@@ -990,12 +996,10 @@ export class ApiClient {
   }
 
   // ── Budgets ──
-  budgets(month?: string) {
-    return this.request(
-      BudgetListResponse,
-      "GET",
-      `/budgets${month ? `?month=${month}` : ""}`,
-    );
+  budgets(month?: string, weekStart?: WeekStart) {
+    // Both values are validated tokens (YYYY-MM, monday|sunday): no escaping needed.
+    const qs = [month && `month=${month}`, weekStart && `weekStart=${weekStart}`].filter(Boolean).join("&");
+    return this.request(BudgetListResponse, "GET", `/budgets${qs ? `?${qs}` : ""}`);
   }
   createBudget(body: CreateBudgetRequest) {
     return this.request(Budget, "POST", "/budgets", body);

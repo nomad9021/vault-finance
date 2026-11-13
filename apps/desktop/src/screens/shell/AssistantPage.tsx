@@ -11,6 +11,7 @@ import {
 import { Banner, Button, Dialog, Segmented } from "@vault/ui";
 import { useEffect, useState } from "react";
 import { useData } from "../../lib/useData.js";
+import { useLayoutMode } from "../../lib/useLayout.js";
 import { useChat } from "../../state/chat.js";
 import { useApp } from "../../state/store.js";
 import { AiHostBar } from "./AiHostBar.js";
@@ -33,6 +34,8 @@ const CHIPS = [
 
 export function AssistantPage({ onNavigate }: { onNavigate: Navigate }) {
   const client = useApp((s) => s.client);
+  const phone = useLayoutMode() === "narrow";
+  const [sideOpen, setSideOpen] = useState(false);
   const { data: status, reload: reloadStatus } = useData<AiStatus>(
     () => client.aiStatus(),
     [client],
@@ -90,8 +93,20 @@ export function AssistantPage({ onNavigate }: { onNavigate: Navigate }) {
   const providerLabel = status ? AI_PROVIDER_LABELS[status.provider] : "The provider";
 
   return (
-    <div style={{ display: "flex", height: "100%", minHeight: 0, animation: "fadeUp .3s both", margin: -24 }}>
+    <div
+      className={phone ? "assistant-phone" : undefined}
+      style={phone ? undefined : { display: "flex", height: "100%", minHeight: 0, animation: "fadeUp .3s both", margin: -24 }}
+    >
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", minHeight: 0 }}>
+        {/* Phone: the side column (level, approvals, saved chats) lives in a sheet. */}
+        {phone && (
+          <div className="row-between" style={{ marginBottom: "var(--space-2)" }}>
+            <span />
+            <Button variant="secondary" size="sm" icon="more" onClick={() => setSideOpen(true)}>
+              Chats and settings
+            </Button>
+          </div>
+        )}
         <AiHostBar onChange={onHostChange} />
         {/* The bar above already says the AI server is asleep or starting. */}
         {aiOffline && !(status.enabled && status.configured && hostPower && hostPower !== "on") && (
@@ -116,13 +131,120 @@ export function AssistantPage({ onNavigate }: { onNavigate: Navigate }) {
             <div className="text-muted" style={{ fontSize: "var(--text-base)", maxWidth: 480, lineHeight: 1.7 }}>
               Ask anything about your money — spending, budgets, cash flow, taxes, forecasts. It can also
               reorganise your categories, set budgets, bills and goals, and change settings — it asks first
-              unless you switch on Auto. Press Ctrl+J on any page for the chat bubble.
+              unless you switch on Auto.{phone ? "" : " Press Ctrl+J on any page for the chat bubble."}
             </div>
           }
         />
         <ChatComposer disabled={aiOffline} />
       </div>
 
+      {phone ? (
+        <Dialog open={sideOpen} title="Chats and settings" onClose={() => setSideOpen(false)}>
+          <div>
+        <SideHeading>AI level</SideHeading>
+        <Segmented
+          aria-label="AI level"
+          options={AI_LEVELS.map((l) => ({ value: l, label: AI_LEVEL_LABELS[l] }))}
+          value={level}
+          onChange={(v) => void setLevel(v)}
+        />
+        <p className="card-meta" style={{ margin: "6px 0 18px" }}>
+          {AI_LEVEL_HINTS[level]}
+        </p>
+
+        <SideHeading>Changes</SideHeading>
+        <Segmented
+          aria-label="When the assistant wants to change something"
+          options={[
+            { value: "ask", label: "Ask me first" },
+            { value: "auto", label: "Auto" },
+          ]}
+          value={autoApply ? "auto" : "ask"}
+          onChange={(v) => void setAutoApply(v === "auto")}
+        />
+        <p className="card-meta" style={{ margin: "6px 0 18px" }}>
+          {autoApply
+            ? "Changes it suggests are made straight away. Each still shows in the chat."
+            : "You approve each change before it's made."}
+        </p>
+
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <SideHeading>Chats</SideHeading>
+          <Button variant="ghost" size="sm" icon="plus" onClick={startNewChat} disabled={busy}>
+            New
+          </Button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 18, maxHeight: 260, overflow: "auto" }}>
+          {(convoList?.conversations ?? []).length === 0 && (
+            <div className="card-meta">Saved chats appear here.</div>
+          )}
+          {(convoList?.conversations ?? []).map((c) => (
+            <div
+              key={c.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                borderRadius: "var(--radius-md)",
+                background: c.id === activeId ? "color-mix(in srgb, var(--color-accent) 12%, transparent)" : "none",
+              }}
+            >
+              <button
+                onClick={() => void openConversation(c.id)}
+                disabled={busy}
+                title={c.title ?? "Untitled chat"}
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  textAlign: "left",
+                  border: 0,
+                  background: "none",
+                  color: "inherit",
+                  font: "inherit",
+                  fontSize: "var(--text-sm)",
+                  padding: "6px 8px",
+                  cursor: "pointer",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {c.title ?? "Untitled chat"}
+              </button>
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="trash"
+                aria-label={`Delete chat ${c.title ?? ""}`}
+                onClick={() => setDeleting({ id: c.id, title: c.title ?? "Untitled chat" })}
+              />
+            </div>
+          ))}
+        </div>
+
+        <SideHeading>Try asking</SideHeading>
+        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          {CHIPS.map((chip) => (
+            <Button
+              key={chip}
+              variant="secondary"
+              style={{
+                justifyContent: "flex-start",
+                textAlign: "left",
+                fontWeight: 500,
+                fontSize: "var(--text-sm)",
+                borderRadius: "var(--radius-md)",
+              }}
+              disabled={busy || aiOffline}
+              onClick={() => void send(chip)}
+            >
+              {chip}
+            </Button>
+          ))}
+        </div>
+          </div>
+        </Dialog>
+      ) : (
       <div
         style={{
           width: 280,
@@ -234,6 +356,7 @@ export function AssistantPage({ onNavigate }: { onNavigate: Navigate }) {
           ))}
         </div>
       </div>
+      )}
 
       <Dialog
         open={deleting !== null}

@@ -11,14 +11,18 @@ import { and, eq, gte, lt, lte, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { budgetPlan, budgets, categories, transactions } from "../../db/schema.js";
 import { AppError, notFound } from "../../errors.js";
+import { currentPeriod, monthlyAmountCents } from "./period.js";
 
-function toApi(row: typeof budgets.$inferSelect): ApiBudget {
+/** `amountCents` is per month (see period.ts); `periodAmountCents` as set. */
+function toApi(row: typeof budgets.$inferSelect, month: string = currentMonth()): ApiBudget {
   return {
     id: row.id,
     categoryId: row.categoryId,
-    amountCents: row.amountCents,
+    amountCents: monthlyAmountCents(row, month),
     rollover: row.rollover,
     startsOn: row.startsOn,
+    period: row.period,
+    periodAmountCents: row.amountCents,
   };
 }
 
@@ -46,6 +50,7 @@ export default async function budgetRoutes(app: FastifyInstance) {
   app.get("/budgets", async (request) => {
     const query = BudgetListQuery.parse(request.query);
     const month = query.month ?? currentMonth();
+    const weekStart = query.weekStart ?? "monday";
     const { first, nextFirst } = monthBounds(month);
 
     const allBudgets = await app.db
@@ -72,10 +77,38 @@ export default async function budgetRoutes(app: FastifyInstance) {
       spentRows.map((r) => [r.categoryId ?? "none", Number(r.spent)]),
     );
 
-    const result = [...latest.values()].map((b) => ({
-      ...toApi(b),
-      spentCents: spentByCategory.get(b.categoryId) ?? 0,
-    }));
+    // Weekly budgets also need their current week's spending, which can
+    // reach into the neighbouring month. One query per distinct week (in
+    // practice one: they all share the same week).
+    const weekly = [...latest.values()].filter((b) => b.period === "weekly");
+    const periodOf = (b: typeof budgets.$inferSelect) => currentPeriod(b.period, month, weekStart);
+    const weekSpend = new Map<string, Map<string, number>>();
+    for (const w of new Set(weekly.map((b) => JSON.stringify(periodOf(b))))) {
+      const { start, end } = JSON.parse(w) as { start: string; end: string };
+      const rows = await app.db
+        .select({
+          categoryId: transactions.categoryId,
+          spent: sql<number>`coalesce(sum(-${transactions.amountCents}) filter (where ${transactions.amountCents} < 0), 0)::bigint`,
+        })
+        .from(transactions)
+        .where(and(gte(transactions.postedAt, start), lt(transactions.postedAt, end)))
+        .groupBy(transactions.categoryId);
+      weekSpend.set(w, new Map(rows.map((r) => [r.categoryId ?? "none", Number(r.spent)])));
+    }
+
+    const result = [...latest.values()].map((b) => {
+      const spentCents = spentByCategory.get(b.categoryId) ?? 0;
+      const p = periodOf(b);
+      const periodSpentCents =
+        b.period === "weekly" ? (weekSpend.get(JSON.stringify(p))?.get(b.categoryId) ?? 0) : spentCents;
+      return {
+        ...toApi(b, month),
+        spentCents,
+        periodSpentCents,
+        periodStart: p.start,
+        periodEnd: p.end,
+      };
+    });
 
     return {
       month,
@@ -102,11 +135,17 @@ export default async function budgetRoutes(app: FastifyInstance) {
         categoryId: body.categoryId,
         amountCents: body.amountCents,
         rollover: body.rollover,
+        period: body.period ?? "monthly",
         startsOn,
       })
       .onConflictDoUpdate({
         target: [budgets.categoryId, budgets.startsOn],
-        set: { amountCents: body.amountCents, rollover: body.rollover, updatedAt: new Date() },
+        set: {
+          amountCents: body.amountCents,
+          rollover: body.rollover,
+          period: body.period ?? "monthly",
+          updatedAt: new Date(),
+        },
       })
       .returning();
     return reply.status(201).send(toApi(row!));
@@ -114,7 +153,7 @@ export default async function budgetRoutes(app: FastifyInstance) {
 
   app.patch<{ Params: { id: string } }>("/budgets/:id", async (request) => {
     const body = UpdateBudgetRequest.parse(request.body);
-    if (body.amountCents === undefined && body.rollover === undefined) {
+    if (body.amountCents === undefined && body.rollover === undefined && body.period === undefined) {
       throw new AppError("VALIDATION_ERROR", 400, "Nothing to update.");
     }
     const [row] = await app.db
@@ -122,6 +161,7 @@ export default async function budgetRoutes(app: FastifyInstance) {
       .set({
         ...(body.amountCents !== undefined ? { amountCents: body.amountCents } : {}),
         ...(body.rollover !== undefined ? { rollover: body.rollover } : {}),
+        ...(body.period !== undefined ? { period: body.period } : {}),
         updatedAt: new Date(),
       })
       .where(eq(budgets.id, request.params.id))

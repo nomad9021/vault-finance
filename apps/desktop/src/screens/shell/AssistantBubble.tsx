@@ -10,8 +10,11 @@ import { ChatComposer, ChatMessages } from "./ChatView.js";
  * The assistant on every page: a bubble in the corner (or Ctrl/Cmd+J) opens
  * the same conversation as the Assistant page, so you can ask about what's
  * on screen and keep going on the full page with "Open full page".
+ *
+ * On a phone the bubble simply opens the Assistant page: a pop-up chat over a
+ * small screen is cramped, and the page has the same conversation.
  */
-export function AssistantBubble({ onOpenPage }: { onOpenPage: () => void }) {
+export function AssistantBubble({ onOpenPage, phone = false }: { onOpenPage: () => void; phone?: boolean }) {
   const [open, setOpen] = useState(false);
   const client = useApp((s) => s.client);
   const level = useApp((s) => s.aiLevel);
@@ -25,21 +28,23 @@ export function AssistantBubble({ onOpenPage }: { onOpenPage: () => void }) {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "j") {
         e.preventDefault();
-        setOpen((o) => !o);
+        if (phone) onOpenPage();
+        else setOpen((o) => !o);
       }
       if (e.key === "Escape") setOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [phone, onOpenPage]);
 
   if (!open) {
     return (
       <button
-        onClick={() => setOpen(true)}
+        onClick={() => (phone ? onOpenPage() : setOpen(true))}
         title="Ask the assistant (Ctrl+J)"
         aria-label="Open the assistant"
-        style={{
+        className={phone ? "ai-bubble glass" : "glass"}
+        style={phone ? undefined : {
           position: "fixed",
           right: 20,
           bottom: 20,
@@ -47,17 +52,18 @@ export function AssistantBubble({ onOpenPage }: { onOpenPage: () => void }) {
           width: 52,
           height: 52,
           borderRadius: "50%",
-          border: 0,
           cursor: "pointer",
-          background: "var(--color-accent)",
-          color: "var(--color-on-accent, #fff)",
-          boxShadow: "var(--shadow-lg)",
+          // Glass circle (components.css .glass), like the iPhone's.
+          color: "var(--content-primary)",
           display: "grid",
           placeItems: "center",
           fontSize: 22,
         }}
       >
-        {busy ? <span style={{ animation: "blink 1s infinite" }}>✦</span> : "✦"}
+        {/* Blinks only while the assistant is actually working. */}
+        <span style={busy ? { animation: "blink 1s infinite", display: "grid" } : { display: "grid" }}>
+          <Icon name="sparkle" size={22} />
+        </span>
       </button>
     );
   }

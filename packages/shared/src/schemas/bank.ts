@@ -68,6 +68,17 @@ export const BankSyncResponse = z.object({
 export type BankSyncResponse = z.infer<typeof BankSyncResponse>;
 
 /**
+ * "The app was just opened": sync every bank connection now, unless a sync
+ * ran in the last couple of minutes. `ran` is false when it was skipped for
+ * that reason (or bank sync is off); `imported` counts new transactions.
+ */
+export const BankOpenSyncResponse = z.object({
+  ran: z.boolean(),
+  imported: z.number().int(),
+});
+export type BankOpenSyncResponse = z.infer<typeof BankOpenSyncResponse>;
+
+/**
  * Linking a real bank with Plaid Hosted Link: the server starts a session and
  * returns a Plaid URL to open in the browser; the app then polls until the
  * person finishes (or gives up). With `connectionId`, it re-signs-in an

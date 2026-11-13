@@ -272,7 +272,7 @@
 .btn-primary {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: #14151f;
+  color: var(--color-on-accent);
 }
 .btn-primary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--color-accent) 86%, white);
@@ -281,8 +281,6 @@
 .btn-primary:active:not(:disabled) {
   background: color-mix(in srgb, var(--color-accent) 88%, black);
 }
-:root[data-theme="light"] .btn-primary { color: #ffffff; }
-:root[data-theme="contrast"] .btn-primary { color: #000000; }
 
 /* Outlined, not filled. A filled grey slab competes with the cards it sits on
    and reads cheap next to the filled primary; a hairline outline that only
@@ -499,7 +497,7 @@ textarea.input { min-height: 96px; resize: vertical; line-height: var(--leading-
 .datefield-day[data-selected="true"] {
   background: var(--color-accent);
   border-color: var(--color-accent);
-  color: #fff;
+  color: var(--color-on-accent);
   font-weight: 600;
 }
 .datefield-day[data-selected="true"]:hover { background: var(--color-accent); }
@@ -1159,7 +1157,7 @@ button.list-row:active, .list-row[role="button"]:active {
   z-index: var(--z-modal);
   max-height: 82vh;
   overflow: auto;
-  padding: var(--space-3) var(--space-4) calc(var(--space-6) + env(safe-area-inset-bottom));
+  padding: var(--space-3) var(--space-4) calc(var(--space-6) + var(--safe-bottom));
   background: var(--surface-2);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   box-shadow: var(--shadow-overlay);
@@ -1420,4 +1418,465 @@ button.list-row:active, .list-row[role="button"]:active {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* iOS app (data-platform="ios", set by the Tauri host). The page runs edge to
+   edge (viewport-fit=cover), so the header clears the notch / Dynamic Island
+   and the tab bar clears the home indicator. Inputs stay at 16px there:
+   WebKit on iPhone zooms the whole page into any field smaller than that. */
+:root[data-platform="ios"] {
+  --tabbar-safe: max(0px, calc(var(--safe-bottom) - 12px));
+}
+:root[data-platform="ios"] .app-header {
+  height: calc(var(--header-h) + var(--safe-top));
+  padding-top: var(--safe-top);
+}
+:root[data-platform="ios"] .app-main {
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+:root[data-platform="ios"] input,
+:root[data-platform="ios"] select,
+:root[data-platform="ios"] textarea,
+:root[data-platform="ios"] .input {
+  font-size: max(16px, 1em);
+}
+:root[data-platform="ios"] body {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+
+/* ── Phone: nothing moves sideways ──
+   The page only scrolls up and down. Wide content (tables, button rows) gets
+   a phone layout instead of a sideways scroll, and anything that still
+   overflows is clipped rather than letting the whole screen drift. */
+@media (max-width: 900px) {
+  html, body { overflow-x: hidden; overscroll-behavior-x: none; }
+  .app-scroll { overflow-x: hidden; overscroll-behavior-x: none; }
+}
+
+/* Phone list rows (transactions and similar): title + detail on the left,
+   amount on the right, one height, tap anywhere to open. */
+.phone-list-head {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--content-tertiary);
+  padding: 0 var(--space-1) var(--space-2);
+}
+.phone-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 56px;
+  padding: var(--space-2) var(--space-4);
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 120ms ease;
+}
+.phone-row + .phone-row { border-top: 1px solid var(--hairline); }
+.phone-row:active { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+.phone-row:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.phone-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.phone-row-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.phone-row-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--content-tertiary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.phone-row-sub .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.phone-row-amount { flex: none; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* A row whose action buttons drop to their own line on a phone. */
+.wrap-actions { flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .wrap-actions > .row-actions { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: var(--space-2); }
+}
+.row-actions { display: flex; gap: var(--space-2); align-items: center; }
+
+/* Phone home summary: net worth large, the month's three figures beneath. */
+.phone-summary { display: flex; flex-direction: column; gap: var(--space-1); }
+.phone-summary button {
+  background: none; border: 0; padding: 0; color: inherit; font: inherit; text-align: left;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.phone-summary button:disabled { cursor: default; }
+.phone-summary button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: var(--radius-sm); }
+.phone-summary-hero { display: flex; flex-direction: column; gap: var(--space-1); }
+.phone-summary-value {
+  font-family: var(--font-heading);
+  font-size: var(--text-3xl);
+  font-weight: 600;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.phone-summary-month { margin-top: var(--space-3); }
+.phone-summary-figures {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  margin-top: var(--space-1);
+  border-top: 1px solid var(--hairline);
+}
+.phone-summary-figure { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+/* ── Phone tap targets: at least 44×44pt (Apple HIG, accessibility.md) ──
+   Buttons get a little taller, and every small control gets an invisible
+   hit area that reaches 44pt in each direction without changing the layout
+   (the ::after grows outward only when the control is smaller than 44). */
+@media (max-width: 900px) {
+  .btn { min-height: 40px; }
+  .btn-sm { min-height: 36px; }
+  .btn-icon { width: 40px; min-height: 40px; }
+  .btn-icon.btn-sm { width: 36px; min-height: 36px; }
+  .seg-opt { min-height: 36px; }
+
+  .btn, .panel-link, .seg-opt, .tabs [role="tab"], .phone-summary button,
+  .tap-target, label.radio, label.check, .avatar, [role="button"] {
+    position: relative;
+    /* Own stacking context, so the hit area below can sit behind this
+       control's contents (an inner button stays tappable) but still above
+       whatever the control sits on. */
+    isolation: isolate;
+  }
+  .btn::after, .panel-link::after, .seg-opt::after, .tabs [role="tab"]::after,
+  .phone-summary button::after, .tap-target::after, label.radio::after, label.check::after,
+  .avatar::after, [role="button"]::after {
+    content: "";
+    position: absolute;
+    top: min(0px, calc((100% - 44px) / 2));
+    bottom: min(0px, calc((100% - 44px) / 2));
+    left: min(0px, calc((100% - 44px) / 2));
+    right: min(0px, calc((100% - 44px) / 2));
+    z-index: -1;
+  }
+}
+
+/* ── Phone: dialogs are bottom sheets ──
+   Slide up from the bottom edge, a grabber on top, drag down to dismiss
+   (Dialog.tsx), full-width actions within thumb reach. */
+.dialog-grabber { display: none; }
+@media (max-width: 640px) {
+  .dialog-backdrop { align-items: end; padding: 0; }
+  .dialog {
+    width: 100%;
+    max-height: calc(100dvh - var(--safe-top) - var(--space-4));
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    padding: var(--space-2) var(--space-4) calc(var(--space-4) + var(--safe-bottom));
+    animation: sheetUp var(--dur) var(--ease-out) both;
+    transition: transform var(--dur) var(--ease-out);
+  }
+  .dialog-drag { touch-action: none; cursor: grab; padding-bottom: var(--space-1); }
+  .dialog-grabber {
+    display: block;
+    width: 36px;
+    height: 5px;
+    margin: 0 auto var(--space-3);
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--color-text) 22%, transparent);
+  }
+  .dialog-actions { flex-wrap: wrap; }
+  .dialog-actions > .btn { flex: 1 1 0; min-height: 48px; }
+}
+@keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dialog { animation: none; } }
+
+/* Pull to refresh (usePullToRefresh): a spinner revealed above the page. */
+.ptr {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  margin-top: calc(var(--space-4) * -1);
+  transition: height var(--dur) var(--ease-out), opacity var(--dur) var(--ease-out);
+}
+.ptr-spin {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--color-text) 15%, transparent);
+  border-top-color: var(--content-secondary);
+}
+.ptr-spin.is-spinning { animation: ptrSpin .8s linear infinite; }
+@keyframes ptrSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .ptr-spin.is-spinning { animation-duration: 2.4s; } }
+
+/* Swipe actions on phone list rows (SwipeRow.tsx). */
+.swipe-row { position: relative; overflow: hidden; }
+.swipe-row + .swipe-row { border-top: 1px solid var(--hairline); }
+.swipe-row .phone-row + .phone-row { border-top: 0; }
+.swipe-front {
+  position: relative;
+  background: var(--color-surface);
+  touch-action: pan-y;
+  transition: transform var(--dur) var(--ease-out);
+}
+.swipe-actions { position: absolute; top: 0; right: 0; bottom: 0; display: flex; }
+.swipe-action {
+  flex: 1;
+  border: 0;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: #fff;
+  background: var(--color-neutral-600, #6b6f80);
+  cursor: pointer;
+}
+.swipe-action.is-danger { background: var(--color-negative); }
+.swipe-action:focus-visible { outline: 2px solid #fff; outline-offset: -4px; }
+
+/* Phone large title: the page name is large while the page is at the top
+   and settles to the bar size once it scrolls (iOS navigation bar). A
+   transform, so nothing below it moves. */
+@media (max-width: 900px) {
+  .header-title {
+    transform-origin: left center;
+    transition: transform var(--dur) var(--ease-out);
+  }
+  .app-main[data-scrolled="false"] .header-title { transform: scale(1.5); font-weight: 700; }
+}
+@media (max-width: 900px) and (prefers-reduced-motion: reduce) {
+  .header-title { transition: none; }
+}
+
+/* Phone: a row of number cards becomes one compact two-column block instead
+   of a stack of tall cards (a grid whose every cell is a .stat card). */
+@media (max-width: 640px) {
+  .grid:has(> [class*="col-"] > .stat):not(:has(> [class*="col-"] > :not(.stat))) {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-2);
+  }
+  .grid:has(> [class*="col-"] > .stat):not(:has(> [class*="col-"] > :not(.stat))) > [class*="col-"] {
+    grid-column: auto;
+  }
+  .grid:has(> [class*="col-"] > .stat):not(:has(> [class*="col-"] > :not(.stat))) .stat {
+    padding: var(--space-3) var(--space-4);
+    height: 100%;
+  }
+  /* An odd last card spans both columns rather than leaving a hole. */
+  .grid:has(> [class*="col-"] > .stat):not(:has(> [class*="col-"] > :not(.stat))) > [class*="col-"]:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Sign-in heading: big, rounded, unmistakably a phone app. */
+.auth-title {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-rounded);
+  font-weight: 700;
+  font-size: var(--text-3xl);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: var(--content-primary);
+}
+
+/* Locked, waiting on Face ID: only the padlock on the page ground. */
+.lock-veil {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--color-bg);
+}
+.lock-veil-mark { width: 72px; height: auto; display: block; }
+
+/* ══ Phone: Liquid Glass on the floating layer only (Apple HIG,
+   liquid-glass.md): the tab bar, the title bar and the assistant button.
+   Content scrolls beneath them; cards and lists stay opaque. ══ */
+.contents { display: contents; }
+.glass {
+  background: color-mix(in srgb, var(--color-surface) 58%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.8);
+  backdrop-filter: blur(22px) saturate(1.8);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+}
+:root {
+  --glass-edge: color-mix(in srgb, #ffffff 14%, transparent);
+  --glass-highlight: color-mix(in srgb, #ffffff 10%, transparent);
+  --glass-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+:root[data-theme="light"] {
+  --glass-edge: color-mix(in srgb, #ffffff 70%, transparent);
+  --glass-highlight: color-mix(in srgb, #ffffff 80%, transparent);
+  --glass-shadow: 0 8px 28px rgba(0, 0, 0, 0.10), 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+@media (max-width: 900px) {
+  :root {
+    --tabbar-float-h: 62px;
+    --tabbar-float-bottom: max(12px, calc(var(--safe-bottom) - 12px));
+  }
+  .app-main { position: relative; }
+
+  /* Floating tab bar: a glass capsule above the home indicator. */
+  .tabbar {
+    position: absolute;
+    left: var(--space-4);
+    right: var(--space-4);
+    bottom: var(--tabbar-float-bottom);
+    z-index: var(--z-rail);
+    height: var(--tabbar-float-h);
+    padding: var(--space-1);
+    border-radius: calc(var(--tabbar-float-h) / 2);
+    border-top: 0;
+    background: color-mix(in srgb, var(--color-surface) 58%, transparent);
+    -webkit-backdrop-filter: blur(22px) saturate(1.8);
+    backdrop-filter: blur(22px) saturate(1.8);
+    border: 1px solid var(--glass-edge);
+    box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+  }
+  .tab-item {
+    border-radius: calc((var(--tabbar-float-h) - var(--space-2)) / 2);
+    color: var(--content-secondary);
+    transition: color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+  }
+  /* Selected: monochrome label on a soft lozenge, like iOS. */
+  .tab-item[data-active],
+  .tab-item[data-active]:active {
+    color: var(--content-primary);
+    background: color-mix(in srgb, var(--color-text) 9%, transparent);
+  }
+
+  /* Title bar + page tabs: one layer over the page. Clear at rest, glass once
+     the page scrolls beneath it (the scroll edge). */
+  .phone-topbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: var(--z-rail);
+    transition: background-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  }
+  .phone-topbar .app-header { background: transparent; border-bottom: 0; }
+  .phone-topbar .tabs { border-bottom: 0; }
+  .app-main[data-scrolled="true"] .phone-topbar {
+    background: color-mix(in srgb, var(--color-bg) 62%, transparent);
+    -webkit-backdrop-filter: blur(22px) saturate(1.8);
+    backdrop-filter: blur(22px) saturate(1.8);
+    box-shadow: 0 1px 0 var(--hairline);
+  }
+  .app-scroll {
+    padding-top: calc(var(--topbar-h, 0px) + var(--space-3));
+    padding-bottom: calc(var(--tabbar-float-bottom) + var(--tabbar-float-h) + var(--space-6));
+  }
+  /* The page sits under the top bar, so scroll targets clear it. */
+  .app-scroll { scroll-padding-top: var(--topbar-h, 0px); }
+
+  /* Assistant button: a glass circle above the tab bar. */
+  .ai-bubble {
+    position: fixed;
+    right: var(--space-4);
+    bottom: calc(var(--tabbar-float-bottom) + var(--tabbar-float-h) + var(--space-3));
+    z-index: var(--z-rail);
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    color: var(--content-primary);
+    cursor: pointer;
+  }
+}
+
+/* Increase Contrast / no backdrop support: solid bars instead of glass. */
+@media (max-width: 900px) and (prefers-contrast: more) {
+  .tabbar, .glass, .app-main[data-scrolled="true"] .phone-topbar {
+    background: var(--color-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border-color: var(--color-divider);
+  }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tabbar, .glass, .app-main[data-scrolled="true"] .phone-topbar { background: var(--color-surface); }
+}
+
+/* Phone: the assistant fills the space between the glass bars, with the
+   composer at the bottom, above the tab bar. */
+.assistant-phone {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - var(--topbar-h, 0px) - var(--tabbar-float-h, 0px) - var(--tabbar-float-bottom, 0px) - var(--space-10));
+}
+
+/* Menus and the command palette float above the page (the functional layer),
+   so they get Liquid Glass too, in its thicker "regular" weight because they
+   hold text (HIG liquid-glass.md › Which variant). */
+.menu,
+.palette,
+:root[data-theme="light"] .menu,
+:root[data-theme="light"] .palette {
+  background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(1.8);
+  backdrop-filter: blur(28px) saturate(1.8);
+  border-color: var(--glass-edge);
+  box-shadow: var(--shadow-overlay), inset 0 1px 0 var(--glass-highlight);
+}
+@media (prefers-contrast: more) {
+  .menu, .palette { background: var(--color-surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+/* Start-up for household members: just the icon while the checks run. */
+.quiet-splash { position: fixed; inset: 0; display: grid; place-items: center; background: var(--color-bg); }
+.phone-summary-chart { display: block; width: 100%; margin-top: var(--space-2); }
+
+/* ══ Motion: one curve (--ease-out), 300ms at most, nothing bounces, nothing
+   blocks a tap. Pages rise in section by section; charts draw in; bars fill.
+   Reduced Motion (base.css) cuts all of it to an instant change, with the
+   page itself still cross-fading so a new screen registers. ══ */
+
+/* Pages: the page fades, its sections rise 8px in quick succession. A
+   section waits at most 60ms, so the whole page is in by 300ms. */
+.page { animation: fadeIn var(--dur-fast) var(--ease-out) both; }
+.page > :not(.grid),
+.page > .grid > * {
+  animation: fadeUp 240ms var(--ease-out) both;
+}
+.page > :not(.grid):nth-child(2), .page > .grid > :nth-child(2) { animation-delay: 20ms; }
+.page > :not(.grid):nth-child(3), .page > .grid > :nth-child(3) { animation-delay: 40ms; }
+.page > :not(.grid):nth-child(n + 4), .page > .grid > :nth-child(n + 4) { animation-delay: 60ms; }
+
+/* Charts and bars */
+.chart-reveal { animation: revealX var(--dur-slow) var(--ease-out) both; }
+.bar > i { transform-origin: left center; animation: growX var(--dur-slow) var(--ease-out) both; }
+.grow-x { transform-origin: left center; animation: growX var(--dur-slow) var(--ease-out) both; }
+.grow-up { transform-origin: bottom center; animation: growY var(--dur-slow) var(--ease-out) both; }
+.pie-in { transform-origin: center; animation: turnIn var(--dur-slow) var(--ease-out) both; }
+
+/* Phone tab bar: the selected lozenge glides to the tapped tab (TabBar.tsx
+   sets --tab-index / --tab-count), instead of jumping. */
+@media (max-width: 900px) {
+  .tabbar-indicator {
+    position: absolute;
+    top: var(--space-1);
+    bottom: var(--space-1);
+    left: var(--space-1);
+    width: calc((100% - var(--space-2)) / var(--tab-count, 5));
+    transform: translateX(calc(100% * var(--tab-index, 0)));
+    border-radius: calc((var(--tabbar-float-h) - var(--space-2)) / 2);
+    background: color-mix(in srgb, var(--color-text) 9%, transparent);
+    transition: transform 260ms var(--ease-out);
+    pointer-events: none;
+  }
+  .tabbar:has(.tabbar-indicator) .tab-item[data-active],
+  .tabbar:has(.tabbar-indicator) .tab-item[data-active]:active { background: transparent; }
+  .tab-item { position: relative; z-index: 1; }
+}
+@media (min-width: 901px) { .tabbar-indicator { display: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .page > :not(.grid), .page > .grid > * { animation: none !important; }
+  .chart-reveal, .bar > i, .grow-x, .grow-up, .pie-in { animation: none !important; }
+  .tabbar-indicator { transition: none !important; }
 }

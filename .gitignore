@@ -9,6 +9,7 @@ docker/certs/*.key
 .embedded-postgres/
 coverage/
 .dev-stack/
+.dev-stack-preview/
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
 docker/data/

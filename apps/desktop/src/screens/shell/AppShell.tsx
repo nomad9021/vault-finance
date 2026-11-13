@@ -1,7 +1,10 @@
 import { Banner, Button, CommandPalette, ErrorBoundary, type Command } from "@vault/ui";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useLayoutMode } from "../../lib/useLayout.js";
 import { useAutoLock } from "../../lib/autoLock.js";
+import { PULL_TRIGGER, usePullToRefresh } from "../../lib/usePullToRefresh.js";
+import { useSyncOnOpen } from "../../lib/useSyncOnOpen.js";
+import { useChat } from "../../state/chat.js";
 import { useApp } from "../../state/store.js";
 import { AccountsPage } from "./AccountsPage.js";
 import { AssistantBubble } from "./AssistantBubble.js";
@@ -102,12 +105,37 @@ export function AppShell() {
   const group = groupOf(page);
   const meta = pageMeta(page);
   const narrow = mode === "narrow";
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // Opening or unlocking the app (iPhone or computer) syncs the bank data.
+  useSyncOnOpen();
+  const refreshData = useChat((s) => s.refreshData);
+  const { pull, refreshing } = usePullToRefresh(scrollRef, refreshData, narrow);
+  // Phone: the glass top bar overlays the page, so the page pads by its height.
+  const topbarRef = useRef<HTMLDivElement>(null);
+  const [topbarH, setTopbarH] = useState(0);
+  useEffect(() => {
+    const el = topbarRef.current;
+    if (!el || !narrow) return;
+    const ro = new ResizeObserver(() => setTopbarH(Math.round(el.getBoundingClientRect().height)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [narrow]);
+  // Phone large title: big at the top of a page, shrinks once it scrolls.
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => setScrolled(el.scrollTop > 8);
+    onScroll();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [page]);
 
   return (
     <div
       style={{
         display: "flex",
-        height: "100vh",
+        height: "100dvh",
         overflow: "hidden",
         background: "var(--color-bg)",
         color: "var(--content-primary)",
@@ -118,7 +146,11 @@ export function AppShell() {
       {mode === "wide" && sidebarMini && <Rail page={page} onNavigate={navigate} expandable />}
       {mode === "medium" && <Rail page={page} onNavigate={navigate} />}
 
-      <main className="app-main">
+      <main
+        className="app-main"
+        data-scrolled={scrolled ? "true" : "false"}
+        style={narrow ? ({ "--topbar-h": `${topbarH}px` } as CSSProperties) : undefined}
+      >
         {connection === "offline" && (
           <Banner tone="warning" action={<ReconnectAction />}>
             Connection to the server lost — reconnecting. Your data is safe on the
@@ -126,20 +158,38 @@ export function AppShell() {
           </Banner>
         )}
 
-        <Header
-          title={meta.title}
-          mode={mode}
-          onOpenPalette={() => setPaletteOpen(true)}
-          onNavigate={navigate}
-        />
+        {/* Phone: the title bar and page tabs float as one glass layer over the
+            page, which scrolls beneath it (components.css, .phone-topbar). */}
+        <div className={narrow ? "phone-topbar" : "contents"} ref={topbarRef}>
+          <Header
+            title={meta.title}
+            mode={mode}
+            onOpenPalette={() => setPaletteOpen(true)}
+            onNavigate={navigate}
+          />
 
-        {narrow && (
-          <div style={{ padding: "0 var(--space-4)", flex: "none", background: "var(--color-bg)" }}>
-            <GroupTabs group={group} page={page} onNavigate={navigate} />
-          </div>
-        )}
+          {narrow && (
+            <div style={{ padding: "0 var(--space-4)", flex: "none" }}>
+              <GroupTabs group={group} page={page} onNavigate={navigate} />
+            </div>
+          )}
+        </div>
 
-        <div className="app-scroll">
+        <div className="app-scroll" ref={scrollRef}>
+          {narrow && (
+            <div
+              className="ptr"
+              aria-hidden={!refreshing}
+              role="status"
+              style={{ height: pull, opacity: Math.min(1, pull / PULL_TRIGGER) }}
+            >
+              <span
+                className={refreshing ? "ptr-spin is-spinning" : "ptr-spin"}
+                style={refreshing ? undefined : { transform: `rotate(${pull * 4}deg)` }}
+              />
+              {refreshing && <span className="sr-only">Refreshing</span>}
+            </div>
+          )}
           {/* Scoped to the page body so a crash leaves the sidebar, header and
               command palette usable — you can just navigate away. Keyed on the
               page so moving elsewhere clears the error automatically. */}
@@ -156,7 +206,9 @@ export function AppShell() {
         )}
       </main>
 
-      {aiVisible && page !== "assistant" && <AssistantBubble onOpenPage={() => navigate("assistant")} />}
+      {aiVisible && page !== "assistant" && (
+        <AssistantBubble phone={narrow} onOpenPage={() => navigate("assistant")} />
+      )}
       <CommandPalette
         open={paletteOpen}
         commands={commands}

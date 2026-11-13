@@ -56,7 +56,7 @@ export function PieChart({ data, format, centerLabel, ariaLabel = "Breakdown" }:
 
   return (
     <div style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
-      <svg
+      <svg className="pie-in"
         viewBox={`0 0 ${SIZE} ${SIZE}`}
         style={{ width: SIZE, maxWidth: "100%", height: "auto", flex: "0 0 auto" }}
         role="img"

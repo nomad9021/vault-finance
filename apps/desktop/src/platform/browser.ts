@@ -1,3 +1,4 @@
+import { isPhonePreview, isPreview } from "./phonePreview.js";
 import type { HostPlatform, ProbeResult } from "./types.js";
 
 /**
@@ -7,10 +8,14 @@ import type { HostPlatform, ProbeResult } from "./types.js";
  */
 export function createBrowserPlatform(): HostPlatform {
   const prefix = "vault.";
+  // Dev-only previews (phonePreview.ts); dropped from release builds.
+  const preview = import.meta.env.DEV && isPreview();
+  const phonePreview = import.meta.env.DEV && isPhonePreview();
   return {
     kind: "browser",
-    platformName: "linux",
-    deviceName: "Browser (dev)",
+    // The phone preview (phonePreview.ts) renders the iPhone variant.
+    platformName: phonePreview ? "ios" : "linux",
+    deviceName: phonePreview ? "Phone preview" : preview ? "Desktop preview" : "Browser (dev)",
     fetchImpl: async (url, init) => {
       const res = await fetch(url, init);
       return { status: res.status, text: () => res.text() };
@@ -59,9 +64,18 @@ export function createBrowserPlatform(): HostPlatform {
     async installUpdateAndRestart() {},
 
     async biometricStatus() {
+      // Previews: pretend this device has Face ID / Touch ID, to show the lock flow.
+      if (preview) return { available: true, label: phonePreview ? "Face ID" : "Touch ID" };
       return { available: false, label: "Biometrics", reason: "Not available in browser dev mode." };
     },
     async biometricAuthenticate() {
+      if (preview) {
+        // Recognised after a moment, or not with `&faceid=fail` on the URL.
+        await new Promise((r) => setTimeout(r, 1200));
+        return new URLSearchParams(location.search).get("faceid") === "fail"
+          ? { ok: false, reason: "failed" }
+          : { ok: true };
+      }
       return { ok: false, reason: "unavailable" };
     },
     async biometricCancel() {},
