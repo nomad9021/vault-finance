@@ -268,7 +268,7 @@ export function DebtCalculator() {
             style={{
               fontSize: "var(--text-5xl)",
               lineHeight: 1,
-              animation: celebrate ? "debtFreePop .55s var(--ease) both" : undefined,
+              animation: celebrate ? "debtFreePop var(--dur-slow) var(--ease) both" : undefined,
             }}
           >
             🎉

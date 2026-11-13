@@ -83,7 +83,7 @@ function TrendsTab() {
             height: 220,
           }}
         >
-          {months.map((m) => (
+          {months.map((m, i) => (
             <div
               key={m.month}
               style={{
@@ -108,7 +108,9 @@ function TrendsTab() {
               >
                 <div
                   title={`Income ${formatCentsWhole(m.incomeCents)}`}
+                  className="grow-up"
                   style={{
+                    animationDelay: `${Math.min(i, 5) * 20}ms`,
                     width: "26%",
                     maxWidth: 30,
                     height: `${(m.incomeCents / max) * 100}%`,
@@ -119,7 +121,9 @@ function TrendsTab() {
                 />
                 <div
                   title={`Spending ${formatCentsWhole(m.spendingCents)}`}
+                  className="grow-up"
                   style={{
+                    animationDelay: `${Math.min(i, 5) * 20}ms`,
                     width: "26%",
                     maxWidth: 30,
                     height: `${(m.spendingCents / max) * 100}%`,

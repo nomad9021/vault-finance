@@ -302,12 +302,13 @@ function BudgetBar({
         }}
       >
         <div
+          className="grow-x"
           style={{
             height: "100%",
             borderRadius: 99,
             width: `${Math.min(pct, 1) * 100}%`,
             background: over ? "var(--color-negative)" : color,
-            transition: "width .3s ease",
+            transition: "width var(--dur-slow) var(--ease-out)",
           }}
         />
       </div>

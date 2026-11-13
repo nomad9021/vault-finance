@@ -15,8 +15,16 @@ export function TabBar({
   onSelectGroup: (g: GroupId, firstPage: PageId) => void;
 }) {
   const aiVisible = useApp((s) => s.aiVisible);
+  const shown = NAV_GROUPS.filter((g) => visiblePages(g, aiVisible).length > 0);
+  const index = Math.max(0, shown.findIndex((g) => g.id === group));
   return (
-    <nav className="tabbar" aria-label="Sections">
+    <nav
+      className="tabbar"
+      aria-label="Sections"
+      style={{ ["--tab-index" as string]: index, ["--tab-count" as string]: shown.length }}
+    >
+      {/* The selected lozenge, gliding between tabs (components.css). */}
+      <span className="tabbar-indicator" aria-hidden="true" />
       {NAV_GROUPS.map((g) => {
         const pages = visiblePages(g, aiVisible);
         const first = pages[0];

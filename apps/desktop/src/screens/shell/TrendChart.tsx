@@ -69,7 +69,7 @@ export function TrendChart({
   ].join(" ");
   const area = `${histLine} L${x(last).toFixed(1)},${(H - pad).toFixed(1)} L${x(0).toFixed(1)},${(H - pad).toFixed(1)} Z`;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }} preserveAspectRatio="none" aria-hidden>
+    <svg className="chart-reveal" viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto", display: "block" }} preserveAspectRatio="none" aria-hidden>
       {showArea && <path d={area} fill={`color-mix(in srgb, ${color} 13%, transparent)`} />}
       <path d={histLine} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
       {projected.length > 0 && (

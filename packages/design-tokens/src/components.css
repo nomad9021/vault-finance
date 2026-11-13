@@ -1830,3 +1830,53 @@ button.list-row:active, .list-row[role="button"]:active {
 /* Start-up for household members: just the icon while the checks run. */
 .quiet-splash { position: fixed; inset: 0; display: grid; place-items: center; background: var(--color-bg); }
 .phone-summary-chart { display: block; width: 100%; margin-top: var(--space-2); }
+
+/* ══ Motion: one curve (--ease-out), 300ms at most, nothing bounces, nothing
+   blocks a tap. Pages rise in section by section; charts draw in; bars fill.
+   Reduced Motion (base.css) cuts all of it to an instant change, with the
+   page itself still cross-fading so a new screen registers. ══ */
+
+/* Pages: the page fades, its sections rise 8px in quick succession. A
+   section waits at most 60ms, so the whole page is in by 300ms. */
+.page { animation: fadeIn var(--dur-fast) var(--ease-out) both; }
+.page > :not(.grid),
+.page > .grid > * {
+  animation: fadeUp 240ms var(--ease-out) both;
+}
+.page > :not(.grid):nth-child(2), .page > .grid > :nth-child(2) { animation-delay: 20ms; }
+.page > :not(.grid):nth-child(3), .page > .grid > :nth-child(3) { animation-delay: 40ms; }
+.page > :not(.grid):nth-child(n + 4), .page > .grid > :nth-child(n + 4) { animation-delay: 60ms; }
+
+/* Charts and bars */
+.chart-reveal { animation: revealX var(--dur-slow) var(--ease-out) both; }
+.bar > i { transform-origin: left center; animation: growX var(--dur-slow) var(--ease-out) both; }
+.grow-x { transform-origin: left center; animation: growX var(--dur-slow) var(--ease-out) both; }
+.grow-up { transform-origin: bottom center; animation: growY var(--dur-slow) var(--ease-out) both; }
+.pie-in { transform-origin: center; animation: turnIn var(--dur-slow) var(--ease-out) both; }
+
+/* Phone tab bar: the selected lozenge glides to the tapped tab (TabBar.tsx
+   sets --tab-index / --tab-count), instead of jumping. */
+@media (max-width: 900px) {
+  .tabbar-indicator {
+    position: absolute;
+    top: var(--space-1);
+    bottom: var(--space-1);
+    left: var(--space-1);
+    width: calc((100% - var(--space-2)) / var(--tab-count, 5));
+    transform: translateX(calc(100% * var(--tab-index, 0)));
+    border-radius: calc((var(--tabbar-float-h) - var(--space-2)) / 2);
+    background: color-mix(in srgb, var(--color-text) 9%, transparent);
+    transition: transform 260ms var(--ease-out);
+    pointer-events: none;
+  }
+  .tabbar:has(.tabbar-indicator) .tab-item[data-active],
+  .tabbar:has(.tabbar-indicator) .tab-item[data-active]:active { background: transparent; }
+  .tab-item { position: relative; z-index: 1; }
+}
+@media (min-width: 901px) { .tabbar-indicator { display: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .page > :not(.grid), .page > .grid > * { animation: none !important; }
+  .chart-reveal, .bar > i, .grow-x, .grow-up, .pie-in { animation: none !important; }
+  .tabbar-indicator { transition: none !important; }
+}
