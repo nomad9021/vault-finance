@@ -34,7 +34,7 @@ import {
 import { describeProbeFailure, runChecks, type UiCheck } from "../lib/startupChecks.js";
 import { applyPhonePreviewLook, isPreview, signInPhonePreview } from "../platform/phonePreview.js";
 
-export const APP_VERSION = "0.1.20";
+export const APP_VERSION = "0.2.0";
 
 export type Screen =
   | { name: "boot" }
