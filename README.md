@@ -16,7 +16,7 @@
 <p align="center">
   <a href="https://github.com/nomad9021/vault-finance/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/nomad9021/vault-finance?display_name=tag&sort=semver&color=1c1c1e"></a>
   <a href="https://github.com/nomad9021/vault-finance/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/nomad9021/vault-finance/ci.yml?branch=main&label=ci"></a>
-  <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-1c1c1e"></a>
+  <a href="LICENSE"><img alt="AGPL-3.0 licence" src="https://img.shields.io/badge/licence-AGPL--3.0-1c1c1e"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux%20%C2%B7%20iPhone-1c1c1e">
 </p>
 
@@ -356,4 +356,11 @@ checks shown only to the household owner. Phase 1 (M1–M6) is complete; see
 
 ## Licence
 
-[MIT](LICENSE)
+Vault Finance is free software under the [GNU Affero General Public License
+v3.0](LICENSE) (AGPL-3.0-only). In short: you may use, study and change it, but
+if you distribute it, or run a modified version for other people over a
+network, you must make your complete source code available to them under the
+same licence.
+
+Copyright © 2026 nomad9021. Versions up to and including v0.2.0 were released
+under the MIT licence.
