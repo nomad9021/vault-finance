@@ -1,4 +1,6 @@
 import "@vault/design-tokens/index.css";
+// Rounded display face for the sign-in screen where SF Pro Rounded (ui-rounded) isn't available.
+import "@fontsource-variable/nunito";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.js";

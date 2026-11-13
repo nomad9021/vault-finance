@@ -89,7 +89,7 @@ interface AppState {
   /** Sidebar groups the user folded up, and whether the sidebar is shrunk to icons. Per device. */
   navCollapsed: string[];
   sidebarMini: boolean;
-  /** iPhone: show the cash-flow diagram on Home (per device; on by default). */
+  /** Show the cash-flow diagram on Home (per device; on by default). */
   showSankey: boolean;
   setNavCollapsed(groups: string[]): Promise<void>;
   setSidebarMini(mini: boolean): Promise<void>;
@@ -441,6 +441,12 @@ export const useApp = create<AppState>((set, get) => ({
           const user = await client.me();
           // Dev-only design preview: straight in (phonePreview.ts).
           if (import.meta.env.DEV && isPhonePreview()) {
+            // The preview "phone" has Face ID on for this profile.
+            const address = get().serverAddress;
+            if (address) {
+              set({ biometricUserIds: [user.id] });
+              void get().platform.saveValue(biometricUsersKey(address), JSON.stringify([user.id]));
+            }
             get().signedIn(user);
             return;
           }
@@ -899,6 +905,7 @@ export async function bootstrap(): Promise<void> {
       addressKey: ADDRESS_KEY,
       tokensKey: TOKENS_KEY,
       identityKey: deviceIdentityKey,
+      biometricUsersKey,
     }).catch((err: unknown) => console.error("phone preview sign-in failed", err));
   }
   void platform.biometricStatus().then((biometric) => useApp.setState({ biometric }));

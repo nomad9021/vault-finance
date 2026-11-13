@@ -52,6 +52,8 @@ interface StoreKeys {
   addressKey: string;
   tokensKey: string;
   identityKey(address: string): string;
+  /** Where this device lists the profiles enrolled for Face ID. */
+  biometricUsersKey(address: string): string;
 }
 
 /**
@@ -85,8 +87,14 @@ export async function signInPhonePreview(store: StoreKeys): Promise<void> {
     console.error("phone preview: demo sign-in failed", res.status, await res.text());
     return;
   }
-  const { accessToken, refreshToken } = (await res.json()) as { accessToken: string; refreshToken: string };
+  const { accessToken, refreshToken, user } = (await res.json()) as {
+    accessToken: string;
+    refreshToken: string;
+    user: { id: string };
+  };
   await store.saveValue(store.addressKey, address);
+  // The preview "phone" has Face ID turned on for the demo profile.
+  await store.saveValue(store.biometricUsersKey(address), JSON.stringify([user.id]));
   await store.setSecret(store.identityKey(address), JSON.stringify(identity));
   await store.setSecret(store.tokensKey, JSON.stringify({ accessToken, refreshToken }));
 }

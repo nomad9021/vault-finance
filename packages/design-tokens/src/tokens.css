@@ -23,6 +23,9 @@
    ══════════════════════════════════════════════════════════════════════ */
 
 :root {
+  /* Rounded display face for the sign-in screen: SF Pro Rounded on Apple
+     devices, the bundled Nunito elsewhere. */
+  --font-rounded: ui-rounded, "SF Pro Rounded", "Nunito Variable", system-ui, sans-serif;
   /* The app icon for the current theme (AppMark). */
   --app-icon: url("/app-icon-light.png");
   /* Device safe areas (notch, home bar). Always read these instead of env()

@@ -95,6 +95,7 @@ export function SettingsPage({ initialTab }: { initialTab?: string } = {}) {
       {tab === "general" && (
         <>
           <ProfileSection />
+          <HomeScreenSection />
           <AppearanceSection />
           <ReviewSection />
           <HouseholdSection />
@@ -2553,12 +2554,32 @@ function NetworkSection() {
   );
 }
 
+/** What Home shows on this device. */
+function HomeScreenSection() {
+  const showSankey = useApp((s) => s.showSankey);
+  const setShowSankey = useApp((s) => s.setShowSankey);
+  return (
+    <Card kicker="Home screen" title="Cash-flow diagram">
+      <p className="card-body">
+        The diagram of where your income goes, with its month and view controls. Hiding it
+        only affects this device.
+      </p>
+      <Segmented
+        aria-label="Cash-flow diagram on Home"
+        options={[
+          { value: "show", label: "Show" },
+          { value: "hide", label: "Hide" },
+        ]}
+        value={showSankey ? "show" : "hide"}
+        onChange={(v) => void setShowSankey(v === "show")}
+      />
+    </Card>
+  );
+}
+
 function AppearanceSection() {
   const theme = useApp((s) => s.theme);
   const setTheme = useApp((s) => s.setTheme);
-  const ios = useApp((s) => s.platform.platformName === "ios");
-  const showSankey = useApp((s) => s.showSankey);
-  const setShowSankey = useApp((s) => s.setShowSankey);
   return (
     <Card kicker="Appearance" title="Theme">
       <p className="card-body">
@@ -2570,22 +2591,6 @@ function AppearanceSection() {
         value={theme}
         onChange={(t) => void setTheme(t)}
       />
-      {ios && (
-        <label className="check" style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "var(--text-sm)", marginTop: "var(--space-4)" }}>
-          <input
-            type="checkbox"
-            checked={showSankey}
-            onChange={(e) => void setShowSankey(e.target.checked)}
-            style={{ marginTop: 3 }}
-          />
-          <span>
-            Show the cash-flow diagram on Home
-            <span className="t-xs t-tertiary" style={{ display: "block" }}>
-              This iPhone only. Your computer keeps its own setting.
-            </span>
-          </span>
-        </label>
-      )}
     </Card>
   );
 }

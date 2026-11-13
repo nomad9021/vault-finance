@@ -130,8 +130,8 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
   const client = useApp((s) => s.client);
   const phone = useLayoutMode() === "narrow";
   const weekStart = useApp((s) => s.reviewPrefs.weekStartsOn);
-  // iPhone: the cash-flow diagram can be switched off in Settings → Appearance.
-  const hideSankey = useApp((s) => s.platform.platformName === "ios" && !s.showSankey);
+  // Settings → General → Home screen can hide the cash-flow diagram (per device).
+  const hideSankey = useApp((s) => !s.showSankey);
 
   // Trends come first: they carry six months of income/spending, which is
   // enough to choose a sensible default month without another request.

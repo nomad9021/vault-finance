@@ -8,7 +8,7 @@
 //! Windows: the input desktop can't be opened while the workstation is locked.
 //! iOS: the moment the app stops being active (swiping up to the app
 //! switcher or home, Control Centre, a call) it locks and covers its window,
-//! so the app switcher's snapshot shows only the app's name.
+//! so the app switcher's snapshot shows only a padlock.
 //! macOS: not watched here (sleep and idle locking still apply).
 
 use tauri::{AppHandle, Emitter};
@@ -198,10 +198,6 @@ mod imp {
         static UIApplicationDidBecomeActiveNotification: *const AnyObject;
     }
 
-    unsafe fn nsstring(s: &std::ffi::CStr) -> *mut AnyObject {
-        msg_send![class!(NSString), stringWithUTF8String: s.as_ptr()]
-    }
-
     /// The app's window (one window, one scene).
     unsafe fn window() -> *mut AnyObject {
         let app: *mut AnyObject = msg_send![class!(UIApplication), sharedApplication];
@@ -228,7 +224,7 @@ mod imp {
         let bg: *mut AnyObject = msg_send![class!(UIColor), systemBackgroundColor];
         let _: () = msg_send![&*cover, setBackgroundColor: bg];
 
-        // The app's padlock and name, centred: "just the app", nothing else.
+        // Just the padlock, centred: no name, no text, nothing else.
         let data: *mut AnyObject = msg_send![
             class!(NSData),
             dataWithBytes: LOCK_PNG.as_ptr().cast::<std::ffi::c_void>(),
@@ -237,22 +233,11 @@ mod imp {
         let img: *mut AnyObject = msg_send![class!(UIImage), imageWithData: data];
         let icon: Allocated<AnyObject> = msg_send![class!(UIImageView), alloc];
         let icon: Retained<AnyObject> = msg_send![icon, initWithImage: img];
-        let _: () = msg_send![&*icon, setFrame: rect(w / 2.0 - 28.0, h / 2.0 - 72.0, 56.0, 58.0)];
+        let _: () = msg_send![&*icon, setFrame: rect(w / 2.0 - 36.0, h / 2.0 - 37.0, 72.0, 74.0)];
         let _: () = msg_send![&*icon, setContentMode: 1isize]; // scale aspect fit
         let _: () = msg_send![&*icon, setAutoresizingMask: 45usize]; // keep centred on rotation
 
-        let label: Allocated<AnyObject> = msg_send![class!(UILabel), alloc];
-        let label: Retained<AnyObject> = msg_send![label, initWithFrame: rect(0.0, h / 2.0, w, 32.0)];
-        let _: () = msg_send![&*label, setText: nsstring(c"Vault Finance")];
-        let _: () = msg_send![&*label, setTextAlignment: 1isize]; // centre
-        let font: *mut AnyObject = msg_send![class!(UIFont), boldSystemFontOfSize: 22.0f64];
-        let _: () = msg_send![&*label, setFont: font];
-        let fg: *mut AnyObject = msg_send![class!(UIColor), labelColor];
-        let _: () = msg_send![&*label, setTextColor: fg];
-        let _: () = msg_send![&*label, setAutoresizingMask: 42usize]; // flexible width + top/bottom margins
-
         let _: () = msg_send![&*cover, addSubview: &*icon];
-        let _: () = msg_send![&*cover, addSubview: &*label];
         let _: () = msg_send![win, addSubview: &*cover];
     }
 

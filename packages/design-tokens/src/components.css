@@ -1669,8 +1669,26 @@ button.list-row:active, .list-row[role="button"]:active {
   }
 }
 
-/* Lock screen padlock (LoginScreen while locked). */
-.lock-mark { width: 56px; height: auto; display: block; }
+/* Sign-in heading: big, rounded, unmistakably a phone app. */
+.auth-title {
+  margin: var(--space-1) 0 0;
+  font-family: var(--font-rounded);
+  font-weight: 700;
+  font-size: var(--text-3xl);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  color: var(--content-primary);
+}
+
+/* Locked, waiting on Face ID: only the padlock on the page ground. */
+.lock-veil {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--color-bg);
+}
+.lock-veil-mark { width: 72px; height: auto; display: block; }
 
 /* ══ Phone: Liquid Glass on the floating layer only (Apple HIG,
    liquid-glass.md): the tab bar, the title bar and the assistant button.
@@ -1782,4 +1800,12 @@ button.list-row:active, .list-row[role="button"]:active {
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .tabbar, .glass, .app-main[data-scrolled="true"] .phone-topbar { background: var(--color-surface); }
+}
+
+/* Phone: the assistant fills the space between the glass bars, with the
+   composer at the bottom, above the tab bar. */
+.assistant-phone {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - var(--topbar-h, 0px) - var(--tabbar-float-h, 0px) - var(--tabbar-float-bottom, 0px) - var(--space-10));
 }

@@ -76,6 +76,30 @@ const seed = spawnSync("node", [path.join(repo, "scripts/seed-demo.mjs")], {
 });
 if (seed.status !== 0) console.error("[phone-preview] seeding failed; the preview may be empty");
 
+// Turn the assistant on so its button and page show, as they do on a real
+// server with AI set up. It points at an address with nothing behind it, so
+// asking it something just says the AI isn't reachable; nothing leaves this
+// machine.
+try {
+  const login = await fetch(`${base}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: EMAIL, password: PASSWORD, deviceName: "phone-preview", platform: "linux", ...device }),
+  }).then((r) => r.json());
+  const auth = { authorization: `Bearer ${login.accessToken}`, "content-type": "application/json" };
+  const status = await fetch(`${base}/api/v1/ai/status`, { headers: auth }).then((r) => r.json());
+  if (!status.enabled || !status.configured) {
+    const r = await fetch(`${base}/api/v1/ai/settings`, {
+      method: "POST",
+      headers: auth,
+      body: JSON.stringify({ enabled: true, provider: "local_openai", model: "demo", baseUrl: "http://127.0.0.1:9" }),
+    });
+    console.log(`[phone-preview] demo assistant ${r.ok ? "switched on" : `not switched on (${r.status})`}`);
+  }
+} catch (err) {
+  console.error("[phone-preview] couldn't switch the demo assistant on", err);
+}
+
 const web = spawn("pnpm", ["exec", "vite", "--host", "127.0.0.1", "--port", String(WEB_PORT)], {
   cwd: path.join(repo, "apps/desktop"),
   stdio: "inherit",

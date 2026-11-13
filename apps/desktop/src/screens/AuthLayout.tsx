@@ -79,9 +79,7 @@ export function AuthHeading({
       }}
     >
       {mark ?? <AppMark />}
-      <div style={{ fontFamily: "var(--font-heading)", fontWeight: 600, fontSize: "var(--text-xl)" }}>
-        {title}
-      </div>
+      <h1 className="auth-title">{title}</h1>
       <div style={{ fontSize: "var(--text-sm)", color: "var(--content-tertiary)" }}>{subtitle}</div>
     </div>
   );

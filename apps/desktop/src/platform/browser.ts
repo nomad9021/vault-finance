@@ -63,9 +63,18 @@ export function createBrowserPlatform(): HostPlatform {
     async installUpdateAndRestart() {},
 
     async biometricStatus() {
+      // Phone preview: pretend this "phone" has Face ID, to show the lock flow.
+      if (preview) return { available: true, label: "Face ID" };
       return { available: false, label: "Biometrics", reason: "Not available in browser dev mode." };
     },
     async biometricAuthenticate() {
+      if (preview) {
+        // Recognised after a moment, or not with `&faceid=fail` on the URL.
+        await new Promise((r) => setTimeout(r, 1200));
+        return new URLSearchParams(location.search).get("faceid") === "fail"
+          ? { ok: false, reason: "failed" }
+          : { ok: true };
+      }
       return { ok: false, reason: "unavailable" };
     },
     async biometricCancel() {},
