@@ -4,7 +4,7 @@ version = "0.2.0"
 description = "Vault Finance — self-hosted personal finance"
 authors = ["Vault Finance contributors"]
 edition = "2021"
-license = "MIT"
+license = "AGPL-3.0-only"
 
 [lib]
 name = "vault_desktop_lib"

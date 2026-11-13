@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "description": "Self-hosted, AI-powered personal finance \u2014 your finances, your AI, your server.",
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "packageManager": "pnpm@9.15.4",
   "engines": {
     "node": ">=22"
