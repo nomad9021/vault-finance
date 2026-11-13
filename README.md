@@ -1,19 +1,72 @@
-# Vault Finance
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/app-icon-dark.png">
+    <img src="docs/images/app-icon-light.png" width="96" height="96" alt="Vault Finance app icon">
+  </picture>
+</p>
 
-Self-hosted, AI-powered personal finance. Your data, your AI, your server —
-nothing ever leaves your hardware.
+<h1 align="center">Vault Finance</h1>
 
-- **Server**: Fastify + PostgreSQL, deployed with Docker Compose on a machine
-  you control.
-- **Desktop apps**: Windows / macOS / Linux (Tauri 2 + React), connecting to
-  your server over LAN or Tailscale.
-- **Mobile viewer**: a read-only, password-protected phone view served by the
-  server itself — open it in your phone's browser, add to home screen.
-- **AI**: optional and off by default. Bring your own provider — Ollama or
-  any OpenAI-compatible local server (LM Studio, llama.cpp, vLLM…), bundled or
-  on a separate GPU machine (nothing leaves your hardware), or your own
-  OpenAI / Anthropic key. No telemetry, ever
-  ([ADR-0006](docs/adr/0006-optional-multi-provider-ai.md)).
+<p align="center">
+  <strong>Private, self-hosted household finance.</strong><br>
+  Budgets, cash flow, goals and investments on your computer and your iPhone,<br>
+  served from a machine you own. Nothing leaves your hardware.
+</p>
+
+<p align="center">
+  <a href="https://github.com/nomad9021/vault-finance/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/nomad9021/vault-finance?display_name=tag&sort=semver&color=1c1c1e"></a>
+  <a href="https://github.com/nomad9021/vault-finance/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/nomad9021/vault-finance/ci.yml?branch=main&label=ci"></a>
+  <a href="LICENSE"><img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-1c1c1e"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux%20%C2%B7%20iPhone-1c1c1e">
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.jpg">
+    <img src="docs/images/hero-light.jpg" width="900" alt="Vault Finance on a desktop and an iPhone: net worth, budgets and the cash-flow diagram">
+  </picture>
+</p>
+
+## Why Vault Finance
+
+- **Yours, end to end.** A Fastify + PostgreSQL server runs on your own machine (Docker Compose), with its data in an encrypted volume (offered by the installer, on by default on Linux). The apps talk to it over your LAN or Tailscale with a pinned certificate. No accounts with us, no telemetry, ever.
+- **The whole household.** One server, everyone's accounts. Each new device has to be approved, sign-in can use Face ID, Touch ID or Windows Hello, and the app locks itself the moment you look away.
+- **See where it goes.** A cash-flow diagram from income to every category, weekly or monthly budgets that reset on their own, savings goals, net worth over time, bills, subscriptions, taxes and investments.
+- **Desktop and iPhone.** Native apps for Windows, macOS and Linux with signed auto-updates, and an iPhone app with Face ID, a frosted Liquid Glass tab bar and a lock screen that shows nothing but a padlock.
+- **AI if you want it.** Off by default. Bring your own: Ollama or any OpenAI-compatible server on your own GPU, or your own OpenAI / Anthropic key ([ADR-0006](docs/adr/0006-optional-multi-provider-ai.md)).
+
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/iphone-light-home.png" width="200" alt="iPhone Home: net worth chart, budgets and savings goals"><br><sub>Home</sub></td>
+    <td align="center"><img src="docs/images/iphone-light-budgets.png" width="200" alt="iPhone Budgets"><br><sub>Budgets</sub></td>
+    <td align="center"><img src="docs/images/iphone-light-transactions.png" width="200" alt="iPhone Transactions, grouped by day"><br><sub>Transactions</sub></td>
+    <td align="center"><img src="docs/images/iphone-light-goals.png" width="200" alt="iPhone Savings goals"><br><sub>Savings goals</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/iphone-light-cashflow.png" width="200" alt="iPhone cash-flow diagram"><br><sub>Cash flow</sub></td>
+    <td align="center"><img src="docs/images/iphone-dark-home.png" width="200" alt="iPhone Home in dark mode"><br><sub>Dark mode</sub></td>
+    <td align="center"><img src="docs/images/iphone-dark-lock.png" width="200" alt="Locked: just a padlock while Face ID runs"><br><sub>Locked (Face ID)</sub></td>
+    <td></td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="docs/images/desktop-light-budgets.png" width="49%" alt="Desktop Budgets page">
+  <img src="docs/images/desktop-dark-dashboard.png" width="49%" alt="Desktop dashboard in dark mode">
+</p>
+
+<sub>Screenshots use made-up demo data.</sub>
+
+## Quick start
+
+1. **Server:** on an always-on Linux machine, run
+   `curl -fsSL https://raw.githubusercontent.com/nomad9021/vault-finance/main/installers/server/bootstrap.sh | bash`
+   and answer a few questions ([details below](#1-install-the-server)).
+2. **Desktop app:** download it for Windows, macOS or Linux from the [latest release](https://github.com/nomad9021/vault-finance/releases/latest).
+3. **Connect:** enter your server's address, confirm its fingerprint once, and create the owner account.
+4. **iPhone (optional):** build it on a Mac with your Apple ID; see [docs/ios.md](docs/ios.md).
 
 ---
 
@@ -96,10 +149,6 @@ Clone the repo:
 git clone https://github.com/nomad9021/vault-finance.git
 ```
 
-> **Note:** the installer and mobile viewer currently live on the `dev` branch
-> until the first release is merged to `main`. If `installers/` isn't present
-> after cloning, run `git checkout dev` inside the repo.
-
 Run the guided installer and answer its questions:
 
 ```bash
@@ -176,8 +225,10 @@ port-forward 8443 to the open internet** — use Tailscale or a hardened reverse
 proxy for remote access.
 
 Every time it opens, the app runs a quick **system check** (network,
-Tailscale, server, versions, database, disk, AI, bank sync) and stops with a
-plain-language fix if anything is wrong. If your server is on Tailscale and
+Tailscale, server, versions, database, disk, AI, bank sync). The household
+owner sees it and gets a plain-language fix if anything is wrong; other
+members just see the app icon while it starts, and a one-line explanation if
+something stops it opening. Opening the app also syncs your bank data. If your server is on Tailscale and
 Tailscale is off, the app can **turn it on for you** — from the connect
 screen, the system check, or **Settings → Tailscale**.
 
@@ -239,8 +290,13 @@ Open `https://<server-ip>:8443/` in your phone's browser for the read-only
 mobile view, and add it to your home screen. It locks the moment you switch
 away and signs out after a few minutes idle.
 
-A full iPhone app (the desktop app built for iOS, with Face ID) is in
-progress — it has to be built on a Mac for now. See [docs/ios.md](docs/ios.md).
+### 9. (Optional) The iPhone app
+
+The full iPhone app is the desktop app built for iOS: the same screens with a
+phone layout, Face ID, a Liquid Glass tab bar, swipe actions and pull to
+refresh. It locks as soon as you swipe away, and the app switcher only ever
+shows a padlock. It's built and signed on a Mac with your Apple ID (a free one
+works, with installs that renew every 7 days); see [docs/ios.md](docs/ios.md).
 
 ---
 
@@ -292,7 +348,12 @@ The server dev process needs a `DATABASE_URL` pointing at any Postgres 16+;
 
 ## Status
 
-Phase 1 (M1–M6) is complete: backend core, desktop app, core finance modules,
-optional AI assistant, dashboard Sankey / investments / goals / reports, and
-CI + cross-platform installers with auto-update. See
-[roadmap.md](docs/roadmap.md) for the milestone detail and what's next.
+**v0.2.0** adds the iPhone app and a new look on every platform: new icons, a
+neutral palette, Liquid Glass on the floating controls, motion that never runs
+past 300ms, weekly budgets, bank sync whenever the app opens, and start-up
+checks shown only to the household owner. Phase 1 (M1–M6) is complete; see
+[roadmap.md](docs/roadmap.md) for what's next.
+
+## Licence
+
+[MIT](LICENSE)
