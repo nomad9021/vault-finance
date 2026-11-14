@@ -14,16 +14,16 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
-    "@fastify/cors": "^11.3.1",
+    "@fastify/cors": "^11.4.1",
     "@vault/design-tokens": "workspace:*",
     "@vault/shared": "workspace:*",
-    "argon2": "^0.45.1",
+    "argon2": "^0.45.2",
     "drizzle-orm": "^0.45.4",
-    "fastify": "^5.12.7",
+    "fastify": "^5.12.8",
     "fastify-plugin": "^6.0.1",
-    "jose": "^6.2.12",
-    "nodemailer": "^10.1.7",
-    "openai": "^7.38.0",
+    "jose": "^6.2.17",
+    "nodemailer": "^10.5.0",
+    "openai": "^7.55.0",
     "postgres": "^3.4.5",
     "selfsigned": "^5.5.0",
     "zod": "^3.24.1"
@@ -35,6 +35,6 @@
     "embedded-postgres": "^17.5.0-beta.15",
     "tsx": "^4.23.15",
     "typescript": "^5.7.3",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   }
 }
