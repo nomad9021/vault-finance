@@ -13,6 +13,7 @@ import {
 import {
   Button,
   Card,
+  Dialog,
   EmptyState,
   Icon,
   ListRow,
@@ -22,12 +23,13 @@ import {
   PanelLink,
   ProgressBar,
   Segmented,
+  Sheet,
   Skeleton,
 } from "@vault/ui";
 import { useEffect, useState, type ReactNode } from "react";
 import { availableCents, shownBalance, useShowActualBalances } from "../../lib/balanceView.js";
 import { resolveLayout, SPANS, type ResolvedWidget, type Span } from "../../lib/dashboardLayout.js";
-import { reorder, useDragSort } from "../../lib/dragSort.js";
+import { useHomeArrange } from "../../lib/homeArrange.js";
 import { useData } from "../../lib/useData.js";
 import { useCountUp } from "../../lib/useCountUp.js";
 import { useLayoutMode } from "../../lib/useLayout.js";
@@ -481,99 +483,136 @@ export function DashboardPage({ onNavigate }: { onNavigate: Navigate }) {
     ? shown.filter((w) => !(w.id.startsWith("metric-") && w.id !== firstMetric) && !(anyMetric && w.id === "trend-networth"))
     : shown;
 
-  const placeAt = (dragId: string, targetId: string, zone: "before" | "after" | "inside") => {
-    if (zone === "inside") return;
-    const ids = reorder(layout.map((w) => w.id), dragId, targetId, zone);
-    saveLayout(ids.map((id) => layout.find((w) => w.id === id)!));
-  };
-  const dnd = { ...useDragSort({ onDrop: placeAt }), onDropAt: placeAt };
   const setWidget = (id: string, patch: Partial<ResolvedWidget>) => saveLayout(layout.map((w) => (w.id === id ? { ...w, ...patch } : w)));
   const hidden = layout.filter((w) => w.hidden);
   const editItems = layout.filter((w) => !w.hidden);
+  const items = editing ? editItems : viewItems;
+  const arrange = useHomeArrange({
+    ids: items.map((w) => w.id),
+    editing,
+    onStartEditing: () => setEditing(true),
+    // The visible cards in their new order; hidden ones keep their place after.
+    onCommit: (ids) => saveLayout([...ids.map((id) => layout.find((w) => w.id === id)!).filter(Boolean), ...hidden]),
+  });
+  const byId = new Map(items.map((w) => [w.id, w]));
+  const nextSpan = (span: Span) => SPANS[(SPANS.findIndex((sp) => sp.value === span) + 1) % SPANS.length]!.value;
+  const [addOpen, setAddOpen] = useState(false);
 
   return (
     <div className="page">
       {editing ? (
-        <div className="dash-edit-tray">
-          <div className="row-between wrap" style={{ gap: "var(--space-2)" }}>
-            <div>
-              <div className="panel-title">Editing your home screen</div>
-              <div className="t-xs t-tertiary">
-                Drag a card by ⋮⋮ to move it{phone ? "" : ", pick its width"}, or hide it. Saved to your account as you go.
-              </div>
-            </div>
-            <div className="row" style={{ gap: "var(--space-2)" }}>
-              <Button variant="ghost" size="sm" onClick={() => saveLayout(null)}>
-                Reset
-              </Button>
-              <Button variant="primary" size="sm" icon="check" onClick={() => setEditing(false)}>
-                Done
-              </Button>
-            </div>
-          </div>
-          {hidden.length > 0 && (
-            <div className="row wrap" style={{ gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
-              <span className="t-xs t-tertiary">Hidden:</span>
-              {hidden.map((w) => (
-                <button key={w.id} type="button" className="dash-chip" onClick={() => setWidget(w.id, { hidden: false })}>
-                  <Icon name="plus" size={12} /> {labels[w.id] ?? w.id}
-                </button>
-              ))}
-            </div>
-          )}
+        <div className="home-edit-bar" role="toolbar" aria-label="Editing your home screen">
+          <Button variant="secondary" size="sm" icon="plus" aria-label="Add a card" onClick={() => setAddOpen(true)}>
+            {phone ? "" : "Add card"}
+          </Button>
+          <span className="home-edit-hint t-xs t-tertiary">
+            Drag cards to move them{phone ? "" : ", tap the size to resize"}
+          </span>
+          <Button variant="primary" size="sm" onClick={() => setEditing(false)}>
+            Done
+          </Button>
         </div>
       ) : (
         <div className="row-between wrap" style={{ marginBottom: -8 }}>
-          <span />
+          <span className="t-xs t-tertiary">{phone ? "" : "Tip: hold a card to rearrange"}</span>
           <Button variant="ghost" size="sm" icon="edit" onClick={() => setEditing(true)}>
             Edit home screen
           </Button>
         </div>
       )}
-      <div className="grid">
-        {editing
-          ? editItems.map((w, i) => {
-              const it = dnd.item(w.id);
-              return (
-                <div key={w.id} className={`col-${phone ? 12 : w.span} dash-edit`} {...it}>
-                  <div className="dash-edit-bar">
-                    <span className="dash-grip" role="button" tabIndex={-1} aria-label={`Drag ${labels[w.id]}`} {...dnd.handle(w.id)}>
-                      ⋮⋮
-                    </span>
-                    <span className="dash-edit-label truncate">{labels[w.id] ?? w.id}</span>
-                    <span className="dash-edit-controls">
-                    {!phone && (
-                      <select
-                        className="input"
-                        aria-label={`Width of ${labels[w.id] ?? w.id}`}
-                        value={w.span}
-                        onChange={(e) => setWidget(w.id, { span: Number(e.target.value) as Span })}
-                        style={{ width: 100, padding: "2px 6px", height: 28 }}
-                      >
-                        {SPANS.map((sp) => (
-                          <option key={sp.value} value={sp.value}>
-                            {sp.label}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                    <Button variant="ghost" size="sm" icon="arrowUp" aria-label="Move earlier" disabled={i === 0} onClick={() => dnd.onDropAt(w.id, editItems[i - 1]!.id, "before")} />
-                    <Button variant="ghost" size="sm" icon="arrowDown" aria-label="Move later" disabled={i === editItems.length - 1} onClick={() => dnd.onDropAt(w.id, editItems[i + 1]!.id, "after")} />
-                    <Button variant="ghost" size="sm" icon="close" aria-label={`Hide ${labels[w.id]}`} title="Hide" onClick={() => setWidget(w.id, { hidden: true })} />
-                    </span>
-                  </div>
-                  <div className="dash-edit-body" aria-hidden="true">
+      <div
+        className="grid home-grid"
+        data-editing={editing ? "true" : undefined}
+        onClick={(e) => {
+          // Tapping empty space finishes editing, like the iPhone.
+          if (editing && e.target === e.currentTarget) setEditing(false);
+        }}
+      >
+        {arrange.order.map((id, i) => {
+          const w = byId.get(id);
+          if (!w) return null;
+          const label = labels[w.id] ?? w.id;
+          return (
+            <div
+              key={w.id}
+              className={`col-${phone ? 12 : w.span} home-card`}
+              data-editing={editing ? "true" : undefined}
+              tabIndex={editing ? 0 : undefined}
+              aria-label={editing ? `${label}. Arrow keys move it.` : undefined}
+              {...arrange.bind(w.id, i)}
+            >
+              {editing ? (
+                <>
+                  <button
+                    type="button"
+                    className="home-card-remove"
+                    data-no-drag
+                    aria-label={`Hide ${label}`}
+                    title={`Hide ${label}`}
+                    onClick={() => setWidget(w.id, { hidden: true })}
+                  >
+                    <span aria-hidden="true" />
+                  </button>
+                  <div className="home-card-body" inert>
                     {nodes[w.id]}
                   </div>
-                </div>
-              );
-            })
-          : viewItems.map((w) => (
-              <div key={w.id} className={phone ? "col-12" : `col-${w.span}`}>
-                {phone && w.id === firstMetric ? phoneSummary : nodes[w.id]}
-              </div>
-            ))}
+                  {!phone && (
+                    <button
+                      type="button"
+                      className="home-card-size"
+                      data-no-drag
+                      title="Change the width"
+                      aria-label={`Width of ${label}: ${SPANS.find((sp) => sp.value === w.span)?.label}. Change it.`}
+                      onClick={() => setWidget(w.id, { span: nextSpan(w.span) })}
+                    >
+                      {SPANS.find((sp) => sp.value === w.span)?.label}
+                    </button>
+                  )}
+                </>
+              ) : phone && w.id === firstMetric ? (
+                phoneSummary
+              ) : (
+                nodes[w.id]
+              )}
+            </div>
+          );
+        })}
       </div>
+      {(() => {
+        const AddPanel = phone ? Sheet : Dialog;
+        return (
+          <AddPanel open={addOpen} title="Add a card" onClose={() => setAddOpen(false)}>
+        <div className="stack">
+          {hidden.length === 0 ? (
+            <p className="t-sm t-tertiary">Every card is already on your home screen.</p>
+          ) : (
+            hidden.map((w) => (
+              <ListRow
+                key={w.id}
+                title={labels[w.id] ?? w.id}
+                onClick={() => {
+                  setWidget(w.id, { hidden: false });
+                  if (hidden.length === 1) setAddOpen(false);
+                }}
+                trailing={<Icon name="plus" size={16} />}
+                chevron={false}
+              />
+            ))
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              saveLayout(null);
+              setAddOpen(false);
+            }}
+          >
+            Reset to the standard layout
+          </Button>
+        </div>
+          </AddPanel>
+        );
+      })()}
       {editingPreIncome && preIncome && (
         <PreIncomeDialog
           value={preIncome}

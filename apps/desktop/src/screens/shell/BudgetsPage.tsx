@@ -128,26 +128,29 @@ function BudgetsTab({ onNavigate }: { onNavigate: Navigate }) {
 
   return (
     <div className="page" style={{ maxWidth: 920 }}>
-      <div className="row" style={{ gap: "var(--space-1)" }}>
-        <Button
-          variant="ghost"
-          icon="chevronLeft"
-          onClick={() => setMonth(shiftMonth(month, -1))}
-          aria-label="Previous month"
-        />
-        <span
-          className="t-md t-semibold"
-          style={{ minWidth: 150, textAlign: "center", fontFamily: "var(--font-heading)" }}
-        >
-          {monthLabel(month)}
-        </span>
-        <Button
-          variant="ghost"
-          icon="chevronRight"
-          onClick={() => setMonth(shiftMonth(month, 1))}
-          aria-label="Next month"
-        />
-        <div className="spacer row" style={{ gap: "var(--space-2)", justifyContent: "flex-end" }}>
+      {/* Month switcher and actions; on a phone the buttons drop to their own line. */}
+      <div className="row wrap" style={{ gap: "var(--space-2)" }}>
+        <div className="row" style={{ gap: "var(--space-1)", flex: "1 0 auto" }}>
+          <Button
+            variant="ghost"
+            icon="chevronLeft"
+            onClick={() => setMonth(shiftMonth(month, -1))}
+            aria-label="Previous month"
+          />
+          <span
+            className="t-md t-semibold"
+            style={{ minWidth: 140, textAlign: "center", fontFamily: "var(--font-heading)" }}
+          >
+            {monthLabel(month)}
+          </span>
+          <Button
+            variant="ghost"
+            icon="chevronRight"
+            onClick={() => setMonth(shiftMonth(month, 1))}
+            aria-label="Next month"
+          />
+        </div>
+        <div className="row" style={{ gap: "var(--space-2)", marginLeft: "auto" }}>
           {aiVisible && (
             <>
               <input
@@ -283,13 +286,16 @@ function BudgetBar({
       <div
         style={{
           display: "flex",
+          flexWrap: "wrap",
           justifyContent: "space-between",
           alignItems: "baseline",
+          columnGap: 12,
+          rowGap: 2,
           fontSize: "var(--text-sm)",
           marginBottom: 5,
         }}
       >
-        <span style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 7 }}>
+        <span style={{ fontWeight: 500, display: "flex", alignItems: "center", gap: 7, minWidth: 0, overflowWrap: "anywhere" }}>
           <span
             aria-hidden="true"
             style={{
@@ -307,7 +313,7 @@ function BudgetBar({
             </span>
           )}
         </span>
-        <span style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+        <span style={{ display: "flex", alignItems: "baseline", gap: 10, marginLeft: "auto" }}>
           <span
             style={{
               color: over ? "var(--color-negative)" : "var(--content-tertiary)",

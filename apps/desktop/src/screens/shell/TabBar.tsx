@@ -1,6 +1,15 @@
 import { Icon } from "@vault/ui";
 import { useApp } from "../../state/store.js";
-import { NAV_GROUPS, visiblePages, type GroupId, type PageId } from "./nav.js";
+import { NAV_GROUPS, visiblePages, type GroupId, type NavGroup, type NavPage, type PageId } from "./nav.js";
+
+/**
+ * The last group ("More" in the sidebar) opens on the AI assistant, so on the
+ * phone its tab says so. With the assistant switched off it opens Settings.
+ */
+function tabLook(g: NavGroup, first: NavPage): { label: string; icon: NavGroup["icon"] } {
+  if (g.id !== "more") return { label: g.label, icon: g.icon };
+  return first.ai ? { label: "AI", icon: first.icon } : { label: first.label, icon: first.icon };
+}
 
 /**
  * The narrow-width navigation: one tab per group, exactly like the phone
@@ -30,6 +39,7 @@ export function TabBar({
         const first = pages[0];
         if (!first) return null;
         const active = g.id === group;
+        const tab = tabLook(g, first);
         return (
           <button
             key={g.id}
@@ -39,9 +49,9 @@ export function TabBar({
             onClick={() => onSelectGroup(g.id, first.id)}
           >
             <span className="tab-item-icon">
-              <Icon name={g.icon} size={21} />
+              <Icon name={tab.icon} size={21} />
             </span>
-            {g.label}
+            {tab.label}
           </button>
         );
       })}

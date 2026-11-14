@@ -145,6 +145,7 @@ export function ChatComposer({ disabled = false, compact = false, autoFocus = fa
         setInput("");
         void send(text);
       }}
+      className="chat-composer"
       style={{ flex: "none", borderTop: "1px solid var(--color-divider)", padding: compact ? "10px 12px" : "12px 24px", display: "flex", flexDirection: "column", gap: 8 }}
     >
       {attachment && (
@@ -186,6 +187,7 @@ export function ChatComposer({ disabled = false, compact = false, autoFocus = fa
           // eslint-disable-next-line jsx-a11y/no-autofocus
           autoFocus={autoFocus}
           aria-label="Ask about your money"
+          enterKeyHint="send"
         />
         {busy ? (
           <Button variant="secondary" type="button" onClick={stop} style={{ whiteSpace: "nowrap" }} aria-label="Stop the reply">

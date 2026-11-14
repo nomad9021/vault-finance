@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 /**
  * Interactive multi-level cash-flow Sankey. Columns come from each node's
@@ -43,6 +43,14 @@ export interface SankeyProps {
   colorful?: boolean;
   hubColor?: string;
   ariaLabel?: string;
+  /**
+   * The person's own top-to-bottom order of nodes (any columns mixed; only
+   * the order within a column matters). Nodes not listed keep the automatic
+   * place.
+   */
+  order?: string[] | undefined;
+  /** Makes the bars draggable up and down their column; called with the new order on drop. */
+  onReorder?: (order: string[]) => void;
 }
 
 // The viewBox height is computed per-render (see layout): the diagram grows to
@@ -87,7 +95,27 @@ function linkPath(l: PlacedLink): string {
   return `M${l.sx},${l.sy} C${mx},${l.sy} ${mx},${l.ty} ${l.tx},${l.ty} L${l.tx},${l.ty + l.t} C${mx},${l.ty + l.t} ${mx},${l.sy + l.t} ${l.sx},${l.sy + l.t} Z`;
 }
 
-function layout(nodes: SankeyNodeDatum[], links: SankeyLinkDatum[]) {
+/**
+ * Put the nodes listed in `order` into the slots they already take in the
+ * column, in `order`'s sequence; unlisted nodes stay where the automatic
+ * ordering put them.
+ */
+function applyOrder(ns: SankeyNodeDatum[], order: string[] | undefined): SankeyNodeDatum[] {
+  if (!order?.length) return ns;
+  const rank = new Map(order.map((id, i) => [id, i]));
+  const listed = ns.filter((n) => rank.has(n.id)).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+  if (listed.length < 2) return ns;
+  let k = 0;
+  return ns.map((n) => (rank.has(n.id) ? listed[k++]! : n));
+}
+
+/** `order` with one column's ids moved to the end in their new sequence. */
+export function mergeColumnOrder(order: string[] | undefined, column: string[]): string[] {
+  const inColumn = new Set(column);
+  return [...(order ?? []).filter((id) => !inColumn.has(id)), ...column].slice(-300);
+}
+
+function layout(nodes: SankeyNodeDatum[], links: SankeyLinkDatum[], order?: string[]) {
   const depths = [...new Set(nodes.map((n) => n.depth))].sort((a, b) => a - b);
   const maxDepth = depths[depths.length - 1] ?? 0;
   const xFor = (d: number) => (maxDepth === 0 ? X0 : X0 + (d * (X1 - X0)) / maxDepth);
@@ -151,6 +179,8 @@ function layout(nodes: SankeyNodeDatum[], links: SankeyLinkDatum[]) {
       };
       ns.sort((a, b) => bary(a) - bary(b));
     }
+    const arranged = applyOrder(ns, order);
+    ns.splice(0, ns.length, ...arranged);
 
     const totalH = columnHeight(ns);
     let y = (H - totalH) / 2;
@@ -201,9 +231,14 @@ export function Sankey({
   colorful = true,
   hubColor = "#9397ab",
   ariaLabel = "Cash flow diagram",
+  order,
+  onReorder,
 }: SankeyProps) {
   const [hover, setHover] = useState<number | null>(null);
-  const geo = useMemo(() => layout(nodes, links), [nodes, links]);
+  const drag = useNodeDrag(onReorder ? (next) => onReorder(next) : null, order);
+  const activeOrder = drag.liveOrder ?? order;
+  const geo = useMemo(() => layout(nodes, links, activeOrder), [nodes, links, activeOrder]);
+  drag.geo.current = geo;
   const gradientSeed = useMemo(() => Math.random().toString(36).slice(2, 8), []);
 
   const colorById = useMemo(() => {
@@ -265,9 +300,10 @@ export function Sankey({
 
   return (
     <svg
+      ref={drag.svg}
       className="chart-reveal"
       viewBox={`0 0 ${W} ${geo.height}`}
-      style={{ width: "100%", height: "auto", display: "block" }}
+      style={{ width: "100%", height: "auto", display: "block", overflow: "visible" }}
       role="img"
       aria-label={ariaLabel}
     >
@@ -324,9 +360,26 @@ export function Sankey({
           <g
             key={n.id}
             opacity={nodeOpacity(n.id)}
-            style={{ cursor: "pointer" }}
-            onClick={() => onFocus(focus === n.id ? null : n.id)}
+            className={onReorder ? "sankey-node-movable" : undefined}
+            data-dragging={drag.dragId === n.id ? "true" : undefined}
+            // Holding a bar moves the bar, not the card it sits in.
+            data-no-drag={onReorder ? "" : undefined}
+            transform={drag.dragId === n.id ? `translate(0, ${drag.offset})` : undefined}
+            style={{ cursor: onReorder ? (drag.dragId === n.id ? "grabbing" : "grab") : "pointer" }}
+            onPointerDown={onReorder ? (e) => drag.onPointerDown(n.id, e) : undefined}
+            onClick={() => {
+              if (drag.consumeClick()) return;
+              onFocus(focus === n.id ? null : n.id);
+            }}
           >
+            {/* Bigger invisible target than the thin bar: the bar plus its label. */}
+            <rect
+              x={right ? n.x - 6 : n.x - 190}
+              y={Math.min(n.y, cy - 18)}
+              width={196 + NW}
+              height={Math.max(n.h, 36)}
+              fill="transparent"
+            />
             <rect x={n.x} y={n.y} width={NW} height={n.h} rx={1.5} fill={linkColor(n.id)} />
             <text x={lx} y={cy - 3} textAnchor={anchor} style={labelStyle}>
               {n.label}
@@ -339,4 +392,156 @@ export function Sankey({
       })}
     </svg>
   );
+}
+
+const HOLD_TO_DRAG_TOUCH_MS = 220;
+
+/**
+ * Drag a bar up or down its column. The diagram re-lays itself out under the
+ * pointer, so the flows follow live; the order is handed to `onDrop` on release.
+ * A mouse drags straight away; a finger after a short hold, so a quick swipe
+ * still scrolls the page. A press that doesn't move stays a click.
+ */
+function useNodeDrag(onDrop: ((order: string[]) => void) | null, order: string[] | undefined) {
+  const svg = useRef<SVGSVGElement | null>(null);
+  const geo = useRef<ReturnType<typeof layout> | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [offset, setOffset] = useState(0);
+  const [liveOrder, setLiveOrder] = useState<string[] | null>(null);
+  const live = useRef<{
+    id: string;
+    pointerId: number;
+    touch: boolean;
+    x0: number;
+    y0: number;
+    started: boolean;
+    timer: number | null;
+    /** Pointer y (diagram units) minus the node's centre when picked up. */
+    grab: number;
+    order: string[] | undefined;
+  } | null>(null);
+  const clickBlock = useRef(false);
+  const orderRef = useRef(order);
+  orderRef.current = order;
+  const dropRef = useRef(onDrop);
+  dropRef.current = onDrop;
+  const cleanupRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => () => cleanupRef.current?.(), []);
+
+  const toY = (clientY: number) => {
+    const el = svg.current;
+    const m = el?.getScreenCTM();
+    if (!el || !m) return clientY;
+    return (clientY - m.f) / m.d;
+  };
+  const nodeOf = (id: string) => geo.current?.nodes.find((n) => n.id === id);
+
+  const update = (clientY: number) => {
+    const s = live.current;
+    const g = geo.current;
+    if (!s?.started || !g) return;
+    const me = nodeOf(s.id);
+    if (!me) return;
+    const want = toY(clientY) - s.grab; // desired centre
+    const column = g.nodes.filter((n) => n.depth === me.depth);
+    const others = column.filter((n) => n.id !== s.id);
+    const at = others.filter((n) => n.y + n.h / 2 < want).length;
+    const ids = others.map((n) => n.id);
+    ids.splice(at, 0, s.id);
+    const current = column.map((n) => n.id);
+    let next = s.order;
+    if (ids.join("|") !== current.join("|")) {
+      next = mergeColumnOrder(s.order, ids);
+      s.order = next;
+      setLiveOrder(next);
+    }
+    // Follow the pointer from wherever the layout now puts the node.
+    const placed = geo.current?.nodes.find((n) => n.id === s.id) ?? me;
+    setOffset(want - (placed.y + placed.h / 2));
+  };
+
+  const finish = (commit: boolean) => {
+    const s = live.current;
+    live.current = null;
+    cleanupRef.current?.();
+    cleanupRef.current = null;
+    if (!s) return;
+    if (s.timer) window.clearTimeout(s.timer);
+    if (!s.started) return;
+    clickBlock.current = true;
+    window.setTimeout(() => (clickBlock.current = false), 400);
+    setDragId(null);
+    setOffset(0);
+    const before = (orderRef.current ?? []).join("|");
+    if (commit && s.order && s.order.join("|") !== before) dropRef.current?.(s.order);
+    setLiveOrder(null);
+  };
+
+  const start = () => {
+    const s = live.current;
+    if (!s) return;
+    const me = nodeOf(s.id);
+    const g = geo.current;
+    if (!me || !g || g.nodes.filter((n) => n.depth === me.depth).length < 2) {
+      finish(false);
+      return;
+    }
+    s.started = true;
+    s.grab = toY(s.y0) - (me.y + me.h / 2);
+    // Freeze the current column order so the automatic ordering can't shuffle mid-drag.
+    s.order = mergeColumnOrder(orderRef.current, g.nodes.filter((n) => n.depth === me.depth).map((n) => n.id));
+    setLiveOrder(s.order);
+    setDragId(s.id);
+    setOffset(0);
+  };
+
+  const onPointerDown = (id: string, e: ReactPointerEvent<SVGGElement>) => {
+    if (!dropRef.current || e.button !== 0 || live.current) return;
+    const touch = e.pointerType !== "mouse";
+    live.current = { id, pointerId: e.pointerId, touch, x0: e.clientX, y0: e.clientY, started: false, timer: null, grab: 0, order: orderRef.current };
+    if (touch) {
+      live.current.timer = window.setTimeout(() => {
+        if (live.current && !live.current.started) start();
+      }, HOLD_TO_DRAG_TOUCH_MS);
+    }
+    const move = (ev: PointerEvent) => {
+      const s = live.current;
+      if (!s || ev.pointerId !== s.pointerId) return;
+      const moved = Math.hypot(ev.clientX - s.x0, ev.clientY - s.y0);
+      if (!s.started) {
+        if (!s.touch && moved > 4) start();
+        else if (s.touch && moved > 8) return finish(false); // a scroll
+        if (!live.current?.started) return;
+      }
+      ev.preventDefault();
+      update(ev.clientY);
+    };
+    const touchMove = (ev: TouchEvent) => {
+      if (live.current?.started) ev.preventDefault();
+    };
+    const up = () => finish(true);
+    const cancel = () => finish(false);
+    const key = (ev: KeyboardEvent) => ev.key === "Escape" && finish(false);
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", cancel);
+    window.addEventListener("touchmove", touchMove, { passive: false });
+    window.addEventListener("keydown", key);
+    cleanupRef.current = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("touchmove", touchMove);
+      window.removeEventListener("keydown", key);
+    };
+  };
+
+  const consumeClick = () => {
+    if (!clickBlock.current) return false;
+    clickBlock.current = false;
+    return true;
+  };
+
+  return { svg, geo, dragId, offset, liveOrder, onPointerDown, consumeClick };
 }

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 
 export interface SheetProps {
   open: boolean;
@@ -29,7 +30,9 @@ export function Sheet({ open, title, children, onClose }: SheetProps) {
   }, [open, onClose]);
 
   if (!open) return null;
-  return (
+  // Portalled to <body> so it sits above the tab bar and the assistant button
+  // wherever the page that opens it lives.
+  return createPortal(
     <>
       <div className="scrim" onClick={onClose} />
       <div className="sheet" role="dialog" aria-modal="true" aria-label={title}>
@@ -37,6 +40,7 @@ export function Sheet({ open, title, children, onClose }: SheetProps) {
         {title && <div className="panel-title" style={{ marginBottom: "var(--space-3)" }}>{title}</div>}
         {children}
       </div>
-    </>
+    </>,
+    document.body,
   );
 }
