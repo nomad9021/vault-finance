@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 import { SankeyArranger } from "./SankeyArranger.js";
+import { useSankeyOrder } from "../../lib/sankeyOrder.js";
 import type { NavFilter, Navigate, PageId } from "./AppShell.js";
 
 type Period = "weekly" | "monthly" | "yearly";
@@ -73,7 +74,7 @@ export function SankeyCard({
   onNavigate,
   onChanged,
   title = "Cash flow",
-  hint = "Click any node to drill in",
+  hint = "Click a bar to drill in · drag it to rearrange",
   compact = false,
   precise = false,
   singlePeriod = false,
@@ -97,6 +98,7 @@ export function SankeyCard({
   editable?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
+  const [sankeyOrder, saveSankeyOrder] = useSankeyOrder();
   const [focus, setFocus] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>("monthly");
   const pf = singlePeriod ? 1 : PERIOD_FACTOR[period];
@@ -116,6 +118,11 @@ export function SankeyCard({
         {(!compact || editable) && (
           <div className="row" style={{ gap: "var(--space-4)" }}>
             {!compact && !editing && <span className="t-xs t-tertiary hide-narrow">{hint}</span>}
+            {editing && (sankeyOrder?.length ?? 0) > 0 && (
+              <Button variant="ghost" size="sm" title="Forget the dragged order and sort the bars by size again" onClick={() => saveSankeyOrder([])}>
+                Automatic order
+              </Button>
+            )}
             {editable && (
               <Button variant={editing ? "primary" : "ghost"} size="sm" icon={editing ? "check" : "edit"} onClick={() => { setEditing((e) => !e); setFocus(null); }}>
                 {editing ? "Done" : "Edit"}
@@ -147,6 +154,8 @@ export function SankeyCard({
           focus={focus}
           onFocus={setFocus}
           ariaLabel={`${title} Sankey diagram for ${month}`}
+          order={sankeyOrder}
+          onReorder={saveSankeyOrder}
         />
       </div>
       {editing && <SankeyArranger {...(onChanged ? { onChanged } : {})} />}

@@ -53,5 +53,7 @@ export const UserPreferences = z.object({
   dashboard: z.array(DashboardWidget).max(60).optional(),
   /** Which cash-flow diagram the dashboard leads with. */
   sankeyView: SankeyView.optional(),
+  /** The person's own top-to-bottom order of Sankey nodes (by node id), shared by every diagram. */
+  sankeyOrder: z.array(z.string().min(1).max(80)).max(300).optional(),
 });
 export type UserPreferences = z.infer<typeof UserPreferences>;

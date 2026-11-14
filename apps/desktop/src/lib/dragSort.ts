@@ -133,7 +133,7 @@ export function useDragSort({
   return { drag, over, handle, item };
 }
 
-function scrollParent(el: HTMLElement | null): HTMLElement | null {
+export function scrollParent(el: HTMLElement | null): HTMLElement | null {
   for (let cur = el?.parentElement ?? null; cur; cur = cur.parentElement) {
     const oy = getComputedStyle(cur).overflowY;
     if ((oy === "auto" || oy === "scroll") && cur.scrollHeight > cur.clientHeight) return cur;

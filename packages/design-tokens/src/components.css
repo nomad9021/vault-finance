@@ -2032,6 +2032,96 @@ button.list-row:active, .list-row[role="button"]:active {
 .dash-grip:hover, .arr-grip:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); color: var(--content-primary); }
 .dash-edit-body { pointer-events: none; opacity: 0.85; max-height: 420px; overflow: hidden; }
 
+/* ── Home screen arranging, iPhone style (lib/homeArrange.ts) ──
+   Hold a card to start; cards wiggle, drag anywhere on them, the rest slide
+   aside. A minus badge hides a card; on the computer a pill sets its width. */
+.home-card {
+  position: relative;
+  min-width: 0;
+  -webkit-touch-callout: none;
+}
+.home-grid[data-editing] { padding-top: var(--space-2); }
+.home-card[data-editing] {
+  cursor: grab;
+  border-radius: var(--radius-lg);
+  -webkit-user-select: none;
+  user-select: none;
+  animation: home-jiggle 0.28s ease-in-out infinite alternate;
+  animation-delay: var(--jiggle-delay, 0s);
+  touch-action: pan-y;
+}
+.home-card[data-editing]:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+.home-card[data-dragging] {
+  animation: none;
+  cursor: grabbing;
+  z-index: 60;
+  pointer-events: none;
+  filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.28));
+}
+.home-card-body { pointer-events: none; }
+@keyframes home-jiggle {
+  from { rotate: calc(var(--jiggle-angle, 0.3deg) * -1); }
+  to { rotate: var(--jiggle-angle, 0.3deg); }
+}
+@media (max-width: 900px) { .home-card { --jiggle-angle: 0.7deg; } }
+@media (prefers-reduced-motion: reduce) { .home-card[data-editing] { animation: none; } }
+
+.home-card-remove {
+  position: absolute;
+  top: -9px;
+  left: -9px;
+  z-index: 2;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--color-surface) 70%, #8e8e93);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+.home-card-remove span { width: 11px; height: 2.5px; border-radius: 2px; background: var(--content-primary); }
+/* A bigger invisible hit area than the badge itself. */
+.home-card-remove::before { content: ""; position: absolute; inset: -9px; }
+.home-card-size {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--glass-edge);
+  background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  color: var(--content-primary);
+  font: 600 var(--text-xs) / 1.2 var(--font-body);
+  cursor: pointer;
+  box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.15));
+}
+.home-edit-bar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-rail);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.8);
+  backdrop-filter: blur(22px) saturate(1.8);
+  border: 1px solid var(--glass-edge);
+  box-shadow: var(--glass-shadow);
+}
+.sankey-node-movable { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.sankey-node-movable[data-dragging] { filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.35)); }
+.home-edit-hint { flex: 1; min-width: 0; text-align: center; }
+
 /* ── Sankey edit mode: diagram beside its category list ── */
 .sankey-editing { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap: var(--space-3); align-items: start; }
 @media (max-width: 900px) { .sankey-editing { grid-template-columns: minmax(0, 1fr); } }
