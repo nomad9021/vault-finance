@@ -42,3 +42,46 @@ export function suppressProgrammaticKeyboard(): void {
     focus.call(this, options);
   };
 }
+
+/**
+ * iPhone: keep the app in the part of the screen the keyboard leaves free.
+ *
+ * WebKit doesn't resize the page for the keyboard; it slides the whole page up
+ * so the text box shows, which pushes the title bar off the top and leaves the
+ * tab bar floating above the keys. Instead the app's root box (`.app-root`)
+ * follows the visual viewport: `--app-top` / `--app-h` pin it to the visible
+ * area, and `data-keyboard="open"` on <html> lets the stylesheet put away the
+ * tab bar while typing, the way iOS apps do.
+ */
+let following = false;
+
+export function followKeyboard(): void {
+  const vv = window.visualViewport;
+  if (following || !vv) return;
+  following = true;
+  const root = document.documentElement;
+  let frame = 0;
+  const update = () => {
+    frame = 0;
+    // Anything much shorter than the window is the keyboard (or a pinch zoom,
+    // which the app turns off). A small gap is just the URL/toolbar settling.
+    const open = window.innerHeight - vv.height > 120;
+    if (open) {
+      root.dataset.keyboard = "open";
+      root.style.setProperty("--app-top", `${Math.round(vv.offsetTop)}px`);
+      root.style.setProperty("--app-h", `${Math.round(vv.height)}px`);
+    } else {
+      delete root.dataset.keyboard;
+      root.style.removeProperty("--app-top");
+      root.style.removeProperty("--app-h");
+      // WebKit can leave the document scrolled after the keyboard goes away.
+      if (window.scrollY !== 0) window.scrollTo(0, 0);
+    }
+  };
+  const schedule = () => {
+    if (!frame) frame = requestAnimationFrame(update);
+  };
+  vv.addEventListener("resize", schedule);
+  vv.addEventListener("scroll", schedule);
+  update();
+}

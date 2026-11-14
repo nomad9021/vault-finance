@@ -49,6 +49,8 @@ export function applyPhonePreviewLook(): void {
   const root = document.documentElement;
   root.dataset.platform = "ios";
   root.dataset.preview = "ios";
+  // Same keyboard handling as the app; the preview frame can shrink to test it.
+  void import("./iosKeyboard.js").then((m) => m.followKeyboard());
   const style = document.createElement("style");
   style.textContent = previewCss();
   document.head.append(style);

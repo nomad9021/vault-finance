@@ -133,9 +133,9 @@ export function AppShell() {
 
   return (
     <div
+      className="app-root"
       style={{
         display: "flex",
-        height: "100dvh",
         overflow: "hidden",
         background: "var(--color-bg)",
         color: "var(--content-primary)",
@@ -148,6 +148,7 @@ export function AppShell() {
 
       <main
         className="app-main"
+        data-page={page}
         data-scrolled={scrolled ? "true" : "false"}
         style={narrow ? ({ "--topbar-h": `${topbarH}px` } as CSSProperties) : undefined}
       >

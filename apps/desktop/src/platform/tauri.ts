@@ -14,7 +14,7 @@ import type {
   TailscaleActionResult,
   TailscaleStatus,
 } from "./types.js";
-import { suppressProgrammaticKeyboard } from "./iosKeyboard.js";
+import { followKeyboard, suppressProgrammaticKeyboard } from "./iosKeyboard.js";
 
 interface RustHttpResponse {
   status: number;
@@ -64,6 +64,8 @@ export async function createTauriPlatform(): Promise<HostPlatform> {
     document.documentElement.dataset.platform = "ios";
     // Keyboard opens only when the user taps a text box (iosKeyboard.ts).
     suppressProgrammaticKeyboard();
+    // The app shrinks to the space above the keyboard instead of sliding up.
+    followKeyboard();
   }
   const platformName: ApiPlatform =
     os === "windows" ? "windows" : os === "macos" ? "macos" : ios ? "ios" : "linux";

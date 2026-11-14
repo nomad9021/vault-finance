@@ -1947,9 +1947,36 @@ button.list-row:active, .list-row[role="button"]:active {
     scroll-padding-top: 0;
   }
   .ai-bubble { bottom: calc(var(--tabbar-h) + var(--tabbar-safe) + var(--space-3)); }
-  .assistant-phone { min-height: calc(100dvh - var(--topbar-h, 0px) - var(--tabbar-h) - var(--tabbar-safe) - var(--space-10)); }
+
+  /* The assistant is a chat screen, not a scrolling page: the conversation
+     scrolls inside it and the composer stays put at the bottom. */
+  .app-main[data-page="assistant"] .app-scroll {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding-bottom: 0;
+  }
+  .assistant-phone { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .assistant-phone .chat-composer { padding: var(--space-3) 0 !important; }
   .hide-narrow { display: none; }
 }
+
+/* ── iPhone keyboard ──
+   The app box follows the space above the keyboard (iosKeyboard.ts,
+   followKeyboard), so the title stays at the top and the composer sits right
+   on the keys. The tab bar and the assistant button step aside while typing,
+   and the section pills fold away to leave room for the conversation. */
+.app-root { height: 100dvh; }
+:root[data-keyboard="open"] .app-root {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--app-top, 0px);
+  height: var(--app-h, 100dvh);
+}
+:root[data-keyboard="open"] .tabbar,
+:root[data-keyboard="open"] .ai-bubble,
+:root[data-keyboard="open"] .phone-topbar .tabs { display: none; }
 
 /* ── Home screen edit mode ── */
 .dash-edit-tray {
