@@ -3,6 +3,11 @@
 
 use leptos::prelude::*;
 
+mod dialog;
+mod tabs;
+pub use dialog::{Confetti, Dialog};
+pub use tabs::Tabs;
+
 #[rustfmt::skip]
 mod icons_gen;
 pub use icons_gen::NAMES as ICON_NAMES;
@@ -30,6 +35,7 @@ pub fn Button(
     #[prop(optional)] icon_end: Option<&'static str>,
     #[prop(optional)] block: bool,
     #[prop(optional, into)] style: Option<String>,
+    #[prop(optional, into)] disabled: Signal<bool>,
     on_click: impl Fn() + 'static,
     #[prop(optional)] children: Option<Children>,
 ) -> impl IntoView {
@@ -50,7 +56,8 @@ pub fn Button(
         class.push_str(" btn-block");
     }
     view! {
-        <button type="button" class=class style=style on:click=move |_| on_click()>
+        <button type="button" class=class style=style disabled=move || disabled.get()
+            on:click=move |_| on_click()>
             {icon.map(|n| view! { <Icon name=n size=icon_size /> })}
             {children.map(|c| c())}
             {icon_end.map(|n| view! { <Icon name=n size=icon_size /> })}
@@ -81,20 +88,28 @@ pub fn MetricCard(
 /// `<Panel>`: the one card container.
 #[component]
 pub fn Panel(
+    /// Small uppercase eyebrow above the title.
+    #[prop(optional, into)]
+    kicker: Option<String>,
     #[prop(optional, into)] title: Option<String>,
     #[prop(optional, into)] subtitle: Option<String>,
+    /// Right-aligned header content.
+    #[prop(optional, into)]
+    actions: Option<ViewFn>,
     #[prop(optional)] flush: bool,
     children: Children,
 ) -> impl IntoView {
-    let has_head = title.is_some() || subtitle.is_some();
+    let has_head = kicker.is_some() || title.is_some() || subtitle.is_some() || actions.is_some();
     view! {
         <div class=if flush { "panel panel-flush" } else { "panel" }>
             {has_head.then(|| view! {
                 <div class=if flush { "panel-head panel-head-pad" } else { "panel-head" }>
                     <div style="min-width: 0">
+                        {kicker.map(|k| view! { <div class="eyebrow">{k}</div> })}
                         {title.map(|t| view! { <div class="panel-title">{t}</div> })}
                         {subtitle.map(|s| view! { <div class="panel-sub">{s}</div> })}
                     </div>
+                    {actions.map(|a| view! { <div class="panel-actions">{a.run()}</div> })}
                 </div>
             })}
             {children()}

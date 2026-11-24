@@ -67,6 +67,25 @@ impl HostCtx {
             .map_err(|e| format!("{method}: unexpected response ({e})"))
     }
 
+    /// Call an `ApiClient` method without waiting for or reading the result,
+    /// like `void client.method(...)` (the request outlives the page).
+    pub fn fire(&self, method: &str, args: &[JsValue]) {
+        let host = Rc::clone(&self.host);
+        let method = method.to_string();
+        let array: js_sys::Array = args.iter().collect();
+        wasm_bindgen_futures::spawn_local(async move {
+            let _ = host.call(&method, array).await;
+        });
+    }
+
+    /// A request body for `call`/`fire`: plain JSON-shaped JS (maps become
+    /// objects, not `Map`s, so `JSON.stringify` sends them).
+    pub fn arg(value: &impl Serialize) -> JsValue {
+        value
+            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+            .unwrap_or(JsValue::UNDEFINED)
+    }
+
     pub fn navigate(&self, page: &str, filter: &impl Serialize) {
         let filter = serde_wasm_bindgen::to_value(filter).unwrap_or(JsValue::UNDEFINED);
         self.host.navigate(page, filter);

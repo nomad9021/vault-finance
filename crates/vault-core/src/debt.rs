@@ -97,13 +97,16 @@ pub struct DebtPlan {
     pub manual: Vec<Debt>,
 }
 
+/// Figures are `f64` like the JS numbers they mirror: a debt whose minimum
+/// never outruns its interest compounds far past `i64` over the 100-year cap,
+/// and the page shows those (absurd) totals exactly as the React page did.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PayoffResult {
     pub months: u32,
-    pub total_interest_cents: i64,
+    pub total_interest_cents: f64,
     pub never_payoff: bool,
     /// Total remaining balance at the end of each month (starts with month 0).
-    pub trajectory: Vec<i64>,
+    pub trajectory: Vec<f64>,
 }
 
 /// Months simulated before a plan counts as never paying off.
@@ -111,53 +114,49 @@ pub const CAP: u32 = 1200;
 
 /// Month-by-month simulation: minimums on all debts + extra to the target
 /// debt (highest APR first for avalanche, smallest starting balance first for
-/// snowball). Same integer arithmetic as `simulate` in DebtCalculator.tsx.
+/// snowball). Same double arithmetic as `simulate` in DebtCalculator.tsx.
 pub fn simulate(debts: &[Debt], extra_cents: i64, strategy: Strategy) -> PayoffResult {
-    let mut balances: Vec<i64> = debts.iter().map(|d| d.balance_cents).collect();
+    let mut balances: Vec<f64> = debts.iter().map(|d| d.balance_cents as f64).collect();
+    let mins: Vec<f64> = debts.iter().map(|d| d.min_cents as f64).collect();
     let mut order: Vec<usize> = (0..debts.len()).collect();
     // Array.prototype.sort is stable, so is sort_by; ties keep list order.
+    let by = |x: f64, y: f64| x.partial_cmp(&y).unwrap_or(std::cmp::Ordering::Equal);
     match strategy {
-        Strategy::Avalanche => order.sort_by(|&a, &b| {
-            debts[b]
-                .apr
-                .partial_cmp(&debts[a].apr)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        }),
-        Strategy::Snowball => order.sort_by_key(|&i| balances[i]),
+        Strategy::Avalanche => order.sort_by(|&a, &b| by(debts[b].apr, debts[a].apr)),
+        Strategy::Snowball => order.sort_by(|&a, &b| by(balances[a], balances[b])),
     }
-    let sum = |b: &[i64]| b.iter().map(|&x| x.max(0)).sum::<i64>();
+    let sum = |b: &[f64]| b.iter().fold(0.0, |s, &x| s + x.max(0.0));
     let mut trajectory = vec![sum(&balances)];
     let mut month = 0;
-    let mut total_interest = 0i64;
-    while balances.iter().any(|&b| b > 0) && month < CAP {
+    let mut total_interest = 0.0;
+    while balances.iter().any(|&b| b > 0.0) && month < CAP {
         month += 1;
         for (b, d) in balances.iter_mut().zip(debts) {
-            if *b <= 0 {
+            if *b <= 0.0 {
                 continue;
             }
-            let interest = js_round((*b as f64 * (d.apr / 100.0)) / 12.0) as i64;
+            let interest = js_round((*b * (d.apr / 100.0)) / 12.0);
             *b += interest;
             total_interest += interest;
         }
-        let mut budget = debts
+        let mut budget = mins
             .iter()
             .zip(&balances)
-            .map(|(d, &b)| if b > 0 { d.min_cents } else { 0 })
-            .sum::<i64>()
-            + extra_cents;
-        for (b, d) in balances.iter_mut().zip(debts) {
-            if *b <= 0 {
+            .fold(0.0, |s, (&m, &b)| s + if b > 0.0 { m } else { 0.0 })
+            + extra_cents as f64;
+        for (b, &m) in balances.iter_mut().zip(&mins) {
+            if *b <= 0.0 {
                 continue;
             }
-            let pay = (*b).min(d.min_cents);
+            let pay = b.min(m);
             *b -= pay;
             budget -= pay;
         }
         for &i in &order {
-            if budget <= 0 {
+            if budget <= 0.0 {
                 break;
             }
-            if balances[i] <= 0 {
+            if balances[i] <= 0.0 {
                 continue;
             }
             let pay = balances[i].min(budget);
@@ -169,7 +168,7 @@ pub fn simulate(debts: &[Debt], extra_cents: i64, strategy: Strategy) -> PayoffR
     PayoffResult {
         months: month,
         total_interest_cents: total_interest,
-        never_payoff: month >= CAP && balances.iter().any(|&b| b > 0),
+        never_payoff: month >= CAP && balances.iter().any(|&b| b > 0.0),
         trajectory,
     }
 }
@@ -296,15 +295,15 @@ mod tests {
     fn pays_off_zero_interest_debt_in_balance_over_payment_months() {
         let r = simulate(&[with(100_000, 0.0, 10_000)], 0, Strategy::Avalanche);
         assert_eq!(r.months, 10);
-        assert_eq!(r.total_interest_cents, 0);
+        assert_eq!(r.total_interest_cents, 0.0);
         assert!(!r.never_payoff);
     }
 
     #[test]
     fn charges_interest_on_a_carried_balance() {
         let r = simulate(&[with(100_000, 12.0, 10_000)], 0, Strategy::Avalanche);
-        assert!(r.total_interest_cents > 0);
-        assert!(r.total_interest_cents < 12_000);
+        assert!(r.total_interest_cents > 0.0);
+        assert!(r.total_interest_cents < 12_000.0);
         assert!(r.months > 10);
     }
 
@@ -329,8 +328,8 @@ mod tests {
     #[test]
     fn trajectory_starts_at_total_and_ends_at_zero() {
         let r = simulate(&[with(60_000, 0.0, 10_000)], 0, Strategy::Avalanche);
-        assert_eq!(r.trajectory[0], 60_000);
-        assert_eq!(*r.trajectory.last().unwrap(), 0);
+        assert_eq!(r.trajectory[0], 60_000.0);
+        assert_eq!(*r.trajectory.last().unwrap(), 0.0);
         for w in r.trajectory.windows(2) {
             assert!(w[1] <= w[0]);
         }
@@ -377,7 +376,7 @@ mod tests {
     fn handles_an_empty_debt_list() {
         let r = simulate(&[], 0, Strategy::Avalanche);
         assert_eq!(r.months, 0);
-        assert_eq!(r.total_interest_cents, 0);
+        assert_eq!(r.total_interest_cents, 0.0);
         assert!(!r.never_payoff);
     }
 
@@ -390,7 +389,7 @@ mod tests {
 
     // ── Exact figures, recorded from the TypeScript `simulate` (vitest) ──
 
-    fn rec(r: &PayoffResult) -> (u32, i64, bool, usize, Vec<i64>) {
+    fn rec(r: &PayoffResult) -> (u32, f64, bool, usize, Vec<f64>) {
         (
             r.months,
             r.total_interest_cents,
@@ -403,37 +402,38 @@ mod tests {
     #[test]
     fn matches_typescript_figures() {
         let r = simulate(&[with(100_000, 12.0, 10_000)], 0, Strategy::Avalanche);
-        assert_eq!(
-            rec(&r),
-            (11, 5_898, false, 12, vec![100_000, 91_000, 81_910, 72_729])
-        );
-        let two_out = (
+        let one = (
             11,
-            16_305,
+            5_898.0,
             false,
             12,
-            vec![600_000, 539_166, 477_197, 419_185],
+            vec![100_000.0, 91_000.0, 81_910.0, 72_729.0],
+        );
+        assert_eq!(rec(&r), one);
+        let two = (
+            11,
+            16_305.0,
+            false,
+            12,
+            vec![600_000.0, 539_166.0, 477_197.0, 419_185.0],
         );
         assert_eq!(
             rec(&simulate(&two_debts(), 50_000, Strategy::Avalanche)),
-            two_out
+            two
         );
         assert_eq!(
             rec(&simulate(&two_debts(), 50_000, Strategy::Snowball)),
-            two_out
+            two
         );
-        let min_out = (
+        let min = (
             56,
-            92_002,
+            92_002.0,
             false,
             57,
-            vec![600_000, 589_166, 578_239, 567_217],
+            vec![600_000.0, 589_166.0, 578_239.0, 567_217.0],
         );
-        assert_eq!(
-            rec(&simulate(&two_debts(), 0, Strategy::Avalanche)),
-            min_out
-        );
-        assert_eq!(rec(&simulate(&two_debts(), 0, Strategy::Snowball)), min_out);
+        assert_eq!(rec(&simulate(&two_debts(), 0, Strategy::Avalanche)), min);
+        assert_eq!(rec(&simulate(&two_debts(), 0, Strategy::Snowball)), min);
         let three = [
             with(250_000, 19.99, 7_500),
             with(80_000, 29.5, 2_500),
@@ -441,10 +441,10 @@ mod tests {
         ];
         let three_out = (
             25,
-            129_704,
+            129_704.0,
             false,
             26,
-            vec![1_530_000, 1_467_699, 1_404_365, 1_339_977],
+            vec![1_530_000.0, 1_467_699.0, 1_404_365.0, 1_339_977.0],
         );
         assert_eq!(
             rec(&simulate(&three, 33_333, Strategy::Snowball)),
@@ -454,19 +454,25 @@ mod tests {
             rec(&simulate(&three, 33_333, Strategy::Avalanche)),
             three_out
         );
-        // Never pays off: the balance compounds past 2^53, where JS numbers
-        // stop being exact, so only the flag and the start are compared.
+        // Never pays off: past 2^53 the figures are inexact doubles, the same
+        // inexact doubles as JS.
         let r = simulate(&[with(1_000_000, 24.0, 5_000)], 0, Strategy::Avalanche);
-        let (m, _, never, len, start) = rec(&r);
-        assert_eq!(
-            (m, never, len, start),
-            (
-                1200,
-                true,
-                1201,
-                vec![1_000_000, 1_015_000, 1_030_300, 1_045_906]
-            )
+        let never = (
+            1200,
+            15_677_142_742_188_256.0,
+            true,
+            1201,
+            vec![1_000_000.0, 1_015_000.0, 1_030_300.0, 1_045_906.0],
         );
+        assert_eq!(rec(&r), never);
+        assert_eq!(r.trajectory[1200], 15_677_142_737_188_256.0);
+        // 65% APR on $4,200 with a $60.18 minimum compounds to ~1e33: the
+        // figure the React page prints as "save $9,570,902,…".
+        let hot = simulate(&[with(420_000, 65.0, 6_018)], 0, Strategy::Snowball);
+        assert_eq!((hot.months, hot.never_payoff), (1200, true));
+        assert_eq!(hot.total_interest_cents, 9.57090214022184e32);
+        assert_eq!(hot.trajectory[600], 17_194_327_607_190_899_000.0);
+        assert_eq!(hot.trajectory[1200], 9.57090214022184e32);
     }
 
     // ── Seeding and labels ──

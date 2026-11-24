@@ -3,6 +3,7 @@
 
 use leptos::prelude::*;
 
+pub mod debt_calculator;
 pub mod insights;
 
 pub const IDS: &[&str] = &["insights"];

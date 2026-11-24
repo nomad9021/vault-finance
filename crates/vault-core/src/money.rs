@@ -79,6 +79,27 @@ pub fn cents_to_fixed0(cents: i64) -> String {
     }
 }
 
+/// `x.toFixed(digits)` for the finite values SVG paths use: like `{:.N}` but an exact tie rounds away from zero (JS picks
+/// the larger n) where Rust would round to even.
+pub fn to_fixed(x: f64, digits: usize) -> String {
+    let exact = format!("{:.*}", digits + 30, x.abs());
+    let (keep, rest) = exact.split_at(exact.len() - 30);
+    let tie = rest.starts_with('5') && rest[1..].bytes().all(|b| b == b'0');
+    let s = if tie {
+        let step = 10f64.powi(-(digits as i32));
+        let base: f64 = keep.parse().unwrap_or(0.0);
+        format!("{:.*}", digits, base + step)
+    } else {
+        format!("{:.*}", digits, x.abs())
+    };
+    // JS keeps the sign of any negative input, even when it rounds to zero.
+    if x < 0.0 {
+        format!("-{s}")
+    } else {
+        s
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,6 +179,17 @@ mod tests {
         assert_eq!(parse_amount_to_cents(".123"), None);
         assert_eq!(parse_amount_to_cents("+5"), None);
         assert_eq!(parse_amount_to_cents("-0"), Some(0));
+    }
+
+    #[test]
+    fn to_fixed_matches_js() {
+        assert_eq!(to_fixed(12.25, 1), "12.3"); // JS: (12.25).toFixed(1)
+        assert_eq!(to_fixed(0.25, 1), "0.3");
+        assert_eq!(to_fixed(190.0, 1), "190.0");
+        assert_eq!(to_fixed(97.5, 1), "97.5");
+        assert_eq!(to_fixed(1.05, 1), "1.1"); // 1.05000000000000004 in binary: not a tie
+        assert_eq!(to_fixed(33.333333, 1), "33.3");
+        assert_eq!(to_fixed(-2.25, 1), "-2.3");
     }
 
     #[test]
