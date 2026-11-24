@@ -34,8 +34,13 @@ fn run(f: &NumberFormat, n: f64) -> String {
 
 /// `formatCents(cents)`: two decimals, minus sign as U+2212.
 pub fn cents(cents: i64) -> String {
+    cents_in(cents, "USD")
+}
+
+/// `formatCents(cents, { currency })`.
+pub fn cents_in(cents: i64, currency: &str) -> String {
     let abs = run(
-        &formatter("USD", Some(2), 2),
+        &formatter(currency, Some(2), 2),
         cents.unsigned_abs() as f64 / 100.0,
     );
     if cents < 0 {

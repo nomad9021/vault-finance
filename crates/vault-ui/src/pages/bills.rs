@@ -424,7 +424,7 @@ fn BillDialog(
                     <Field label="Amount" value=amount placeholder="0.00" input_mode="decimal" />
                 </div>
                 <div style="width: 120px">
-                    <Field label="Due day (1–31)" value=due_day input_mode="numeric" sanitize=digits_only />
+                    <Field label="Due day (1–31)" value=due_day input_mode="numeric" filter=digits_only />
                 </div>
             </div>
             <div style="display: flex; gap: 10px">

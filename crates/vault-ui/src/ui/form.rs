@@ -25,13 +25,18 @@ pub fn Field(
     #[prop(optional)]
     autofocus: bool,
     #[prop(optional, into)] hint: Option<Signal<String>>,
-    /// Rewrites what was typed before it's stored (React's
-    /// `onChange={(e) => set(clean(e.target.value))}`).
+    /// Validation message; shown instead of the hint while `Some`.
+    #[prop(optional, into)]
+    error: Option<Signal<Option<String>>>,
+    #[prop(optional)] max_length: Option<u32>,
+    /// Rewrites what's typed before it's stored (React's
+    /// `onChange={(e) => set(e.target.value.replace(…))}`).
     #[prop(optional)]
-    sanitize: Option<fn(&str) -> String>,
+    filter: Option<fn(&str) -> String>,
 ) -> impl IntoView {
     let id = use_id();
     let input = NodeRef::<html::Input>::new();
+    let current_error = move || error.and_then(|e| e.get());
     if autofocus {
         Effect::new(move || {
             if let Some(el) = input.get() {
@@ -43,12 +48,29 @@ pub fn Field(
         <div class="field">
             <label for=id.clone()>{label}</label>
             <input node_ref=input id=id class="input" placeholder=placeholder inputmode=input_mode
+                maxlength=max_length aria-invalid=move || current_error().map(|_| "true")
                 prop:value=move || value.get()
                 on:input=move |e| {
-                    let v = event_target_value(&e);
-                    value.set(match sanitize { Some(f) => f(&v), None => v });
+                    let raw = event_target_value(&e);
+                    match filter {
+                        Some(f) => {
+                            let clean = f(&raw);
+                            // A rejected keystroke leaves the signal unchanged, so
+                            // put the controlled value back by hand.
+                            if clean != raw {
+                                if let Some(el) = input.get_untracked() {
+                                    el.set_value(&clean);
+                                }
+                            }
+                            value.set(clean);
+                        }
+                        None => value.set(raw),
+                    }
                 } />
-            {hint.map(|h| view! { <div class="field-hint">{move || h.get()}</div> })}
+            {move || match current_error() {
+                Some(e) => Some(view! { <div role="alert" class="field-error">{e}</div> }.into_any()),
+                None => hint.map(|h| view! { <div class="field-hint">{move || h.get()}</div> }.into_any()),
+            }}
         </div>
     }
 }

@@ -3,6 +3,7 @@
 
 use leptos::prelude::*;
 
+pub mod accounts;
 pub mod bills;
 pub mod cashflow;
 pub mod debt_calculator;
@@ -12,7 +13,7 @@ pub mod insights;
 pub mod networth;
 
 pub const IDS: &[&str] = &[
-    "insights", "networth", "goals", "cashflow", "bills", "income",
+    "insights", "networth", "goals", "cashflow", "bills", "income", "accounts",
 ];
 
 pub fn render(page: &str) -> AnyView {
@@ -23,6 +24,7 @@ pub fn render(page: &str) -> AnyView {
         "cashflow" => view! { <cashflow::CashFlowPage /> }.into_any(),
         "bills" => view! { <bills::BillsPage /> }.into_any(),
         "income" => view! { <income::IncomePage /> }.into_any(),
+        "accounts" => view! { <accounts::AccountsPage /> }.into_any(),
         _ => ().into_any(),
     }
 }
