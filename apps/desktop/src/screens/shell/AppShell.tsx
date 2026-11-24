@@ -235,7 +235,7 @@ function PageBody({
   onNavigate: Navigate;
 }) {
   // Pages already moved to the Rust UI (docs/rust-port.md).
-  if (usesRust(page)) return <RustPage page={page} onNavigate={onNavigate} />;
+  if (usesRust(page)) return <RustPage page={page} onNavigate={onNavigate} tab={filter.tab} />;
 
   switch (page) {
     case "dashboard":

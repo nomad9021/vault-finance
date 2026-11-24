@@ -9,7 +9,7 @@ import type { NavFilter, Navigate, PageId } from "../screens/shell/nav.js";
  * Pages drawn by the Rust UI (crates/vault-ui, Leptos compiled to wasm).
  * Must match `pages::IDS` there. See docs/rust-port.md.
  */
-export const RUST_PAGES: ReadonlySet<PageId> = new Set<PageId>(["insights"]);
+export const RUST_PAGES: ReadonlySet<PageId> = new Set<PageId>(["insights", "cashflow"]);
 
 const FLAG = "vault.rust-ui";
 
@@ -64,12 +64,26 @@ function makeHost(client: ApiClient, onNavigate: Navigate) {
   };
 }
 
-/** Mounts a Rust page into a div and tears it down on page change. */
-export function RustPage({ page, onNavigate }: { page: PageId; onNavigate: Navigate }) {
+/**
+ * Mounts a Rust page into a div and tears it down on page change. `tab` is
+ * the NavFilter's tab; like the React pages' `initialTab` it is read once,
+ * when the page mounts.
+ */
+export function RustPage({
+  page,
+  onNavigate,
+  tab,
+}: {
+  page: PageId;
+  onNavigate: Navigate;
+  tab?: string | undefined;
+}) {
   const client = useApp((s) => s.client);
   const ref = useRef<HTMLDivElement>(null);
   const nav = useRef(onNavigate);
   nav.current = onNavigate;
+  const initialTab = useRef(tab);
+  initialTab.current = tab;
   const [state, setState] = useState<"loading" | "ready" | Error>("loading");
 
   useEffect(() => {
@@ -81,7 +95,12 @@ export function RustPage({ page, onNavigate }: { page: PageId; onNavigate: Navig
     loadWasm()
       .then((m) => {
         if (cancelled) return;
-        mounted = m.mount(el, page, makeHost(client, (p, f) => nav.current(p, f)));
+        mounted = m.mount(
+          el,
+          page,
+          makeHost(client, (p, f) => nav.current(p, f)),
+          initialTab.current,
+        );
         setState("ready");
       })
       .catch((err: unknown) => {
