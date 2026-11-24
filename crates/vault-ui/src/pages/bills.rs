@@ -8,8 +8,9 @@ use serde::de::IgnoredAny;
 use vault_core::accounts::{Account, AccountListResponse};
 use vault_core::bills::{
     bill_month, digits_only, due_label, totals, Bill, BillCadence, BillForm, BillListResponse,
-    Category, CategoryKind, CategoryListResponse, BILL_COLORS,
+    BILL_COLORS,
 };
+use vault_core::categories::{Category, CategoryKind, CategoryListResponse};
 use vault_core::dates::Month;
 use wasm_bindgen::JsValue;
 

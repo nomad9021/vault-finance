@@ -1,4 +1,4 @@
-//! Mirrors packages/shared/src/schemas/bills.ts and categories.ts, plus the
+//! Mirrors packages/shared/src/schemas/bills.ts, plus the
 //! list, calendar and form logic of apps/desktop/src/screens/shell/BillsPage.tsx.
 
 use serde::{Deserialize, Serialize};
@@ -79,31 +79,6 @@ pub struct BillListResponse {
     pub bills: Vec<Bill>,
     pub total_due_cents: i64,
     pub total_saved_cents: i64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum CategoryKind {
-    Expense,
-    Income,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Category {
-    pub id: String,
-    pub name: String,
-    pub icon: Option<String>,
-    pub color: String,
-    pub parent_category_id: Option<String>,
-    pub sort_order: i64,
-    pub kind: CategoryKind,
-    pub is_system: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct CategoryListResponse {
-    pub categories: Vec<Category>,
 }
 
 /// How urgent a due date reads.
@@ -341,19 +316,6 @@ mod tests {
         );
         assert_eq!(totals(Some(&r)), (251500, 95000, 156500));
         assert_eq!(totals(None), (0, 0, 0));
-    }
-
-    #[test]
-    fn parses_categories() {
-        let r: CategoryListResponse = serde_json::from_str(
-            r##"{"categories":[{"id":"5d1c0c8e-8a43-4a4e-9a51-1f1d2b1c3c4d","name":"Utilities","icon":"bolt",
-            "color":"#4db6d0","parentCategoryId":null,"sortOrder":3,"kind":"expense","isSystem":false},
-            {"id":"6e2d1c0b-9a8f-4e7d-8c6b-5a4f3e2d1c0b","name":"Salary","icon":null,"color":"#3ecf8e",
-            "parentCategoryId":null,"sortOrder":0,"kind":"income","isSystem":true}]}"##,
-        )
-        .unwrap();
-        assert_eq!(r.categories[0].kind, CategoryKind::Expense);
-        assert_eq!(r.categories[1].kind, CategoryKind::Income);
     }
 
     #[test]
