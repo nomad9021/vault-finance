@@ -339,7 +339,7 @@ pub fn DebtCalculator() -> impl IntoView {
             view! {
                 <Panel kicker="Plan" title="Get out of debt"
                     subtitle="Compare payoff strategies and see the impact of paying extra"
-                    actions=gear_button>
+                    actions=gear_button().into_any()>
                     <div class="grid" style="margin-bottom: 6px">
                         <div class="col-4">
                             <div class="eyebrow">"Debt-free by"</div>

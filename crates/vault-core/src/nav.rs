@@ -10,4 +10,7 @@ pub struct NavFilter {
     pub category_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_id: Option<String>,
+    /// Tab to open on the target page (e.g. `"debt"` on Cash flow).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tab: Option<String>,
 }

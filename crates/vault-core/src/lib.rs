@@ -12,3 +12,5 @@ pub mod debt;
 pub mod insights;
 pub mod money;
 pub mod nav;
+pub mod networth;
+pub mod trend_chart;

@@ -1,5 +1,5 @@
-//! Mirrors `CashflowSummaryResponse` in packages/shared/src/schemas/cashflow.ts
-//! and the summary figures under the Cash Flow page's bar chart.
+//! Mirrors packages/shared/src/schemas/cashflow.ts (the summary and trend
+//! types) and the summary figures under the Cash Flow page's bar chart.
 
 use serde::Deserialize;
 
@@ -80,6 +80,32 @@ pub fn bar_height(cents: i64, max_cents: i64) -> String {
     }
 }
 
+/// One month on the trend charts. Net worth is reconstructed from current
+/// balances minus later transaction flows, so market moves aren't captured.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrendPoint {
+    /// `YYYY-MM`.
+    pub month: String,
+    pub net_worth_cents: i64,
+    pub income_cents: i64,
+    pub spending_cents: i64,
+}
+
+impl TrendPoint {
+    /// (year, month 1–12) of `month`.
+    pub fn year_month(&self) -> Option<(i32, u32)> {
+        let (y, m) = self.month.split_once('-')?;
+        Some((y.parse().ok()?, m.parse().ok()?))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrendsResponse {
+    pub points: Vec<TrendPoint>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,5 +170,19 @@ mod tests {
         assert_eq!(bar_height(701_150, 701_150), "100%");
         assert_eq!(bar_height(0, 1), "0%");
         assert_eq!(bar_height(1, 3), "33.33333333333333%");
+    }
+
+    #[test]
+    fn parses_trends() {
+        let r: TrendsResponse = serde_json::from_str(
+            r#"{"points":[
+              {"month":"2026-10","netWorthCents":1520000,"incomeCents":640000,"spendingCents":512340},
+              {"month":"2026-11","netWorthCents":1548117,"incomeCents":640000,"spendingCents":611883}
+            ]}"#,
+        )
+        .unwrap();
+        assert_eq!(r.points.len(), 2);
+        assert_eq!(r.points[1].net_worth_cents, 1548117);
+        assert_eq!(r.points[0].year_month(), Some((2026, 10)));
     }
 }

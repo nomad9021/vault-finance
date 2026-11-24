@@ -484,7 +484,15 @@ mod tests {
             kind,
             is_liability: true,
             balance_cents,
-            ..Account::sample()
+            institution: None,
+            mask: None,
+            currency: "USD".into(),
+            interest_rate: None,
+            set_aside_cents: None,
+            set_aside: None,
+            archived_at: None,
+            created_at: "2026-01-01T00:00:00.000Z".into(),
+            updated_at: "2026-01-01T00:00:00.000Z".into(),
         }
     }
 

@@ -70,6 +70,23 @@ pub fn cents_whole_f64(cents: f64) -> String {
     }
 }
 
+/// `new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined,
+/// { month: "short", year: "2-digit", timeZone: "UTC" })`, e.g. "Nov 26".
+pub fn month_label(year: i32, month: u32) -> String {
+    let opts = Object::new();
+    for (k, v) in [("month", "short"), ("year", "2-digit"), ("timeZone", "UTC")] {
+        let _ = Reflect::set(&opts, &k.into(), &v.into());
+    }
+    let f = DateTimeFormat::new(&Array::new(), &opts);
+    let ms = js_sys::Date::utc(year as f64, month as f64 - 1.0);
+    let date = js_sys::Date::new(&JsValue::from(ms));
+    f.format()
+        .call1(&JsValue::NULL, &date)
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_default()
+}
+
 fn date_format(date: &Date, opts: &[(&str, &str)]) -> String {
     let o = Object::new();
     for (k, v) in opts {
@@ -83,7 +100,7 @@ fn date_format(date: &Date, opts: &[(&str, &str)]) -> String {
         .unwrap_or_default()
 }
 
-/// `"2026-11"` → `"Nov"`: `toLocaleDateString(undefined, { month: "short",
+/// `"2026-11"` → `"Nov"`:`toLocaleDateString(undefined, { month: "short",
 /// timeZone: "UTC" })` of the first of that month.
 pub fn month_short(month: &str) -> String {
     let mut parts = month

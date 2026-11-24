@@ -102,7 +102,7 @@ fn Trends(months: Vec<MonthSummary>) -> impl IntoView {
 
     view! {
         <div class="page">
-            <Panel flush=true title="Income vs. spending" subtitle="Last 6 months" actions=legend>
+            <Panel flush=true title="Income vs. spending" subtitle="Last 6 months" actions=legend().into_any()>
                 <div style="padding: 8px 18px 18px; display: flex; gap: 14px; align-items: flex-end; height: 220px">
                     {columns}
                 </div>
