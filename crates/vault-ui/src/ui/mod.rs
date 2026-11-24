@@ -43,6 +43,7 @@ pub fn Button(
     #[prop(optional)] block: bool,
     #[prop(optional, into)] style: Option<String>,
     #[prop(optional, into)] title: Option<String>,
+    #[prop(optional, into)] aria_label: Option<String>,
     #[prop(optional, into)] disabled: MaybeProp<bool>,
     /// `e.stopPropagation()` before `on_click` (a button inside a clickable card).
     #[prop(optional)]
@@ -67,7 +68,7 @@ pub fn Button(
         class.push_str(" btn-block");
     }
     view! {
-        <button type="button" class=class style=style title=title disabled=move || disabled.get().unwrap_or(false)
+        <button type="button" class=class style=style title=title aria-label=aria_label disabled=move || disabled.get().unwrap_or(false)
             on:click=move |e| {
                 if stop_propagation {
                     e.stop_propagation();
@@ -144,6 +145,23 @@ pub fn MetricCard(
                 </div>
             })}
             {hint.map(|h| view! { <div class="stat-hint">{h}</div> })}
+        </div>
+    }
+}
+
+/// `<Card>`: the older card container, with an optional kicker and title.
+#[component]
+pub fn Card(
+    #[prop(default = "sm")] elevation: &'static str,
+    #[prop(optional, into)] kicker: Option<String>,
+    #[prop(optional, into)] title: Option<String>,
+    children: Children,
+) -> impl IntoView {
+    view! {
+        <div class=format!("card elev-{elevation}")>
+            {kicker.filter(|k| !k.is_empty()).map(|k| view! { <div class="card-kicker">{k}</div> })}
+            {title.filter(|t| !t.is_empty()).map(|t| view! { <div class="card-title">{t}</div> })}
+            {children()}
         </div>
     }
 }
@@ -307,23 +325,6 @@ pub fn Spinner(#[prop(default = "Loading")] label: &'static str) -> impl IntoVie
         <span role="status" aria-label=label style="display: inline-flex; gap: 4px; align-items: center">
             {dot(0)}{dot(1)}{dot(2)}
         </span>
-    }
-}
-
-/// `<Card>`: the older elevated card (`.card`), with optional kicker and title.
-#[component]
-pub fn Card(
-    #[prop(default = "sm")] elevation: &'static str,
-    #[prop(optional, into)] kicker: Option<String>,
-    #[prop(optional, into)] title: Option<String>,
-    children: Children,
-) -> impl IntoView {
-    view! {
-        <div class=format!("card elev-{elevation}")>
-            {kicker.filter(|k| !k.is_empty()).map(|k| view! { <div class="card-kicker">{k}</div> })}
-            {title.filter(|t| !t.is_empty()).map(|t| view! { <div class="card-title">{t}</div> })}
-            {children()}
-        </div>
     }
 }
 
