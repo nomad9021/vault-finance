@@ -92,7 +92,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           # Both mac architectures build from the same runner.
-          targets: ${{ startsWith(matrix.platform, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          # wasm32: the Rust UI pages (crates/vault-ui), built by `pnpm build`.
+          targets: ${{ startsWith(matrix.platform, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin,wasm32-unknown-unknown' || 'wasm32-unknown-unknown' }}
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri

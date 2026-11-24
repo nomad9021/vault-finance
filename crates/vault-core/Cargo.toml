@@ -1,0 +1,12 @@
+[package]
+name = "vault-core"
+description = "Vault Finance types and pure logic shared by the Rust UI (mirrors packages/shared)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

@@ -25,6 +25,17 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # The desktop build compiles the Rust UI pages to wasm (crates/vault-ui).
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+      - run: node scripts/gen-rust-icons.mjs --check
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm typecheck
@@ -54,6 +65,22 @@ jobs:
         with:
           workspaces: apps/desktop/src-tauri
       - run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
+
+  rust-ui:
+    # The Leptos pages and the pure logic they share (docs/rust-port.md).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+      - run: cargo fmt --manifest-path crates/Cargo.toml --all --check
+      - run: cargo test --manifest-path crates/Cargo.toml -p vault-core
+      - run: cargo clippy --manifest-path crates/Cargo.toml -p vault-ui --target wasm32-unknown-unknown -- -D warnings
 
   docker:
     runs-on: ubuntu-latest

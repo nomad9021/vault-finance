@@ -19,3 +19,6 @@ docker/multi/control.token
 # Local server data dir (VAULT_DATA_DIR defaults to ./data)
 apps/server/data/
 apps/control/data/
+# Rust UI build output (scripts/build-rust-ui.mjs)
+apps/desktop/src/rust/pkg/
+crates/target/
