@@ -1,8 +1,8 @@
 //! Mirrors packages/shared/src/schemas/accounts.ts.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AccountType {
     Checking,
@@ -15,6 +15,34 @@ pub enum AccountType {
 }
 
 impl AccountType {
+    /// `AccountType.options`, in schema order.
+    pub const ALL: [AccountType; 7] = [
+        Self::Checking,
+        Self::Savings,
+        Self::CreditCard,
+        Self::Investment,
+        Self::Loan,
+        Self::Mortgage,
+        Self::Other,
+    ];
+
+    /// The wire value ("credit_card").
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Checking => "checking",
+            Self::Savings => "savings",
+            Self::CreditCard => "credit_card",
+            Self::Investment => "investment",
+            Self::Loan => "loan",
+            Self::Mortgage => "mortgage",
+            Self::Other => "other",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|t| t.as_str() == s)
+    }
+
     /// `ACCOUNT_TYPE_LABELS`.
     pub fn label(self) -> &'static str {
         match self {
@@ -115,5 +143,15 @@ pub(crate) mod tests {
         assert_eq!(r.accounts[1].set_aside_cents, None);
         assert_eq!(r.accounts[0].set_aside.as_ref().unwrap()[0].name, "Rent");
         assert_eq!(r.accounts[0].mask.as_deref(), Some("4821"));
+    }
+
+    #[test]
+    fn type_wire_names_round_trip() {
+        for t in AccountType::ALL {
+            let json = serde_json::to_string(&t).unwrap();
+            assert_eq!(json, format!("\"{}\"", t.as_str()));
+            assert_eq!(AccountType::parse(t.as_str()), Some(t));
+        }
+        assert_eq!(AccountType::parse("bogus"), None);
     }
 }

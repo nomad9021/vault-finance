@@ -13,6 +13,7 @@ pub use confetti::Confetti;
 pub use dialog::Dialog;
 pub use form::{DateField, Field, Select, SelectOption};
 pub use icons_gen::NAMES as ICON_NAMES;
+pub use listen::on_window;
 
 /// `<Icon>`: inline SVG on a 24×24 grid, stroke scales at small sizes.
 #[component]
@@ -154,6 +155,10 @@ pub fn Panel(
     #[prop(optional, into)]
     kicker: Option<String>,
     #[prop(optional, into)] title: Option<String>,
+    /// A title that isn't plain text (React's `title={<button>…}`); used
+    /// instead of `title`.
+    #[prop(optional)]
+    title_view: Option<AnyView>,
     #[prop(optional, into)] subtitle: Option<Signal<String>>,
     /// Right-aligned header content (toggles, links).
     #[prop(optional)]
@@ -161,7 +166,15 @@ pub fn Panel(
     #[prop(optional)] flush: bool,
     children: Children,
 ) -> impl IntoView {
-    let has_head = kicker.is_some() || title.is_some() || subtitle.is_some() || actions.is_some();
+    let has_head = kicker.is_some()
+        || title.is_some()
+        || title_view.is_some()
+        || subtitle.is_some()
+        || actions.is_some();
+    let title = match title_view {
+        Some(v) => Some(v),
+        None => title.map(IntoAny::into_any),
+    };
     view! {
         <div class=if flush { "panel panel-flush" } else { "panel" }>
             {has_head.then(|| view! {
@@ -294,6 +307,23 @@ pub fn Spinner(#[prop(default = "Loading")] label: &'static str) -> impl IntoVie
         <span role="status" aria-label=label style="display: inline-flex; gap: 4px; align-items: center">
             {dot(0)}{dot(1)}{dot(2)}
         </span>
+    }
+}
+
+/// `<Card>`: the older elevated card (`.card`), with optional kicker and title.
+#[component]
+pub fn Card(
+    #[prop(default = "sm")] elevation: &'static str,
+    #[prop(optional, into)] kicker: Option<String>,
+    #[prop(optional, into)] title: Option<String>,
+    children: Children,
+) -> impl IntoView {
+    view! {
+        <div class=format!("card elev-{elevation}")>
+            {kicker.filter(|k| !k.is_empty()).map(|k| view! { <div class="card-kicker">{k}</div> })}
+            {title.filter(|t| !t.is_empty()).map(|t| view! { <div class="card-title">{t}</div> })}
+            {children()}
+        </div>
     }
 }
 

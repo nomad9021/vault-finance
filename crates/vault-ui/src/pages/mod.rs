@@ -3,13 +3,14 @@
 
 use leptos::prelude::*;
 
+pub mod accounts;
 pub mod cashflow;
 pub mod debt_calculator;
 pub mod goals;
 pub mod insights;
 pub mod networth;
 
-pub const IDS: &[&str] = &["insights", "networth", "goals", "cashflow"];
+pub const IDS: &[&str] = &["insights", "networth", "goals", "cashflow", "accounts"];
 
 pub fn render(page: &str) -> AnyView {
     match page {
@@ -17,6 +18,7 @@ pub fn render(page: &str) -> AnyView {
         "networth" => view! { <networth::NetWorthPage /> }.into_any(),
         "goals" => view! { <goals::GoalsPage /> }.into_any(),
         "cashflow" => view! { <cashflow::CashFlowPage /> }.into_any(),
+        "accounts" => view! { <accounts::AccountsPage /> }.into_any(),
         _ => ().into_any(),
     }
 }
