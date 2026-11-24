@@ -9,10 +9,17 @@ pub mod debt_calculator;
 pub mod goals;
 pub mod income;
 pub mod insights;
+pub mod investments;
 pub mod networth;
 
 pub const IDS: &[&str] = &[
-    "insights", "networth", "goals", "cashflow", "income", "accounts",
+    "insights",
+    "networth",
+    "goals",
+    "cashflow",
+    "income",
+    "investments",
+    "accounts",
 ];
 
 pub fn render(page: &str) -> AnyView {
@@ -22,6 +29,7 @@ pub fn render(page: &str) -> AnyView {
         "goals" => view! { <goals::GoalsPage /> }.into_any(),
         "cashflow" => view! { <cashflow::CashFlowPage /> }.into_any(),
         "income" => view! { <income::IncomePage /> }.into_any(),
+        "investments" => view! { <investments::InvestmentsPage /> }.into_any(),
         "accounts" => view! { <accounts::AccountsPage /> }.into_any(),
         _ => ().into_any(),
     }
