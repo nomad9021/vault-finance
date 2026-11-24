@@ -53,7 +53,7 @@ Status: `todo` · `wip` · `review` (PR open) · `done` (merged, Rust page on in
 |---|---|---|---|
 | insights | 0 | review | rust/foundation |
 | cashflow | 1 | todo | |
-| networth | 1 | todo | |
+| networth | 1 | review | rust/page-networth |
 | subscriptions | 1 | todo | |
 | goals | 1 | todo | |
 | investments | 2 | todo | |

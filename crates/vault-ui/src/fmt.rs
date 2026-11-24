@@ -2,7 +2,11 @@
 //! print exactly what `formatCents` / `formatCentsWhole` in
 //! packages/shared/src/money.ts print (same locale, same symbols).
 
-use js_sys::{Array, Intl::NumberFormat, Object, Reflect};
+use js_sys::{
+    Array,
+    Intl::{DateTimeFormat, NumberFormat},
+    Object, Reflect,
+};
 use wasm_bindgen::JsValue;
 
 fn formatter(currency: &str, min: Option<u8>, max: u8) -> NumberFormat {
@@ -58,4 +62,21 @@ pub fn cents_whole(cents: i64) -> String {
     } else {
         abs
     }
+}
+
+/// `new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined,
+/// { month: "short", year: "2-digit", timeZone: "UTC" })`, e.g. "Nov 26".
+pub fn month_label(year: i32, month: u32) -> String {
+    let opts = Object::new();
+    for (k, v) in [("month", "short"), ("year", "2-digit"), ("timeZone", "UTC")] {
+        let _ = Reflect::set(&opts, &k.into(), &v.into());
+    }
+    let f = DateTimeFormat::new(&Array::new(), &opts);
+    let ms = js_sys::Date::utc(year as f64, month as f64 - 1.0);
+    let date = js_sys::Date::new(&JsValue::from(ms));
+    f.format()
+        .call1(&JsValue::NULL, &date)
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_default()
 }
