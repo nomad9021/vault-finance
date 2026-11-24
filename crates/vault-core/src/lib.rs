@@ -21,6 +21,7 @@ pub mod giving;
 pub mod goals;
 pub mod income;
 pub mod insights;
+pub mod investments;
 pub mod money;
 pub mod nav;
 pub mod networth;

@@ -28,7 +28,8 @@ pub fn Field(
     /// Enter pressed in the input (React's `onKeyDown` checking `e.key`).
     #[prop(optional)]
     on_enter: Option<Callback<()>>,
-    /// Validation message; shown instead of the hint while `Some`.
+    /// Validation message; shown instead of the hint (and marks the input
+    /// invalid) while non-empty.
     #[prop(optional, into)]
     error: Option<Signal<Option<String>>>,
     #[prop(optional)] max_length: Option<u32>,
@@ -39,7 +40,7 @@ pub fn Field(
 ) -> impl IntoView {
     let id = use_id();
     let input = NodeRef::<html::Input>::new();
-    let current_error = move || error.and_then(|e| e.get());
+    let current_error = move || error.and_then(|e| e.get()).filter(|e| !e.is_empty());
     if autofocus {
         Effect::new(move || {
             if let Some(el) = input.get() {
