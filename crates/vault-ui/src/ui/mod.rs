@@ -30,6 +30,7 @@ pub fn Button(
     #[prop(optional)] icon_end: Option<&'static str>,
     #[prop(optional)] block: bool,
     #[prop(optional, into)] style: Option<String>,
+    #[prop(optional, into)] disabled: MaybeProp<bool>,
     on_click: impl Fn() + 'static,
     #[prop(optional)] children: Option<Children>,
 ) -> impl IntoView {
@@ -50,7 +51,8 @@ pub fn Button(
         class.push_str(" btn-block");
     }
     view! {
-        <button type="button" class=class style=style on:click=move |_| on_click()>
+        <button type="button" class=class style=style
+            disabled=move || disabled.get().unwrap_or(false) on:click=move |_| on_click()>
             {icon.map(|n| view! { <Icon name=n size=icon_size /> })}
             {children.map(|c| c())}
             {icon_end.map(|n| view! { <Icon name=n size=icon_size /> })}
@@ -84,9 +86,12 @@ pub fn Panel(
     #[prop(optional, into)] title: Option<String>,
     #[prop(optional, into)] subtitle: Option<String>,
     #[prop(optional)] flush: bool,
+    /// Right-aligned header content (buttons, a [`PanelLink`]).
+    #[prop(default = None)]
+    actions: Option<AnyView>,
     children: Children,
 ) -> impl IntoView {
-    let has_head = title.is_some() || subtitle.is_some();
+    let has_head = title.is_some() || subtitle.is_some() || actions.is_some();
     view! {
         <div class=if flush { "panel panel-flush" } else { "panel" }>
             {has_head.then(|| view! {
@@ -95,11 +100,39 @@ pub fn Panel(
                         {title.map(|t| view! { <div class="panel-title">{t}</div> })}
                         {subtitle.map(|s| view! { <div class="panel-sub">{s}</div> })}
                     </div>
+                    {actions.map(|a| view! { <div class="panel-actions">{a}</div> })}
                 </div>
             })}
             {children()}
         </div>
     }
+}
+
+/// `<PanelLink>`: the "See all →" link in a panel header.
+#[component]
+pub fn PanelLink(
+    on_click: impl Fn() + 'static,
+    #[prop(optional)] children: Option<Children>,
+) -> impl IntoView {
+    view! {
+        <button type="button" class="panel-link" on:click=move |_| on_click()>
+            {match children {
+                Some(c) => c().into_any(),
+                None => "See all".into_any(),
+            }}
+            <Icon name="arrowRight" size=14 />
+        </button>
+    }
+}
+
+/// `<Tag>`: a small pill. `variant` is accent, accent-2, neutral, positive,
+/// negative, warning or outline.
+#[component]
+pub fn Tag(
+    #[prop(default = "neutral")] variant: &'static str,
+    children: Children,
+) -> impl IntoView {
+    view! { <span class=format!("tag tag-{variant}")>{children()}</span> }
 }
 
 /// `<EmptyState>`.
@@ -109,6 +142,7 @@ pub fn EmptyState(
     #[prop(into)] title: String,
     #[prop(optional, into)] body: Option<String>,
     #[prop(optional)] compact: bool,
+    #[prop(optional)] action: Option<AnyView>,
 ) -> impl IntoView {
     view! {
         <div class=if compact { "empty empty-sm" } else { "empty" }>
@@ -117,6 +151,7 @@ pub fn EmptyState(
                 <div class="empty-title">{title}</div>
                 {body.map(|b| view! { <p class="empty-body" style="margin-top: var(--space-1)">{b}</p> })}
             </div>
+            {action}
         </div>
     }
 }
