@@ -9,9 +9,11 @@
 use leptos::prelude::*;
 use wasm_bindgen::prelude::*;
 
+pub mod balance_view;
 pub mod fmt;
 pub mod host;
 pub mod pages;
+pub mod storage;
 pub mod ui;
 
 /// A mounted page. Dropping it (or calling `unmount`) removes the page's DOM

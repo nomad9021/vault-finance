@@ -28,9 +28,18 @@ pub fn Field(
     /// Enter pressed in the input (React's `onKeyDown` checking `e.key`).
     #[prop(optional)]
     on_enter: Option<Callback<()>>,
+    /// Validation message; shown instead of the hint while `Some`.
+    #[prop(optional, into)]
+    error: Option<Signal<Option<String>>>,
+    #[prop(optional)] max_length: Option<u32>,
+    /// Rewrites what's typed before it's stored (React's
+    /// `onChange={(e) => set(e.target.value.replace(…))}`).
+    #[prop(optional)]
+    filter: Option<fn(&str) -> String>,
 ) -> impl IntoView {
     let id = use_id();
     let input = NodeRef::<html::Input>::new();
+    let current_error = move || error.and_then(|e| e.get());
     if autofocus {
         Effect::new(move || {
             if let Some(el) = input.get() {
@@ -42,14 +51,34 @@ pub fn Field(
         <div class="field">
             <label for=id.clone()>{label}</label>
             <input node_ref=input id=id class="input" placeholder=placeholder inputmode=input_mode
+                maxlength=max_length aria-invalid=move || current_error().map(|_| "true")
                 prop:value=move || value.get()
-                on:input=move |e| value.set(event_target_value(&e))
+                on:input=move |e| {
+                    let raw = event_target_value(&e);
+                    match filter {
+                        Some(f) => {
+                            let clean = f(&raw);
+                            // A rejected keystroke leaves the signal unchanged, so
+                            // put the controlled value back by hand.
+                            if clean != raw {
+                                if let Some(el) = input.get_untracked() {
+                                    el.set_value(&clean);
+                                }
+                            }
+                            value.set(clean);
+                        }
+                        None => value.set(raw),
+                    }
+                }
                 on:keydown=move |e| {
                     if let Some(f) = on_enter.filter(|_| e.key() == "Enter") {
                         f.run(());
                     }
                 } />
-            {hint.map(|h| view! { <div class="field-hint">{move || h.get()}</div> })}
+            {move || match current_error() {
+                Some(e) => Some(view! { <div role="alert" class="field-error">{e}</div> }.into_any()),
+                None => hint.map(|h| view! { <div class="field-hint">{move || h.get()}</div> }.into_any()),
+            }}
         </div>
     }
 }

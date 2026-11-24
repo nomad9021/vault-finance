@@ -1,5 +1,4 @@
-//! Mirrors packages/shared/src/schemas/categories.ts, plus the sibling order
-//! every category tree in the app uses (`sortOrder`, then name).
+//! Mirrors packages/shared/src/schemas/categories.ts.
 
 use std::cmp::Ordering;
 
@@ -8,9 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CategoryKind {
-    /// Shapes spending.
     Expense,
-    /// An income source.
     Income,
 }
 
@@ -23,7 +20,7 @@ impl CategoryKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Category {
     pub id: String,
@@ -38,8 +35,25 @@ pub struct Category {
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CategoryListResponse {
     pub categories: Vec<Category>,
+}
+
+/// `CreateCategoryRequest` as the Income page sends it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateCategoryBody {
+    pub name: String,
+    pub color: String,
+    pub kind: CategoryKind,
+}
+
+/// `UpdateCategoryRequest` with just a new name.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RenameCategoryBody {
+    pub name: String,
 }
 
 /// `a.localeCompare(b)` for the names the app sorts: case is ignored first
@@ -189,23 +203,52 @@ pub fn reorder(ids: &[String], id: &str, target: &str, after: bool) -> Vec<Strin
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
+    pub const SAMPLE: &str = r##"{
+      "categories": [
+        {"id":"7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d","name":"Groceries","icon":"cart","color":"#3ecf8e",
+         "parentCategoryId":null,"sortOrder":0,"kind":"expense","isSystem":false},
+        {"id":"8b2c3d4e-5f6a-4b7c-9d8e-0f1a2b3c4d5e","name":"Side Income","icon":null,"color":"#43cfc0",
+         "parentCategoryId":null,"sortOrder":1,"kind":"income","isSystem":false},
+        {"id":"9c3d4e5f-6a7b-4c8d-8e9f-1a2b3c4d5e6f","name":"Salary","icon":"briefcase","color":"#6f8ef2",
+         "parentCategoryId":null,"sortOrder":1,"kind":"income","isSystem":true},
+        {"id":"0d4e5f6a-7b8c-4d9e-9f0a-2b3c4d5e6f7a","name":"Gifts","icon":null,"color":"#b47ef0",
+         "parentCategoryId":null,"sortOrder":0,"kind":"income","isSystem":false}
+      ]
+    }"##;
+
     #[test]
-    fn parses_the_list() {
-        let res: CategoryListResponse = serde_json::from_str(
-            r##"{"categories":[
-              {"id":"3b0c5c8e-5d0e-4c3a-9a8e-0d6f1b2c3d4e","name":"Groceries","icon":"cart","color":"#3ecf8e",
-               "parentCategoryId":null,"sortOrder":2,"kind":"expense","isSystem":false},
-              {"id":"9f2a1b3c-4d5e-4f60-8a7b-1c2d3e4f5a6b","name":"Salary","icon":null,"color":"#6f8ef2",
-               "parentCategoryId":null,"sortOrder":0,"kind":"income","isSystem":true}]}"##,
-        )
-        .unwrap();
-        assert_eq!(res.categories[0].kind, CategoryKind::Expense);
-        assert_eq!(res.categories[1].parent_category_id, None);
-        assert!(res.categories[1].is_system);
+    fn parses_server_shape() {
+        let r: CategoryListResponse = serde_json::from_str(SAMPLE).unwrap();
+        assert_eq!(r.categories.len(), 4);
+        assert_eq!(r.categories[0].kind, CategoryKind::Expense);
+        assert_eq!(r.categories[2].kind, CategoryKind::Income);
+        assert!(r.categories[2].is_system);
+        assert_eq!(r.categories[1].icon, None);
+        assert_eq!(r.categories[3].sort_order, 0);
     }
+
+    #[test]
+    fn bodies_match_the_api() {
+        let create = CreateCategoryBody {
+            name: "New source".into(),
+            color: "#3ecf8e".into(),
+            kind: CategoryKind::Income,
+        };
+        assert_eq!(
+            serde_json::to_string(&create).unwrap(),
+            r##"{"name":"New source","color":"#3ecf8e","kind":"income"}"##
+        );
+        let rename = RenameCategoryBody { name: "Job".into() };
+        assert_eq!(serde_json::to_string(&rename).unwrap(), r#"{"name":"Job"}"#);
+    }
+}
+
+#[cfg(test)]
+mod arranger_tests {
+    use super::*;
 
     #[test]
     fn compares_names_like_locale_compare() {

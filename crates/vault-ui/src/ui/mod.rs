@@ -18,6 +18,7 @@ pub use confetti::Confetti;
 pub use dialog::Dialog;
 pub use form::{DateField, Field, Select, SelectOption};
 pub use icons_gen::NAMES as ICON_NAMES;
+pub use listen::on_window;
 pub use sankey::Sankey;
 pub use sankey_arranger::SankeyArranger;
 pub use sankey_card::SankeyCard;
@@ -51,6 +52,7 @@ pub fn Button(
     #[prop(optional)] block: bool,
     #[prop(optional, into)] style: Option<String>,
     #[prop(optional, into)] title: Option<String>,
+    #[prop(optional, into)] aria_label: Option<String>,
     #[prop(optional, into)] disabled: MaybeProp<bool>,
     /// `e.stopPropagation()` before `on_click` (a button inside a clickable card).
     #[prop(optional)]
@@ -75,7 +77,7 @@ pub fn Button(
         class.push_str(" btn-block");
     }
     view! {
-        <button type="button" class=class style=style title=title disabled=move || disabled.get().unwrap_or(false)
+        <button type="button" class=class style=style title=title aria-label=aria_label disabled=move || disabled.get().unwrap_or(false)
             on:click=move |e| {
                 if stop_propagation {
                     e.stop_propagation();
@@ -156,6 +158,23 @@ pub fn MetricCard(
     }
 }
 
+/// `<Card>`: the older card container, with an optional kicker and title.
+#[component]
+pub fn Card(
+    #[prop(default = "sm")] elevation: &'static str,
+    #[prop(optional, into)] kicker: Option<String>,
+    #[prop(optional, into)] title: Option<String>,
+    children: Children,
+) -> impl IntoView {
+    view! {
+        <div class=format!("card elev-{elevation}")>
+            {kicker.filter(|k| !k.is_empty()).map(|k| view! { <div class="card-kicker">{k}</div> })}
+            {title.filter(|t| !t.is_empty()).map(|t| view! { <div class="card-title">{t}</div> })}
+            {children()}
+        </div>
+    }
+}
+
 /// `<Panel>`: the one card container. `subtitle` may change after mount.
 #[component]
 pub fn Panel(
@@ -163,6 +182,10 @@ pub fn Panel(
     #[prop(optional, into)]
     kicker: Option<String>,
     #[prop(optional, into)] title: Option<String>,
+    /// A title that isn't plain text (React's `title={<button>…}`); used
+    /// instead of `title`.
+    #[prop(optional)]
+    title_view: Option<AnyView>,
     #[prop(optional, into)] subtitle: Option<Signal<String>>,
     /// Right-aligned header content (toggles, links).
     #[prop(optional)]
@@ -170,7 +193,15 @@ pub fn Panel(
     #[prop(optional)] flush: bool,
     children: Children,
 ) -> impl IntoView {
-    let has_head = kicker.is_some() || title.is_some() || subtitle.is_some() || actions.is_some();
+    let has_head = kicker.is_some()
+        || title.is_some()
+        || title_view.is_some()
+        || subtitle.is_some()
+        || actions.is_some();
+    let title = match title_view {
+        Some(v) => Some(v),
+        None => title.map(IntoAny::into_any),
+    };
     view! {
         <div class=if flush { "panel panel-flush" } else { "panel" }>
             {has_head.then(|| view! {
