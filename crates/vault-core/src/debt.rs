@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::accounts::{Account, AccountType};
-use crate::money::js_round;
+use crate::money::{js_round, math_round};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -135,7 +135,7 @@ pub fn simulate(debts: &[Debt], extra_cents: i64, strategy: Strategy) -> PayoffR
             if *b <= 0.0 {
                 continue;
             }
-            let interest = js_round((*b * (d.apr / 100.0)) / 12.0);
+            let interest = math_round((*b * (d.apr / 100.0)) / 12.0);
             *b += interest;
             total_interest += interest;
         }
@@ -176,7 +176,7 @@ pub fn simulate(debts: &[Debt], extra_cents: i64, strategy: Strategy) -> PayoffR
 /// `seedDefaults`: APR and minimum guesses for a liability account.
 pub fn seed_defaults(a: &Account) -> (f64, i64) {
     let bal = a.balance_cents.unsigned_abs() as f64;
-    let at_least = |floor: i64, share: f64| floor.max(js_round(bal * share) as i64);
+    let at_least = |floor: i64, share: f64| floor.max(js_round(bal * share));
     match a.kind {
         AccountType::CreditCard => (22.0, at_least(2500, 0.02)),
         AccountType::Mortgage => (6.5, at_least(50000, 0.005)),

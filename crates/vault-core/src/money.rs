@@ -1,18 +1,17 @@
-//! Mirrors the parsing half of packages/shared/src/money.ts. Display
-//! formatting goes through the browser's `Intl` in vault-ui (`fmt.rs`).
+//! Mirrors the parsing half of packages/shared/src/money.ts. Formatting goes
+//! through the browser's `Intl` (vault-ui/src/fmt.rs); parsing and the
+//! amount-field text are pure and live here.
 
-/// Largest integer a JS number holds exactly (`Number.MAX_SAFE_INTEGER`).
-const MAX_SAFE_INTEGER: i64 = (1 << 53) - 1;
-
-/// `parseAmountToCents`: a user-entered amount ("1,234.56", "$12", "-3.5")
-/// into cents, or `None` for anything that isn't a clean number.
+/// `parseAmountToCents(input)`: a user-entered amount ("1,234.56", "$12",
+/// "-3.5", "−3.50") in cents, or `None` for anything that isn't a clean
+/// number. Whole-number arithmetic on the digits, so no float can shift a cent.
 pub fn parse_amount_to_cents(input: &str) -> Option<i64> {
-    // `.replace(/[$,\s]/g, "")`: JS `\s` is Unicode whitespace.
+    // input.replace(/[$,\s]/g, "") — JS \s is Unicode whitespace plus BOM.
     let cleaned: String = input
         .chars()
-        .filter(|c| *c != '$' && *c != ',' && !is_js_space(*c))
+        .filter(|&c| !(c == '$' || c == ',' || c.is_whitespace() || c == '\u{feff}'))
         .collect();
-    // `.replace(/^−/, "-")`
+    // .replace(/^−/, "-")
     let cleaned = match cleaned.strip_prefix('\u{2212}') {
         Some(rest) => format!("-{rest}"),
         None => cleaned,
@@ -24,33 +23,43 @@ pub fn parse_amount_to_cents(input: &str) -> Option<i64> {
     };
     let digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
     let (whole, fraction) = match body.split_once('.') {
-        None => (body, ""),
-        Some((w, f)) => (w, f),
-    };
-    let has_dot = body.contains('.');
-    if !digits(whole) || !digits(fraction) {
-        return None;
-    }
-    if whole.is_empty() {
-        // `\.(\d{1,2})`
-        if !has_dot || fraction.is_empty() || fraction.len() > 2 {
-            return None;
+        Some(("", f)) => {
+            if f.is_empty() || f.len() > 2 || !digits(f) {
+                return None;
+            }
+            ("", f)
         }
-    } else if fraction.len() > 2 {
+        Some((w, f)) => {
+            if !digits(w) || f.len() > 2 || !digits(f) {
+                return None;
+            }
+            (w, f)
+        }
+        None => {
+            if body.is_empty() || !digits(body) {
+                return None;
+            }
+            (body, "")
+        }
+    };
+    // Number(digits) then a safe-integer check: beyond 2^53 JS can't hold the
+    // cents exactly, and returns null.
+    const MAX_SAFE: i128 = (1 << 53) - 1;
+    let whole = whole.trim_start_matches('0');
+    if whole.len() > 20 {
         return None;
     }
-    // `Number(match[2] ?? 0)`: a huge digit string becomes an inexact float
-    // there and fails the safe-integer check; failing to parse is the same.
-    let dollars: i64 = if whole.is_empty() {
+    let dollars: i128 = if whole.is_empty() {
         0
     } else {
         whole.parse().ok()?
     };
-    let fraction: i64 = format!("{fraction:0<2}").parse().ok()?;
-    let cents = dollars.checked_mul(100)?.checked_add(fraction)?;
-    if cents > MAX_SAFE_INTEGER {
+    let fraction: i128 = format!("{fraction:0<2}").parse().ok()?;
+    let cents = dollars * 100 + fraction;
+    if cents > MAX_SAFE {
         return None;
     }
+    let cents = cents as i64;
     Some(if negative && cents != 0 {
         -cents
     } else {
@@ -58,25 +67,37 @@ pub fn parse_amount_to_cents(input: &str) -> Option<i64> {
     })
 }
 
-/// What JS regex `\s` matches.
-fn is_js_space(c: char) -> bool {
-    c.is_whitespace() || c == '\u{feff}'
+/// `(cents / 100).toFixed(2)`: the text an amount field starts with.
+pub fn cents_to_fixed2(cents: i64) -> String {
+    let sign = if cents < 0 { "-" } else { "" };
+    let abs = cents.unsigned_abs();
+    format!("{sign}{}.{:02}", abs / 100, abs % 100)
 }
 
-/// `Math.round(x)`: halves round toward +∞ (so −2.5 → −2).
-pub fn js_round(x: f64) -> f64 {
-    (x + 0.5).floor()
-}
-
-/// `(cents / 100).toFixed(0)`: whole dollars, halves away from zero, and a
-/// small negative keeps its sign ("-0") like JS.
+/// `(cents / 100).toFixed(0)`: whole dollars, halves rounded away from zero
+/// (a value like 12.5 is exact in binary, and toFixed rounds it up).
 pub fn cents_to_fixed0(cents: i64) -> String {
-    let whole = (cents.unsigned_abs() + 50) / 100;
-    if cents < 0 {
-        format!("-{whole}")
+    let abs = cents.unsigned_abs();
+    let dollars = (abs + 50) / 100;
+    if cents < 0 && dollars != 0 {
+        format!("-{dollars}")
+    } else if cents < 0 {
+        "-0".into()
     } else {
-        whole.to_string()
+        dollars.to_string()
     }
+}
+
+/// JS `Math.round` for display percentages: halves go up, and the result is
+/// an integer so −0 can't print as "-0".
+pub fn js_round(x: f64) -> i64 {
+    (x + 0.5).floor() as i64
+}
+
+/// `Math.round` kept as a double, for figures that can pass `i64` (the
+/// debt planner's never-payoff totals compound past 1e30).
+pub fn math_round(x: f64) -> f64 {
+    (x + 0.5).floor()
 }
 
 /// `x.toFixed(digits)` for the finite values SVG paths use: like `{:.N}` but an exact tie rounds away from zero (JS picks
@@ -104,7 +125,7 @@ pub fn to_fixed(x: f64, digits: usize) -> String {
 mod tests {
     use super::*;
 
-    // packages/shared/src/money.test.ts, describe("parseAmountToCents").
+    // The cases from packages/shared/src/money.test.ts.
     #[test]
     fn parses_plain_and_decimal_amounts() {
         assert_eq!(parse_amount_to_cents("12"), Some(1200));
@@ -126,10 +147,34 @@ mod tests {
 
     #[test]
     fn rejects_anything_that_isnt_a_clean_number() {
-        assert_eq!(parse_amount_to_cents(""), None);
-        assert_eq!(parse_amount_to_cents("abc"), None);
-        assert_eq!(parse_amount_to_cents("1.2.3"), None);
-        assert_eq!(parse_amount_to_cents("1.234"), None);
+        for bad in [
+            "",
+            "abc",
+            "1.2.3",
+            "1.234",
+            "-",
+            ".",
+            "--1",
+            "1e3",
+            "+1",
+            "1-",
+            "\u{2212}\u{2212}1",
+        ] {
+            assert_eq!(parse_amount_to_cents(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn regex_edge_cases_match_the_typescript() {
+        assert_eq!(parse_amount_to_cents("12."), Some(1200));
+        assert_eq!(parse_amount_to_cents(".5"), Some(50));
+        assert_eq!(parse_amount_to_cents("-.05"), Some(-5));
+        assert_eq!(parse_amount_to_cents("-0"), Some(0));
+        assert_eq!(parse_amount_to_cents("007.10"), Some(710));
+        assert_eq!(parse_amount_to_cents("1,,000"), Some(100000));
+        assert_eq!(parse_amount_to_cents("$-5"), Some(-500));
+        // Only a leading unicode minus is translated.
+        assert_eq!(parse_amount_to_cents("5\u{2212}"), None);
     }
 
     #[test]
@@ -141,35 +186,44 @@ mod tests {
 
     #[test]
     fn reads_every_cent_value_exactly() {
-        for cents in 0..10_000i64 {
+        for cents in 0..10_000 {
             let text = format!("{}.{:02}", cents / 100, cents % 100);
-            assert_eq!(parse_amount_to_cents(&text), Some(cents), "{text}");
+            assert_eq!(parse_amount_to_cents(&text), Some(cents));
         }
     }
 
     #[test]
-    fn stays_exact_on_large_amounts() {
+    fn stays_exact_on_large_amounts_and_rejects_unsafe_ones() {
         assert_eq!(parse_amount_to_cents("1234567.89"), Some(123_456_789));
         assert_eq!(
             parse_amount_to_cents("4503599627370.49"),
             Some(450_359_962_737_049)
         );
+        assert_eq!(
+            parse_amount_to_cents("90071992547409.91"),
+            Some(9_007_199_254_740_991)
+        );
+        assert_eq!(parse_amount_to_cents("90071992547409.92"), None);
+        assert_eq!(parse_amount_to_cents("99999999999999999999999"), None);
     }
 
     #[test]
-    fn accepts_half_typed_forms() {
-        assert_eq!(parse_amount_to_cents(".5"), Some(50));
-        assert_eq!(parse_amount_to_cents(".05"), Some(5));
-        assert_eq!(parse_amount_to_cents("12."), Some(1200));
-        assert_eq!(parse_amount_to_cents("12.5"), Some(1250));
-        assert_eq!(parse_amount_to_cents("-.5"), Some(-50));
-        assert_eq!(parse_amount_to_cents("."), None);
-        assert_eq!(parse_amount_to_cents("-"), None);
+    fn fixed_text_matches_to_fixed() {
+        assert_eq!(cents_to_fixed2(1_500_000), "15000.00");
+        assert_eq!(cents_to_fixed2(5), "0.05");
+        assert_eq!(cents_to_fixed2(-350), "-3.50");
+        assert_eq!(cents_to_fixed2(0), "0.00");
+        assert_eq!(cents_to_fixed0(500_000), "5000");
+        assert_eq!(cents_to_fixed0(150_050), "1501");
+        assert_eq!(cents_to_fixed0(150_049), "1500");
     }
 
     #[test]
-    fn refuses_an_amount_too_large_to_hold_exactly() {
-        assert_eq!(parse_amount_to_cents("999999999999999999.99"), None);
+    fn js_round_rounds_halves_up() {
+        assert_eq!(js_round(12.5), 13);
+        assert_eq!(js_round(-0.4), 0);
+        assert_eq!(js_round(-0.5), 0);
+        assert_eq!(js_round(99.6), 100);
     }
 
     #[test]
@@ -179,6 +233,24 @@ mod tests {
         assert_eq!(parse_amount_to_cents(".123"), None);
         assert_eq!(parse_amount_to_cents("+5"), None);
         assert_eq!(parse_amount_to_cents("-0"), Some(0));
+        assert_eq!(parse_amount_to_cents("-.5"), Some(-50));
+        assert_eq!(parse_amount_to_cents("12."), Some(1200));
+    }
+
+    #[test]
+    fn fixed0_keeps_js_signs() {
+        assert_eq!(cents_to_fixed0(1250), "13");
+        assert_eq!(cents_to_fixed0(-1250), "-13");
+        assert_eq!(cents_to_fixed0(-40), "-0");
+        assert_eq!(cents_to_fixed0(0), "0");
+    }
+
+    #[test]
+    fn math_round_is_math_round() {
+        assert_eq!(math_round(2.5), 3.0);
+        assert_eq!(math_round(-2.5), -2.0);
+        assert_eq!(math_round(1.4999), 1.0);
+        assert_eq!(math_round(9.57e32), 9.57e32);
     }
 
     #[test]
@@ -190,18 +262,5 @@ mod tests {
         assert_eq!(to_fixed(1.05, 1), "1.1"); // 1.05000000000000004 in binary: not a tie
         assert_eq!(to_fixed(33.333333, 1), "33.3");
         assert_eq!(to_fixed(-2.25, 1), "-2.3");
-    }
-
-    #[test]
-    fn js_round_and_to_fixed() {
-        assert_eq!(js_round(2.5), 3.0);
-        assert_eq!(js_round(-2.5), -2.0);
-        assert_eq!(js_round(1.4999), 1.0);
-        assert_eq!(cents_to_fixed0(1250), "13");
-        assert_eq!(cents_to_fixed0(1249), "12");
-        assert_eq!(cents_to_fixed0(100_000), "1000");
-        assert_eq!(cents_to_fixed0(-1250), "-13");
-        assert_eq!(cents_to_fixed0(-40), "-0");
-        assert_eq!(cents_to_fixed0(0), "0");
     }
 }

@@ -9,13 +9,13 @@ use super::debt_calculator::DebtCalculator;
 use crate::fmt;
 use crate::host::use_host;
 use crate::ui::{MetricCard, Panel, Spinner, Tabs};
-use crate::PageArgs;
 
 const TABS: &[(&str, &str)] = &[("trends", "Income vs. spending"), ("debt", "Debt payoff")];
 
 #[component]
 pub fn CashFlowPage() -> impl IntoView {
-    let initial = use_context::<PageArgs>().and_then(|a| a.tab);
+    // Read once, like the React page's `useState(initialTab)`.
+    let initial = use_host().filter.tab;
     let tab = RwSignal::new(if initial.as_deref() == Some("debt") {
         "debt"
     } else {

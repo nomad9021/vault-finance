@@ -39,21 +39,9 @@ pub fn page_ids() -> Vec<String> {
     pages::IDS.iter().map(|s| s.to_string()).collect()
 }
 
-/// What the shell's `NavFilter` says about how to open the page.
-#[derive(Clone, Debug, Default)]
-pub struct PageArgs {
-    /// `filter.tab`: the tab to open on (pages read it once, at mount).
-    pub tab: Option<String>,
-}
-
 /// Draw `page` into `el`. Errors if the page isn't ported yet.
 #[wasm_bindgen]
-pub fn mount(
-    el: web_sys::HtmlElement,
-    page: &str,
-    host: host::Host,
-    tab: Option<String>,
-) -> Result<Mounted, JsError> {
+pub fn mount(el: web_sys::HtmlElement, page: &str, host: host::Host) -> Result<Mounted, JsError> {
     console_error_panic_hook::set_once();
     if !pages::IDS.contains(&page) {
         return Err(JsError::new(&format!("no Rust page called {page:?}")));
@@ -63,7 +51,6 @@ pub fn mount(
     let unsubscribe = ctx.subscribe_data_changes();
     let handle = leptos::mount::mount_to(el, move || {
         provide_context(ctx.clone());
-        provide_context(PageArgs { tab: tab.clone() });
         pages::render(&page)
     });
     Ok(Mounted {

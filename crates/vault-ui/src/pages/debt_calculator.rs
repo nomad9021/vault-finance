@@ -245,7 +245,7 @@ pub fn DebtCalculator() -> impl IntoView {
             let host = host.clone();
             leptos::task::spawn_local(async move {
                 match host
-                    .call::<Archived>("deleteAccount", &[JsValue::from_str(&d.id)])
+                    .try_call::<Archived>("deleteAccount", &[JsValue::from_str(&d.id)])
                     .await
                 {
                     Ok(_) => {
@@ -255,7 +255,7 @@ pub fn DebtCalculator() -> impl IntoView {
                         confirm_delete.set(None);
                         reload.update(|v| *v += 1);
                     }
-                    Err(e) => delete_error.set(Some(e)),
+                    Err(e) => delete_error.set(Some(e.message_or("Couldn’t delete the account."))),
                 }
                 deleting.set(false);
             });
@@ -444,7 +444,7 @@ pub fn DebtCalculator() -> impl IntoView {
                             </Button>
                         };
                         view! {
-                            <Dialog title="Delete this account?" actions=actions
+                            <Dialog title="Delete this account?".to_string() actions=ToChildren::to_children(actions)
                                 on_close=Callback::new(move |()| if !deleting.get_untracked() { close() })>
                                 <p class="card-body" style="margin: 0; line-height: 1.6">
                                     <strong>{d.name.clone()}</strong>
@@ -553,7 +553,7 @@ fn DebtSettingsDialog(
 ) -> impl IntoView {
     let actions = move || view! { <Button variant="primary" on_click=move || on_close.run(())>"Done"</Button> };
     view! {
-        <Dialog title="Debt plan settings" on_close=on_close actions=actions>
+        <Dialog title="Debt plan settings".to_string() on_close=on_close actions=ToChildren::to_children(actions)>
             <div style="display: flex; flex-direction: column; gap: 14px">
                 <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end">
                     <div>

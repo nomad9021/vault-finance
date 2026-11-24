@@ -5,6 +5,7 @@ use std::rc::Rc;
 use leptos::prelude::*;
 use send_wrapper::SendWrapper;
 use serde::{de::DeserializeOwned, Serialize};
+use vault_core::nav::NavFilter;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -21,6 +22,10 @@ extern "C" {
     #[wasm_bindgen(method)]
     fn navigate(this: &Host, page: &str, filter: JsValue);
 
+    /// The `NavFilter` the page was opened with (`{}` when none).
+    #[wasm_bindgen(method)]
+    fn filter(this: &Host) -> JsValue;
+
     /// Run `cb` whenever the assistant changes data; returns an unsubscribe
     /// function.
     #[wasm_bindgen(method, js_name = onDataChange)]
@@ -33,13 +38,17 @@ extern "C" {
 pub struct HostCtx {
     host: SendWrapper<Rc<Host>>,
     pub data_version: RwSignal<u32>,
+    /// What the page was opened with (in-page tab, account…).
+    pub filter: NavFilter,
 }
 
 impl HostCtx {
     pub fn new(host: Host) -> Self {
+        let filter = serde_wasm_bindgen::from_value(host.filter()).unwrap_or_default();
         Self {
             host: SendWrapper::new(Rc::new(host)),
             data_version: RwSignal::new(0),
+            filter,
         }
     }
 
@@ -57,14 +66,36 @@ impl HostCtx {
         method: &str,
         args: &[JsValue],
     ) -> Result<T, String> {
+        self.try_call(method, args).await.map_err(|e| e.message)
+    }
+
+    /// `call`, keeping what kind of error the ApiClient threw, for pages
+    /// whose message depends on it (`err instanceof ApiRequestError`).
+    pub async fn try_call<T: DeserializeOwned>(
+        &self,
+        method: &str,
+        args: &[JsValue],
+    ) -> Result<T, CallError> {
         let array: js_sys::Array = args.iter().collect();
         let value = self
             .host
             .call(method, array)
             .await
-            .map_err(js_error_message)?;
-        serde_wasm_bindgen::from_value(value)
-            .map_err(|e| format!("{method}: unexpected response ({e})"))
+            .map_err(CallError::from_js)?;
+        serde_wasm_bindgen::from_value(value).map_err(|e| CallError {
+            name: "Error".into(),
+            message: format!("{method}: unexpected response ({e})"),
+            is_error: true,
+        })
+    }
+
+    /// A request body for `call`: `None` goes over as `null` (not
+    /// `undefined`, which JSON drops, so a PATCH couldn't clear a field) and
+    /// maps as plain objects.
+    pub fn arg(value: &impl Serialize) -> JsValue {
+        value
+            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+            .unwrap_or(JsValue::UNDEFINED)
     }
 
     /// Call an `ApiClient` method without waiting for or reading the result,
@@ -78,14 +109,6 @@ impl HostCtx {
         });
     }
 
-    /// A request body for `call`/`fire`: plain JSON-shaped JS (maps become
-    /// objects, not `Map`s, so `JSON.stringify` sends them).
-    pub fn arg(value: &impl Serialize) -> JsValue {
-        value
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .unwrap_or(JsValue::UNDEFINED)
-    }
-
     pub fn navigate(&self, page: &str, filter: &impl Serialize) {
         let filter = serde_wasm_bindgen::to_value(filter).unwrap_or(JsValue::UNDEFINED);
         self.host.navigate(page, filter);
@@ -96,9 +119,44 @@ pub fn use_host() -> HostCtx {
     expect_context::<HostCtx>()
 }
 
-fn js_error_message(err: JsValue) -> String {
-    err.dyn_ref::<js_sys::Error>()
-        .map(|e| String::from(e.message()))
-        .or_else(|| err.as_string())
-        .unwrap_or_else(|| "Request failed".into())
+/// A rejected `call`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CallError {
+    /// The JS error's `name` ("ApiRequestError", "ApiConnectionError", …).
+    pub name: String,
+    pub message: String,
+    /// Whether it was an `Error` at all (`err instanceof Error`).
+    pub is_error: bool,
+}
+
+impl CallError {
+    fn from_js(err: JsValue) -> Self {
+        match err.dyn_ref::<js_sys::Error>() {
+            Some(e) => CallError {
+                name: e.name().into(),
+                message: e.message().into(),
+                is_error: true,
+            },
+            None => CallError {
+                name: String::new(),
+                message: err.as_string().unwrap_or_else(|| "Request failed".into()),
+                is_error: false,
+            },
+        }
+    }
+
+    /// `err instanceof ApiRequestError`: the server said no, with a reason
+    /// worth showing.
+    pub fn is_api_request(&self) -> bool {
+        self.name == "ApiRequestError"
+    }
+
+    /// `err instanceof Error ? err.message : fallback`.
+    pub fn message_or(&self, fallback: &str) -> String {
+        if self.is_error {
+            self.message.clone()
+        } else {
+            fallback.to_string()
+        }
+    }
 }

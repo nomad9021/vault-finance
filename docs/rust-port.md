@@ -55,7 +55,7 @@ Status: `todo` · `wip` · `review` (PR open) · `done` (merged, Rust page on in
 | cashflow | 1 | review | rust/page-cashflow |
 | networth | 1 | review | rust/page-networth |
 | subscriptions | 1 | todo | |
-| goals | 1 | todo | |
+| goals (+ buckets tab) | 1 | review | rust/page-goals |
 | investments | 2 | todo | |
 | income | 2 | todo | |
 | reports | 2 | todo | |
@@ -73,7 +73,7 @@ Status: `todo` · `wip` · `review` (PR open) · `done` (merged, Rust page on in
 
 | Shared logic (vault-core) | Status | Branch |
 |---|---|---|
-| money (format/parse) | wip (parse done) | rust/page-cashflow |
+| money (format/parse) | wip (parseAmountToCents, toFixed) | rust/page-goals, rust/page-cashflow |
 | tax engine | todo | |
 | budget sankey | todo | |
 | debt calculator | review | rust/page-cashflow |

@@ -7,8 +7,11 @@
 //! tested natively with `cargo test -p vault-core`.
 
 pub mod accounts;
+pub mod buckets;
 pub mod cashflow;
+pub mod dates;
 pub mod debt;
+pub mod goals;
 pub mod insights;
 pub mod money;
 pub mod nav;

@@ -49,7 +49,7 @@ pub fn stats(months: &[MonthSummary]) -> CashflowStats {
         0
     } else {
         let sum: i64 = with_data.iter().map(|m| m.net_cents).sum();
-        js_round(sum as f64 / with_data.len() as f64) as i64
+        js_round(sum as f64 / with_data.len() as f64)
     };
     let rates: Vec<f64> = with_data.iter().filter_map(|m| m.savings_rate).collect();
     let avg_rate = (!rates.is_empty()).then(|| rates.iter().sum::<f64>() / rates.len() as f64);
@@ -65,7 +65,7 @@ pub fn stats(months: &[MonthSummary]) -> CashflowStats {
 /// `${Math.round(avgRate * 100)}%`, or "—".
 pub fn rate_label(rate: Option<f64>) -> String {
     match rate {
-        Some(r) => format!("{}%", js_round(r * 100.0) as i64),
+        Some(r) => format!("{}%", js_round(r * 100.0)),
         None => "\u{2014}".into(),
     }
 }
