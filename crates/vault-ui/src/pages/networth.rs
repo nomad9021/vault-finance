@@ -159,7 +159,7 @@ fn Loaded(
             </div>
 
             <Panel flush=true title="Net worth over time" subtitle
-                actions=view! { <Segmented options=RANGES value=range aria_label="Time range" /> }.into_any()>
+                actions=Some(view! { <Segmented options=RANGES value=range aria_label="Time range" /> }.into_any())>
                 <div style="padding: 4px 18px 12px">
                     <TrendChart history projected color height=180 />
                     {ends}

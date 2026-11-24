@@ -11,4 +11,5 @@ pub mod cashflow;
 pub mod insights;
 pub mod nav;
 pub mod networth;
+pub mod subscriptions;
 pub mod trend_chart;
