@@ -9,12 +9,15 @@
 pub mod accounts;
 pub mod buckets;
 pub mod cashflow;
+pub mod categories;
 pub mod dates;
 pub mod debt;
 pub mod goals;
+pub mod income;
 pub mod insights;
 pub mod investments;
 pub mod money;
 pub mod nav;
 pub mod networth;
+pub mod transactions;
 pub mod trend_chart;
