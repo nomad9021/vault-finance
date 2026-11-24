@@ -108,6 +108,14 @@ fn utc_date(year: i32, month: u32, day: u32, opts: &[(&str, &str)]) -> String {
     date_format(&Date::new(&JsValue::from_f64(ms)), &opts)
 }
 
+/// `dueDateShort` on the bills page: "Dec 1" (the raw text if it isn't a date).
+pub fn day_short(iso: &str) -> String {
+    match parse_iso(iso) {
+        Some((y, m, d)) => utc_date(y, m, d, &[("month", "short"), ("day", "numeric")]),
+        None => iso.to_string(),
+    }
+}
+
 /// `monthLabel("2027-09")` on the goals page: "Sep 2027".
 pub fn month_short_year(month: &str) -> String {
     let mut parts = month.split('-').map(|p| p.parse::<i32>().unwrap_or(0));
