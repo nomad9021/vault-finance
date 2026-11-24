@@ -324,6 +324,23 @@ Vault checks Proxmox's certificate against the fingerprint before it sends the
 token. If they don't match (for example after Proxmox renews its certificate),
 the assistant says so instead of starting anything; update the fingerprint.
 
+### AI server over HTTPS
+
+An AI server on your LAN usually listens on plain `http://`, so its access token
+crosses the network unencrypted. Put HTTPS in front of it instead. If that uses
+a private certificate authority (for example Caddy's `tls internal`), let Vault
+trust it:
+
+1. Copy the CA's root certificate (PEM) to the server's data folder:
+   `docker/data/vault/ai-ca.crt`.
+2. In `docker/.env`: `NODE_EXTRA_CA_CERTS=/data/ai-ca.crt`
+3. `docker compose up -d` in the `docker/` folder.
+4. Settings → AI: change the address to the `https://…/v1` one.
+
+The certificate must name the address you use (IP or hostname). Vault rejects
+the connection otherwise, and Settings → AI → Test says the certificate isn't
+trusted.
+
 ## 8. Hardware sizing for Ollama
 
 *(numbers to be measured and filled in during M4 — placeholder guidance:)*

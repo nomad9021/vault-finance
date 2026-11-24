@@ -93,6 +93,11 @@ services:
       AI_HOST_VMID: ${AI_HOST_VMID:-}
       AI_HOST_PROXMOX_TOKEN: ${AI_HOST_PROXMOX_TOKEN:-}
       AI_HOST_PROXMOX_FINGERPRINT: ${AI_HOST_PROXMOX_FINGERPRINT:-}
+      # Optional: trust a private CA, e.g. the one behind an AI server's HTTPS
+      # front, so the AI address can be https:// and keys never cross the
+      # network in plain text. Put the CA's PEM file in the server data folder
+      # (docker/data/vault) and set NODE_EXTRA_CA_CERTS=/data/<file>.crt.
+      NODE_EXTRA_CA_CERTS: ${NODE_EXTRA_CA_CERTS:-}
       # Auto-sync linked banks every N minutes (0 disables). Keeps transactions
       # updating on their own for a self-hosted server that isn't internet-
       # reachable; Plaid webhooks give instant updates when it is.
