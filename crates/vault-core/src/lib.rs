@@ -13,6 +13,7 @@ pub mod dates;
 pub mod debt;
 pub mod goals;
 pub mod insights;
+pub mod investments;
 pub mod money;
 pub mod nav;
 pub mod networth;

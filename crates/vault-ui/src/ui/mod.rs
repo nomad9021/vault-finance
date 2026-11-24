@@ -147,6 +147,21 @@ pub fn MetricCard(
     }
 }
 
+/// `<Card>`: the `.card` container with an optional title.
+#[component]
+pub fn Card(
+    #[prop(optional, into)] title: Option<String>,
+    #[prop(optional, into)] style: Option<String>,
+    children: Children,
+) -> impl IntoView {
+    view! {
+        <div class="card elev-sm" style=style>
+            {title.map(|t| view! { <div class="card-title">{t}</div> })}
+            {children()}
+        </div>
+    }
+}
+
 /// `<Panel>`: the one card container. `subtitle` may change after mount.
 #[component]
 pub fn Panel(

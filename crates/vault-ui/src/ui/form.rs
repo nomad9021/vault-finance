@@ -25,9 +25,13 @@ pub fn Field(
     #[prop(optional)]
     autofocus: bool,
     #[prop(optional, into)] hint: Option<Signal<String>>,
+    /// Validation message; shown instead of the hint, and marks the input invalid.
+    #[prop(optional, into)]
+    error: Option<Signal<Option<String>>>,
 ) -> impl IntoView {
     let id = use_id();
     let input = NodeRef::<html::Input>::new();
+    let error = move || error.and_then(|e| e.get()).filter(|e| !e.is_empty());
     if autofocus {
         Effect::new(move || {
             if let Some(el) = input.get() {
@@ -39,9 +43,13 @@ pub fn Field(
         <div class="field">
             <label for=id.clone()>{label}</label>
             <input node_ref=input id=id class="input" placeholder=placeholder inputmode=input_mode
+                aria-invalid=move || error().map(|_| "true")
                 prop:value=move || value.get()
                 on:input=move |e| value.set(event_target_value(&e)) />
-            {hint.map(|h| view! { <div class="field-hint">{move || h.get()}</div> })}
+            {move || match error() {
+                Some(e) => Some(view! { <div role="alert" class="field-error">{e}</div> }.into_any()),
+                None => hint.map(|h| view! { <div class="field-hint">{move || h.get()}</div> }.into_any()),
+            }}
         </div>
     }
 }
