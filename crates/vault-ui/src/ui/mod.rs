@@ -3,11 +3,13 @@
 
 use leptos::prelude::*;
 
+mod confetti;
 mod dialog;
 mod form;
 mod listen;
 #[rustfmt::skip]
 mod icons_gen;
+pub use confetti::Confetti;
 pub use dialog::Dialog;
 pub use form::{DateField, Field, Select, SelectOption};
 pub use icons_gen::NAMES as ICON_NAMES;
@@ -148,6 +150,9 @@ pub fn MetricCard(
 /// `<Panel>`: the one card container. `subtitle` may change after mount.
 #[component]
 pub fn Panel(
+    /// Small uppercase eyebrow above the title.
+    #[prop(optional, into)]
+    kicker: Option<String>,
     #[prop(optional, into)] title: Option<String>,
     #[prop(optional, into)] subtitle: Option<Signal<String>>,
     /// Right-aligned header content (toggles, links).
@@ -156,12 +161,13 @@ pub fn Panel(
     #[prop(optional)] flush: bool,
     children: Children,
 ) -> impl IntoView {
-    let has_head = title.is_some() || subtitle.is_some() || actions.is_some();
+    let has_head = kicker.is_some() || title.is_some() || subtitle.is_some() || actions.is_some();
     view! {
         <div class=if flush { "panel panel-flush" } else { "panel" }>
             {has_head.then(|| view! {
                 <div class=if flush { "panel-head panel-head-pad" } else { "panel-head" }>
                     <div style="min-width: 0">
+                        {kicker.map(|k| view! { <div class="eyebrow">{k}</div> })}
                         {title.map(|t| view! { <div class="panel-title">{t}</div> })}
                         {subtitle.map(|s| view! { <div class="panel-sub">{s}</div> })}
                     </div>

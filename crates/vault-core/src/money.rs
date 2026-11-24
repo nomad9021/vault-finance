@@ -94,6 +94,33 @@ pub fn js_round(x: f64) -> i64 {
     (x + 0.5).floor() as i64
 }
 
+/// `Math.round` kept as a double, for figures that can pass `i64` (the
+/// debt planner's never-payoff totals compound past 1e30).
+pub fn math_round(x: f64) -> f64 {
+    (x + 0.5).floor()
+}
+
+/// `x.toFixed(digits)` for the finite values SVG paths use: like `{:.N}` but an exact tie rounds away from zero (JS picks
+/// the larger n) where Rust would round to even.
+pub fn to_fixed(x: f64, digits: usize) -> String {
+    let exact = format!("{:.*}", digits + 30, x.abs());
+    let (keep, rest) = exact.split_at(exact.len() - 30);
+    let tie = rest.starts_with('5') && rest[1..].bytes().all(|b| b == b'0');
+    let s = if tie {
+        let step = 10f64.powi(-(digits as i32));
+        let base: f64 = keep.parse().unwrap_or(0.0);
+        format!("{:.*}", digits, base + step)
+    } else {
+        format!("{:.*}", digits, x.abs())
+    };
+    // JS keeps the sign of any negative input, even when it rounds to zero.
+    if x < 0.0 {
+        format!("-{s}")
+    } else {
+        s
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,5 +224,43 @@ mod tests {
         assert_eq!(js_round(-0.4), 0);
         assert_eq!(js_round(-0.5), 0);
         assert_eq!(js_round(99.6), 100);
+    }
+
+    #[test]
+    fn rejects_other_shapes_the_regex_rejects() {
+        assert_eq!(parse_amount_to_cents("--5"), None);
+        assert_eq!(parse_amount_to_cents("5-"), None);
+        assert_eq!(parse_amount_to_cents(".123"), None);
+        assert_eq!(parse_amount_to_cents("+5"), None);
+        assert_eq!(parse_amount_to_cents("-0"), Some(0));
+        assert_eq!(parse_amount_to_cents("-.5"), Some(-50));
+        assert_eq!(parse_amount_to_cents("12."), Some(1200));
+    }
+
+    #[test]
+    fn fixed0_keeps_js_signs() {
+        assert_eq!(cents_to_fixed0(1250), "13");
+        assert_eq!(cents_to_fixed0(-1250), "-13");
+        assert_eq!(cents_to_fixed0(-40), "-0");
+        assert_eq!(cents_to_fixed0(0), "0");
+    }
+
+    #[test]
+    fn math_round_is_math_round() {
+        assert_eq!(math_round(2.5), 3.0);
+        assert_eq!(math_round(-2.5), -2.0);
+        assert_eq!(math_round(1.4999), 1.0);
+        assert_eq!(math_round(9.57e32), 9.57e32);
+    }
+
+    #[test]
+    fn to_fixed_matches_js() {
+        assert_eq!(to_fixed(12.25, 1), "12.3"); // JS: (12.25).toFixed(1)
+        assert_eq!(to_fixed(0.25, 1), "0.3");
+        assert_eq!(to_fixed(190.0, 1), "190.0");
+        assert_eq!(to_fixed(97.5, 1), "97.5");
+        assert_eq!(to_fixed(1.05, 1), "1.1"); // 1.05000000000000004 in binary: not a tie
+        assert_eq!(to_fixed(33.333333, 1), "33.3");
+        assert_eq!(to_fixed(-2.25, 1), "-2.3");
     }
 }

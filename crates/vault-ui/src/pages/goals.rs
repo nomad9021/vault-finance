@@ -173,7 +173,7 @@ fn GoalCard(
                 {fmt::cents_whole(goal.saved_cents)}
             </div>
             <div class="t-sm t-tertiary">
-                {format!("of {} · {}% funded", fmt::cents_whole(goal.target_cents), goal.percent())}
+                "of "{fmt::cents_whole(goal.target_cents)}" · "{goal.percent()}"% funded"
             </div>
             <div class="t-xs t-tertiary" style="margin-top: 2px">{monthly}</div>
             <div style="margin: var(--space-3) 0px">

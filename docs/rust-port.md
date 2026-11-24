@@ -52,7 +52,7 @@ Status: `todo` · `wip` · `review` (PR open) · `done` (merged, Rust page on in
 | Page | Wave | Status | Branch |
 |---|---|---|---|
 | insights | 0 | review | rust/foundation |
-| cashflow | 1 | todo | |
+| cashflow | 1 | review | rust/page-cashflow |
 | networth | 1 | review | rust/page-networth |
 | subscriptions | 1 | todo | |
 | goals (+ buckets tab) | 1 | review | rust/page-goals |
@@ -73,10 +73,10 @@ Status: `todo` · `wip` · `review` (PR open) · `done` (merged, Rust page on in
 
 | Shared logic (vault-core) | Status | Branch |
 |---|---|---|
-| money (format/parse) | wip (parseAmountToCents, toFixed) | rust/page-goals |
+| money (format/parse) | wip (parseAmountToCents, toFixed) | rust/page-goals, rust/page-cashflow |
 | tax engine | todo | |
 | budget sankey | todo | |
-| debt calculator | todo | |
+| debt calculator | review | rust/page-cashflow |
 | dashboard layout | todo | |
 
 Wave 4 retires React: the shell and sign-in move to Leptos, `RustPage` becomes the app root,

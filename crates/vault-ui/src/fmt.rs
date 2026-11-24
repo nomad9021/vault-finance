@@ -56,29 +56,40 @@ pub fn cents_signed(cents: i64) -> String {
 
 /// `formatCentsWhole(cents)`: whole dollars, rounded like `Math.round`.
 pub fn cents_whole(cents: i64) -> String {
-    let dollars = (cents.unsigned_abs() as f64 / 100.0 + 0.5).floor();
+    cents_whole_f64(cents as f64)
+}
+
+/// `formatCentsWhole` for figures that are JS doubles (the debt planner's
+/// totals can run far past `i64`).
+pub fn cents_whole_f64(cents: f64) -> String {
+    let dollars = (cents.abs() / 100.0 + 0.5).floor();
     let abs = run(&formatter("USD", None, 0), dollars);
-    if cents < 0 {
+    if cents < 0.0 {
         format!("\u{2212}{abs}")
     } else {
         abs
     }
 }
 
-/// `new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, {…, timeZone: "UTC"})`.
-fn utc_date(year: i32, month: u32, day: u32, opts: &[(&str, &str)]) -> String {
+/// `date.toLocaleDateString(undefined, opts)`.
+fn date_format(date: &Date, opts: &[(&str, &str)]) -> String {
     let o = Object::new();
-    for (k, v) in opts.iter().chain([("timeZone", "UTC")].iter()) {
+    for (k, v) in opts {
         let _ = Reflect::set(&o, &(*k).into(), &(*v).into());
     }
-    let ms = Date::utc(year as f64, month as f64 - 1.0) + (day as f64 - 1.0) * 86_400_000.0;
-    let date = Date::new(&JsValue::from_f64(ms));
     DateTimeFormat::new(&Array::new(), &o)
         .format()
-        .call1(&JsValue::NULL, &date)
+        .call1(&JsValue::NULL, date)
         .ok()
         .and_then(|v| v.as_string())
         .unwrap_or_default()
+}
+
+/// `new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, {…, timeZone: "UTC"})`.
+fn utc_date(year: i32, month: u32, day: u32, opts: &[(&str, &str)]) -> String {
+    let ms = Date::utc(year as f64, month as f64 - 1.0) + (day as f64 - 1.0) * 86_400_000.0;
+    let opts: Vec<(&str, &str)> = opts.iter().copied().chain([("timeZone", "UTC")]).collect();
+    date_format(&Date::new(&JsValue::from_f64(ms)), &opts)
 }
 
 /// `monthLabel("2027-09")` on the goals page: "Sep 2027".
@@ -121,4 +132,20 @@ pub fn long_date(iso: &str) -> String {
 /// { month: "short", year: "2-digit", timeZone: "UTC" })`, e.g. "Nov 26".
 pub fn month_label(year: i32, month: u32) -> String {
     utc_date(year, month, 1, &[("month", "short"), ("year", "2-digit")])
+}
+
+/// `"2026-11"` → `"Nov"` (Cash Flow bars): `toLocaleDateString(undefined,
+/// { month: "short", timeZone: "UTC" })` of the first of that month.
+pub fn month_short(month: &str) -> String {
+    let mut parts = month.split('-').map(|p| p.parse::<i32>().unwrap_or(0));
+    let (y, m) = (parts.next().unwrap_or(0), parts.next().unwrap_or(1));
+    utc_date(y, m.max(0) as u32, 1, &[("month", "short")])
+}
+
+/// Today plus `months` (JS `setMonth` overflow rules), in local time, as
+/// "Mar 2028": the debt planner's `payoffDate`.
+pub fn month_year_from_now(months: u32) -> String {
+    let d = Date::new_0();
+    d.set_month(d.get_month() + months);
+    date_format(&d, &[("month", "short"), ("year", "numeric")])
 }
