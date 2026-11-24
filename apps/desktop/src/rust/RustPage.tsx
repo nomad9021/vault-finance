@@ -16,6 +16,7 @@ export const RUST_PAGES: ReadonlySet<PageId> = new Set<PageId>([
   "cashflow",
   "bills",
   "income",
+  "investments",
   "accounts",
 ]);
 
