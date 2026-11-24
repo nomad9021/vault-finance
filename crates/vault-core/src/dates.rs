@@ -31,7 +31,7 @@ pub fn days_in_month(year: i32, month: u32) -> u32 {
 }
 
 /// 0 = Sunday … 6 = Saturday, like `Date#getUTCDay`.
-fn weekday(year: i32, month: u32, day: u32) -> u32 {
+pub fn weekday(year: i32, month: u32, day: u32) -> u32 {
     const T: [i32; 12] = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
     let y = if month < 3 { year - 1 } else { year };
     (y + y.div_euclid(4) - y.div_euclid(100)

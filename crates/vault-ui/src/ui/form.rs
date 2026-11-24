@@ -25,6 +25,10 @@ pub fn Field(
     #[prop(optional)]
     autofocus: bool,
     #[prop(optional, into)] hint: Option<Signal<String>>,
+    /// Rewrites what was typed before it's stored (React's
+    /// `onChange={(e) => set(clean(e.target.value))}`).
+    #[prop(optional)]
+    sanitize: Option<fn(&str) -> String>,
 ) -> impl IntoView {
     let id = use_id();
     let input = NodeRef::<html::Input>::new();
@@ -40,7 +44,10 @@ pub fn Field(
             <label for=id.clone()>{label}</label>
             <input node_ref=input id=id class="input" placeholder=placeholder inputmode=input_mode
                 prop:value=move || value.get()
-                on:input=move |e| value.set(event_target_value(&e)) />
+                on:input=move |e| {
+                    let v = event_target_value(&e);
+                    value.set(match sanitize { Some(f) => f(&v), None => v });
+                } />
             {hint.map(|h| view! { <div class="field-hint">{move || h.get()}</div> })}
         </div>
     }
