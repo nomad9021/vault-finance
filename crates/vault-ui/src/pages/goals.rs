@@ -96,9 +96,8 @@ fn GoalsList() -> impl IntoView {
                     view! {
                         <div class="panel">
                             <EmptyState icon="flag" title="No savings goals yet"
-                                body="Set a target — an emergency fund, a trip, a down payment — and track progress here. Link a goal to a savings account and its balance becomes the progress automatically.">
-                                <Button variant="primary" icon="plus" on_click=add>"Add your first goal"</Button>
-                            </EmptyState>
+                                body="Set a target — an emergency fund, a trip, a down payment — and track progress here. Link a goal to a savings account and its balance becomes the progress automatically."
+                                action=view! { <Button variant="primary" icon="plus" on_click=add>"Add your first goal"</Button> }.into_any() />
                         </div>
                     }.into_any()
                 } else {

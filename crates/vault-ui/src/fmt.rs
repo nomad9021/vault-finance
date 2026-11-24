@@ -116,3 +116,9 @@ pub fn long_date(iso: &str) -> String {
         None => iso.to_string(),
     }
 }
+
+/// `new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString(undefined,
+/// { month: "short", year: "2-digit", timeZone: "UTC" })`, e.g. "Nov 26".
+pub fn month_label(year: i32, month: u32) -> String {
+    utc_date(year, month, 1, &[("month", "short"), ("year", "2-digit")])
+}

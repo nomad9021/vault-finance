@@ -8,8 +8,11 @@
 
 pub mod accounts;
 pub mod buckets;
+pub mod cashflow;
 pub mod dates;
 pub mod goals;
 pub mod insights;
 pub mod money;
 pub mod nav;
+pub mod networth;
+pub mod trend_chart;
