@@ -65,6 +65,10 @@ function makeHost(client: ApiClient, onNavigate: Navigate, filter: NavFilter) {
     navigate(page: string, filter?: NavFilter) {
       onNavigate(page as PageId, filter && Object.keys(filter).length ? filter : undefined);
     },
+    /** Every page refetches (what a React page's edit does via useChat). */
+    refreshData() {
+      useChat.getState().refreshData();
+    },
     onDataChange(cb: () => void): () => void {
       return useChat.subscribe((s, prev) => {
         if (s.dataVersion !== prev.dataVersion) cb();

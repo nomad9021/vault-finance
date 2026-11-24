@@ -45,6 +45,17 @@ pub fn cents(cents: i64) -> String {
     }
 }
 
+/// `formatCents` of a figure that may have fractions of a cent (a monthly
+/// amount scaled to a week): `Intl` rounds it.
+pub fn cents_f64(cents: f64) -> String {
+    let abs = run(&formatter("USD", Some(2), 2), cents.abs() / 100.0);
+    if cents < 0.0 {
+        format!("\u{2212}{abs}")
+    } else {
+        abs
+    }
+}
+
 /// `formatCents(cents, { signed: true })`.
 pub fn cents_signed(cents: i64) -> String {
     let abs = run(

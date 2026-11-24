@@ -7,13 +7,23 @@
 //! tested natively with `cargo test -p vault-core`.
 
 pub mod accounts;
+pub mod bills;
 pub mod buckets;
+pub mod budget_sankey;
+pub mod budgets;
 pub mod cashflow;
+pub mod categories;
 pub mod dates;
 pub mod debt;
+pub mod giving;
 pub mod goals;
 pub mod insights;
 pub mod money;
 pub mod nav;
 pub mod networth;
+pub mod preferences;
+pub mod sankey;
+pub mod sankey_card;
+pub mod taxes;
+pub mod transactions;
 pub mod trend_chart;

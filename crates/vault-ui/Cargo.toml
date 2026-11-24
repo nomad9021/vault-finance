@@ -15,6 +15,9 @@ wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = [
+  "AddEventListenerOptions",
+  "CssStyleDeclaration",
+  "Document",
   "DomRect",
   "Element",
   "Event",
@@ -30,6 +33,10 @@ web-sys = { version = "0.3", features = [
   "NodeList",
   "Performance",
   "PointerEvent",
+  "SvgElement",
+  "SvgGraphicsElement",
+  "SvgMatrix",
+  "TouchEvent",
   "Window",
 ] }
 serde.workspace = true

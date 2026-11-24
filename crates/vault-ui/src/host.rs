@@ -28,6 +28,11 @@ extern "C" {
 
     /// Run `cb` whenever the assistant changes data; returns an unsubscribe
     /// function.
+    /// Tell every page the data changed (`useChat.refreshData()`), as React
+    /// pages do after an edit that other pages draw.
+    #[wasm_bindgen(method, js_name = refreshData)]
+    fn refresh_data(this: &Host);
+
     #[wasm_bindgen(method, js_name = onDataChange)]
     fn on_data_change(this: &Host, cb: &js_sys::Function) -> js_sys::Function;
 }
@@ -107,6 +112,12 @@ impl HostCtx {
         wasm_bindgen_futures::spawn_local(async move {
             let _ = host.call(&method, array).await;
         });
+    }
+
+    /// `useChat.getState().refreshData()`: other pages (and this one, through
+    /// `data_version`) refetch.
+    pub fn refresh_data(&self) {
+        self.host.refresh_data();
     }
 
     pub fn navigate(&self, page: &str, filter: &impl Serialize) {

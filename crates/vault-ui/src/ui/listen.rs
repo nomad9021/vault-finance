@@ -43,3 +43,28 @@ pub fn use_id() -> String {
     static NEXT: AtomicU32 = AtomicU32::new(0);
     format!("rs-{}", NEXT.fetch_add(1, Ordering::Relaxed))
 }
+
+/// A window listener that lives until the returned function is called, for
+/// listeners added mid-gesture (a drag) rather than for a component's life.
+/// `passive: false` lets the handler `preventDefault()` scrolling.
+pub fn window_listener(
+    event: &'static str,
+    passive: bool,
+    cb: impl Fn(web_sys::Event) + 'static,
+) -> Box<dyn FnOnce()> {
+    let closure = Closure::<dyn Fn(web_sys::Event)>::new(cb);
+    let opts = web_sys::AddEventListenerOptions::new();
+    opts.set_passive(passive);
+    let w = window();
+    let _ = w.add_event_listener_with_callback_and_add_event_listener_options(
+        event,
+        closure.as_ref().unchecked_ref(),
+        &opts,
+    );
+    Box::new(move || {
+        let _ = w.remove_event_listener_with_callback(event, closure.as_ref().unchecked_ref());
+        // Often called from inside one of the gesture's own handlers: drop
+        // the closure after it has returned, never while it runs.
+        wasm_bindgen_futures::spawn_local(async move { drop(closure) });
+    })
+}

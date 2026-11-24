@@ -25,6 +25,9 @@ pub fn Field(
     #[prop(optional)]
     autofocus: bool,
     #[prop(optional, into)] hint: Option<Signal<String>>,
+    /// Enter pressed in the input (React's `onKeyDown` checking `e.key`).
+    #[prop(optional)]
+    on_enter: Option<Callback<()>>,
 ) -> impl IntoView {
     let id = use_id();
     let input = NodeRef::<html::Input>::new();
@@ -40,7 +43,12 @@ pub fn Field(
             <label for=id.clone()>{label}</label>
             <input node_ref=input id=id class="input" placeholder=placeholder inputmode=input_mode
                 prop:value=move || value.get()
-                on:input=move |e| value.set(event_target_value(&e)) />
+                on:input=move |e| value.set(event_target_value(&e))
+                on:keydown=move |e| {
+                    if let Some(f) = on_enter.filter(|_| e.key() == "Enter") {
+                        f.run(());
+                    }
+                } />
             {hint.map(|h| view! { <div class="field-hint">{move || h.get()}</div> })}
         </div>
     }

@@ -75,7 +75,7 @@ Status: `todo` · `wip` · `review` (PR open) · `done` (merged, Rust page on in
 |---|---|---|
 | money (format/parse) | wip (parseAmountToCents, toFixed) | rust/page-goals, rust/page-cashflow |
 | tax engine | todo | |
-| budget sankey | todo | |
+| budget sankey | review | rust/ui-sankey |
 | debt calculator | review | rust/page-cashflow |
 | dashboard layout | todo | |
 
