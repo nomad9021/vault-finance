@@ -27,6 +27,7 @@ import { SubscriptionsPage } from "./SubscriptionsPage.js";
 import { TaxesPage } from "./TaxesPage.js";
 import { TransactionsPage } from "./TransactionsPage.js";
 import { Rail, Sidebar } from "./Sidebar.js";
+import { RustPage, usesRust } from "../../rust/RustPage.js";
 import { GroupTabs, TabBar } from "./TabBar.js";
 import {
   NAV_GROUPS,
@@ -233,6 +234,9 @@ function PageBody({
   filter: NavFilter;
   onNavigate: Navigate;
 }) {
+  // Pages already moved to the Rust UI (docs/rust-port.md).
+  if (usesRust(page)) return <RustPage page={page} onNavigate={onNavigate} />;
+
   switch (page) {
     case "dashboard":
       return <DashboardPage onNavigate={onNavigate} />;

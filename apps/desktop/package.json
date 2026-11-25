@@ -5,14 +5,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "dev": "node ../../scripts/build-rust-ui.mjs --dev && vite",
+    "build": "node ../../scripts/build-rust-ui.mjs && tsc -p tsconfig.json --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "tauri": "tauri",
     "ios:init": "tauri ios init",
     "ios:dev": "tauri ios dev",
     "ios:build": "tauri ios build --export-method debugging",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build:rust": "node ../../scripts/build-rust-ui.mjs"
   },
   "dependencies": {
     "@fontsource-variable/nunito": "5",

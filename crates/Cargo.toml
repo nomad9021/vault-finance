@@ -1,0 +1,21 @@
+# Rust half of Vault Finance: the UI is being moved from React to Leptos one
+# page at a time (docs/rust-port.md). Separate from apps/desktop/src-tauri on
+# purpose: that crate builds for desktop/iOS, these build for wasm32 (vault-ui)
+# and natively (vault-core tests).
+[workspace]
+resolver = "2"
+members = ["vault-core", "vault-ui"]
+
+[workspace.package]
+version = "0.2.2"
+edition = "2021"
+license = "AGPL-3.0-only"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
