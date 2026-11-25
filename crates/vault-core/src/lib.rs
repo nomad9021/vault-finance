@@ -53,6 +53,7 @@ pub mod status;
 pub mod subscriptions;
 pub mod taxes;
 pub mod transactions;
+pub mod transactions_page;
 pub mod trend_chart;
 pub mod updates;
 pub mod url;

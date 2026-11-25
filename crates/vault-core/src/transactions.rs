@@ -38,15 +38,21 @@ pub struct TransactionListResponse {
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TransactionQuery {
+    /// Merchant substring.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub account_id: Option<String>,
+    pub search: Option<String>,
     /// A category id, or "none" for uncategorized.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<String>,
+    /// `nextCursor` of the previous page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
 }

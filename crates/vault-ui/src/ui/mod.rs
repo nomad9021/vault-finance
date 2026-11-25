@@ -17,6 +17,8 @@ mod sankey_card;
 mod sankey_order;
 mod status_list;
 mod tailscale_control;
+
+mod swipe_row;
 #[rustfmt::skip]
 mod icons_gen;
 pub use approve_dialog::{describe_request, ApproveDialog, ApproveOutcome};
@@ -33,6 +35,8 @@ pub use sankey_card::SankeyCard;
 pub use sankey_order::use_sankey_order;
 pub use status_list::StatusList;
 pub use tailscale_control::TailscaleControl;
+
+pub use swipe_row::{SwipeAction, SwipeRow};
 
 /// `<Icon>`: inline SVG on a 24×24 grid, stroke scales at small sizes.
 #[component]
@@ -237,6 +241,9 @@ pub fn Panel(
     /// Right-aligned header content (buttons, a [`PanelLink`]).
     #[prop(optional)]
     actions: Option<AnyView>,
+    /// Inline style on the outer `.panel` (React's `style`).
+    #[prop(optional, into)]
+    style: Option<String>,
     children: Children,
 ) -> impl IntoView {
     let has_head = kicker.is_some()
@@ -249,7 +256,7 @@ pub fn Panel(
         None => title.map(IntoAny::into_any),
     };
     view! {
-        <div class=if flush { "panel panel-flush" } else { "panel" }>
+        <div class=if flush { "panel panel-flush" } else { "panel" } style=style>
             {has_head.then(|| view! {
                 <div class=if flush { "panel-head panel-head-pad" } else { "panel-head" }>
                     <div style="min-width: 0">
