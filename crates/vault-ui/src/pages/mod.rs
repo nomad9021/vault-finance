@@ -18,6 +18,7 @@ pub mod reports;
 pub mod review_presenter;
 pub mod subscriptions;
 pub mod taxes;
+pub mod transactions;
 
 pub const IDS: &[&str] = &[
     "insights",
@@ -33,6 +34,7 @@ pub const IDS: &[&str] = &[
     "taxes",
     "giving",
     "reports",
+    "transactions",
 ];
 
 pub fn render(page: &str) -> AnyView {
@@ -50,6 +52,7 @@ pub fn render(page: &str) -> AnyView {
         "taxes" => view! { <taxes::TaxesPage /> }.into_any(),
         "giving" => view! { <giving::GivingPage /> }.into_any(),
         "reports" => view! { <reports::ReportsPage /> }.into_any(),
+        "transactions" => view! { <transactions::TransactionsPage /> }.into_any(),
         _ => ().into_any(),
     }
 }

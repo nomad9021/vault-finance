@@ -14,19 +14,21 @@ mod sankey;
 mod sankey_arranger;
 mod sankey_card;
 mod sankey_order;
+mod swipe_row;
 #[rustfmt::skip]
 mod icons_gen;
 pub use confetti::Confetti;
 pub use dialog::Dialog;
 pub use form::{DateField, Field, Select, SelectOption};
 pub use icons_gen::NAMES as ICON_NAMES;
-pub use listen::{on_document, on_window};
+pub use listen::{on_document, on_window, use_narrow_layout};
 pub use pie_chart::{PieChart, PieSlice};
 pub use pre_income_dialog::PreIncomeDialog;
 pub use sankey::Sankey;
 pub use sankey_arranger::SankeyArranger;
 pub use sankey_card::SankeyCard;
 pub use sankey_order::use_sankey_order;
+pub use swipe_row::{SwipeAction, SwipeRow};
 
 /// `<Icon>`: inline SVG on a 24×24 grid, stroke scales at small sizes.
 #[component]
@@ -198,6 +200,9 @@ pub fn Panel(
     /// Right-aligned header content (buttons, a [`PanelLink`]).
     #[prop(optional)]
     actions: Option<AnyView>,
+    /// Inline style on the outer `.panel` (React's `style`).
+    #[prop(optional, into)]
+    style: Option<String>,
     children: Children,
 ) -> impl IntoView {
     let has_head = kicker.is_some()
@@ -210,7 +215,7 @@ pub fn Panel(
         None => title.map(IntoAny::into_any),
     };
     view! {
-        <div class=if flush { "panel panel-flush" } else { "panel" }>
+        <div class=if flush { "panel panel-flush" } else { "panel" } style=style>
             {has_head.then(|| view! {
                 <div class=if flush { "panel-head panel-head-pad" } else { "panel-head" }>
                     <div style="min-width: 0">

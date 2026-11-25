@@ -68,3 +68,17 @@ pub fn window_listener(
         wasm_bindgen_futures::spawn_local(async move { drop(closure) });
     })
 }
+
+/// `useLayoutMode() === "narrow"`: the window is under 900px (the shell's
+/// bottom-tab-bar layout), kept current as it crosses the breakpoint.
+pub fn use_narrow_layout() -> ReadSignal<bool> {
+    let query = window().match_media("(max-width: 899.98px)").ok().flatten();
+    let (narrow, set_narrow) = signal(query.as_ref().is_some_and(|q| q.matches()));
+    if let Some(q) = query {
+        let read = q.clone();
+        listen(q.into(), "change", false, move |_| {
+            set_narrow.set(read.matches())
+        });
+    }
+    narrow
+}
