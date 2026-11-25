@@ -46,6 +46,7 @@ pub mod sankey;
 pub mod sankey_card;
 pub mod serde_util;
 pub mod server_route;
+pub mod settings;
 pub mod setup;
 pub mod startup_checks;
 pub mod status;

@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { EmptyState, Spinner } from "@vault/ui";
 import type { AiLevel, ApiClient, ChatAttachment, User } from "@vault/shared";
-import { APP_VERSION, useApp } from "../state/store.js";
+import { useApp, type AppState } from "../state/store.js";
 import { useChat } from "../state/chat.js";
 import { readSpreadsheet, SpreadsheetError } from "../lib/spreadsheet.js";
 import { keepUnlocked } from "../lib/autoLock.js";
+import { runChecks } from "../lib/startupChecks.js";
+import { runCheckAction } from "../lib/useCheckActions.js";
+import { APP_VERSION, deviceKeySecret } from "../state/store.js";
 import type { NavFilter, Navigate, PageId } from "../screens/shell/nav.js";
 
 /**
@@ -255,6 +258,128 @@ function makeHost(client: ApiClient, onNavigate: Navigate, filter: NavFilter) {
       onNavigate("assistant");
       void chat.send(message);
     },
+
+    // ── Settings (part B): the store and platform pieces its sections use ──
+
+    /** The `useApp` fields Settings draws (vault-core `SettingsState`). */
+    settingsState() {
+      return settingsSnapshot(useApp.getState());
+    },
+    /** Run `cb` when `settingsState()` changes; returns an unsubscribe. */
+    onSettingsStateChange(cb: () => void): () => void {
+      return useApp.subscribe((s, prev) => {
+        if (SETTINGS_FIELDS.some((k) => s[k] !== prev[k])) cb();
+      });
+    },
+    /** A `useApp` action Settings may run, by name. */
+    store(action: string, args: unknown[]): Promise<unknown> {
+      if (!SETTINGS_ACTIONS.has(action)) return Promise.reject(new Error(`no store action ${action}`));
+      const fn = useApp.getState()[action as keyof AppState] as (...a: unknown[]) => unknown;
+      return Promise.resolve(fn(...args));
+    },
+    /** The id of this device's biometric key for the signed-in user, if any. */
+    async thisDeviceKeyId(): Promise<string | null> {
+      const { platform, serverAddress, user } = useApp.getState();
+      if (!serverAddress || !user) return null;
+      try {
+        const raw = await platform.getSecret(deviceKeySecret(serverAddress, user.id));
+        return raw ? ((JSON.parse(raw) as { id?: string }).id ?? null) : null;
+      } catch {
+        return null;
+      }
+    },
+    forgetPin(address: string): Promise<void> {
+      return useApp.getState().platform.forgetPin(address);
+    },
+    biometricCancel(): Promise<void> {
+      return Promise.resolve(useApp.getState().platform.biometricCancel());
+    },
+    /** Settings → System status: the startup checks, with progress. */
+    async runChecks(onUpdate: (checks: unknown[]) => void): Promise<unknown[] | null> {
+      const s = useApp.getState();
+      if (!s.serverAddress) return null;
+      const outcome = await runChecks(
+        {
+          platform: s.platform,
+          client: s.client,
+          address: s.serverAddress,
+          appVersion: APP_VERSION,
+          keychainOk: s.keychainOk,
+          hasSession: true,
+          alternateAddress: s.alternateAddress,
+          onRoute: s.setActiveAddress,
+        },
+        onUpdate,
+      );
+      return outcome.checks;
+    },
+    /** A failed check's button (lib/useCheckActions.ts). */
+    runCheckAction(
+      action: string,
+      setMessage: (m: string | null) => void,
+      onRecovered: () => void,
+      cancelled: () => boolean,
+    ): Promise<void> {
+      return runCheckAction(action as Parameters<typeof runCheckAction>[0], { setMessage, onRecovered, cancelled });
+    },
+  };
+}
+
+const SETTINGS_FIELDS = [
+  "user",
+  "theme",
+  "showSankey",
+  "aiVisible",
+  "aiAutoApply",
+  "aiLevel",
+  "autoLockMinutes",
+  "biometric",
+  "biometricUserIds",
+  "serverAddress",
+  "alternateAddress",
+  "activeAddress",
+  "tailscale",
+  "platform",
+] as const satisfies ReadonlyArray<keyof AppState>;
+
+const SETTINGS_ACTIONS: ReadonlySet<string> = new Set([
+  "setShowSankey",
+  "setTheme",
+  "setAiAutoApply",
+  "setAiLevel",
+  "setAutoLockMinutes",
+  "setReviewPrefs",
+  "lock",
+  "enableBiometric",
+  "disableBiometric",
+  "refreshAiEnabled",
+  "refreshTailscale",
+  "turnOnTailscale",
+  "turnOffTailscale",
+  "saveAlternateAddress",
+  "removeAlternateAddress",
+  "changeServer",
+  "signOut",
+] satisfies ReadonlyArray<keyof AppState>);
+
+function settingsSnapshot(s: AppState) {
+  return {
+    userId: s.user?.id ?? null,
+    role: s.user?.role ?? null,
+    theme: s.theme,
+    showSankey: s.showSankey,
+    aiVisible: s.aiVisible,
+    aiAutoApply: s.aiAutoApply,
+    aiLevel: s.aiLevel,
+    autoLockMinutes: s.autoLockMinutes,
+    biometric: s.biometric,
+    biometricUserIds: s.biometricUserIds,
+    serverAddress: s.serverAddress,
+    alternateAddress: s.alternateAddress,
+    activeAddress: s.activeAddress,
+    tailscale: s.tailscale,
+    tailscaleSupported: Boolean(s.platform?.tailscaleStatus),
+    platform: s.platform?.kind ?? "browser",
   };
 }
 
