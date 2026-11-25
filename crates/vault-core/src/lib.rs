@@ -6,6 +6,10 @@
 //! Keep this crate free of wasm/browser dependencies: everything in it is
 //! tested natively with `cargo test -p vault-core`.
 
+pub mod accounts;
+pub mod cashflow;
 pub mod insights;
 pub mod nav;
+pub mod networth;
 pub mod subscriptions;
+pub mod trend_chart;

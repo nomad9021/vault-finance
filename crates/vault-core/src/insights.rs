@@ -46,6 +46,7 @@ impl Insight {
         NavFilter {
             category_id: self.category_id.clone(),
             account_id: self.account_id.clone(),
+            tab: None,
         }
     }
 

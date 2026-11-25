@@ -61,8 +61,8 @@ impl Subscription {
     /// "Charges" link: the transactions page, narrowed to the account when known.
     pub fn filter(&self) -> NavFilter {
         NavFilter {
-            category_id: None,
             account_id: self.account_id.clone(),
+            ..Default::default()
         }
     }
 

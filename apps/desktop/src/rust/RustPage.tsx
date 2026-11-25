@@ -9,7 +9,7 @@ import type { NavFilter, Navigate, PageId } from "../screens/shell/nav.js";
  * Pages drawn by the Rust UI (crates/vault-ui, Leptos compiled to wasm).
  * Must match `pages::IDS` there. See docs/rust-port.md.
  */
-export const RUST_PAGES: ReadonlySet<PageId> = new Set<PageId>(["insights", "subscriptions"]);
+export const RUST_PAGES: ReadonlySet<PageId> = new Set<PageId>(["insights", "networth", "subscriptions"]);
 
 const FLAG = "vault.rust-ui";
 
