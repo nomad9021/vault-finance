@@ -69,16 +69,20 @@ pub fn window_listener(
     })
 }
 
-/// `useLayoutMode() === "narrow"`: the window is under 900px (the shell's
-/// bottom-tab-bar layout), kept current as it crosses the breakpoint.
-pub fn use_narrow_layout() -> ReadSignal<bool> {
+/// `useLayoutMode() === "narrow"` (window under 900px), kept current.
+pub fn use_narrow() -> ReadSignal<bool> {
     let query = window().match_media("(max-width: 899.98px)").ok().flatten();
-    let (narrow, set_narrow) = signal(query.as_ref().is_some_and(|q| q.matches()));
+    let read = || {
+        window()
+            .inner_width()
+            .ok()
+            .and_then(|w| w.as_f64())
+            .unwrap_or(1200.0)
+            < 900.0
+    };
+    let (narrow, set_narrow) = signal(read());
     if let Some(q) = query {
-        let read = q.clone();
-        listen(q.into(), "change", false, move |_| {
-            set_narrow.set(read.matches())
-        });
+        listen(q.into(), "change", false, move |_| set_narrow.set(read()));
     }
     narrow
 }

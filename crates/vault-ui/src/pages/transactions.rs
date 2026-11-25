@@ -29,7 +29,7 @@ use wasm_bindgen_futures::JsFuture;
 use crate::fmt;
 use crate::host::{use_host, HostCtx};
 use crate::ui::{
-    use_narrow_layout, Button, DateField, Dialog, Field, Panel, Select, SelectOption, Spinner,
+    use_narrow, Button, DateField, Dialog, Field, Panel, Select, SelectOption, Spinner,
     SwipeAction, SwipeRow,
 };
 
@@ -120,7 +120,7 @@ impl List {
 #[component]
 pub fn TransactionsPage() -> impl IntoView {
     let host = use_host();
-    let phone = use_narrow_layout();
+    let phone = use_narrow();
     let data_version = host.data_version;
 
     let accounts_res = LocalResource::new(move || {

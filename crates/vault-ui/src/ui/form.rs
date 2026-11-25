@@ -23,6 +23,10 @@ pub fn Field(
     value: RwSignal<String>,
     #[prop(optional, into)] placeholder: MaybeProp<&'static str>,
     #[prop(optional)] input_mode: Option<&'static str>,
+    /// The input's `type` ("email", "password", …); text when unset.
+    #[prop(optional)]
+    input_type: Option<&'static str>,
+    #[prop(optional)] autocomplete: Option<&'static str>,
     /// Focus on mount (React's `autoFocus`).
     #[prop(optional)]
     autofocus: bool,
@@ -57,7 +61,7 @@ pub fn Field(
     view! {
         <div class="field">
             <label for=id.clone()>{move || label.get()}</label>
-            <input node_ref=input id=id class="input" placeholder=move || placeholder.get() inputmode=input_mode
+            <input node_ref=input id=id class="input" type=input_type autocomplete=autocomplete placeholder=move || placeholder.get() inputmode=input_mode
                 maxlength=max_length aria-invalid=move || current_error().map(|_| "true")
                 prop:value=move || value.get()
                 on:input=move |e| {
