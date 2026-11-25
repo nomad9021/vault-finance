@@ -6,17 +6,9 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 use crate::accounts::{Account, AccountType};
+use crate::budgets::WeekStart;
 use crate::money::{cents_to_fixed2, parse_amount_to_cents};
 use crate::transactions::Transaction;
-
-/// `WeekStart` (budgets.ts).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum WeekStart {
-    #[default]
-    Monday,
-    Sunday,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

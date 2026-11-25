@@ -244,10 +244,7 @@ pub fn extra_input(extra_cents: i64) -> String {
 
 /// The APR field: `Number(value.replace(/[^0-9.]/g, "")) || 0`.
 pub fn parse_apr(input: &str) -> f64 {
-    let kept: String = input
-        .chars()
-        .filter(|c| c.is_ascii_digit() || *c == '.')
-        .collect();
+    let kept = clean_apr(input);
     if kept.is_empty() {
         return 0.0;
     }
@@ -255,6 +252,21 @@ pub fn parse_apr(input: &str) -> f64 {
         Ok(v) if v.is_finite() => v,
         _ => 0.0,
     }
+}
+
+/// The APR field's text as typed, with everything but digits and dots
+/// dropped (what `parse_apr` reads).
+pub fn clean_apr(input: &str) -> String {
+    input
+        .chars()
+        .filter(|c| c.is_ascii_digit() || *c == '.')
+        .collect()
+}
+
+/// Whether the APR field's `text` already means `apr`, so it stays as typed
+/// ("6." while typing 6.5) instead of being rewritten to `apr_text(apr)`.
+pub fn same_apr(text: &str, apr: &f64) -> bool {
+    apr_text(parse_apr(text)) == apr_text(*apr)
 }
 
 /// `String(apr)` for the APR field. Rust's shortest round-trip float text
@@ -270,6 +282,17 @@ pub fn apr_text(apr: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn apr_field_keeps_typed_decimal() {
+        // Typing 6.5 passes through "6." — it must not be rewritten to "6".
+        assert!(same_apr("6.", &6.0));
+        assert!(same_apr("6.50", &6.5));
+        assert!(!same_apr("6.", &22.0));
+        assert!(same_apr("", &0.0));
+        assert_eq!(clean_apr("6.5%"), "6.5");
+        assert_eq!(parse_apr(&clean_apr("6.5%")), 6.5);
+    }
 
     fn card() -> Debt {
         Debt {

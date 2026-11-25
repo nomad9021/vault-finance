@@ -51,33 +51,33 @@ Status: `todo` · `wip` · `review` (PR open) · `done` (merged, Rust page on in
 
 | Page | Wave | Status | Branch |
 |---|---|---|---|
-| insights | 0 | review | rust/foundation |
-| cashflow | 1 | review | rust/page-cashflow |
-| networth | 1 | review | rust/page-networth |
-| subscriptions | 1 | review | rust/page-subscriptions |
-| goals (+ buckets tab) | 1 | review | rust/page-goals |
-| investments | 2 | review | rust/page-investments |
-| income | 2 | review | rust/page-income |
-| reports (+ review presenter) | 2 | review | rust/page-reports |
-| taxes | 2 | review | rust/page-taxes |
-| accounts | 2 | review | rust/page-accounts |
-| bills | 2 | review | rust/page-bills |
-| budgets (+ planner, vs-actual) | 2 | review | rust/page-budgets |
-| giving | 2 | review | rust/page-giving |
-| transactions | 3 | review | rust/page-transactions |
-| dashboard (+ guilt-free card, home arranging) | 3 | review | rust/page-dashboard |
-| assistant (+ chat view, chat bubble) | 3 | review | rust/page-assistant |
-| settings | 3 | review | rust/page-settings, rust/page-settings-b |
+| insights | 0 | done | main |
+| cashflow | 1 | done | main |
+| networth | 1 | done | main |
+| subscriptions | 1 | done | main |
+| goals (+ buckets tab) | 1 | done | main |
+| investments | 2 | done | main |
+| income | 2 | done | main |
+| reports (+ review presenter) | 2 | done | main |
+| taxes | 2 | done | main |
+| accounts | 2 | done | main |
+| bills | 2 | done | main |
+| budgets (+ planner, vs-actual) | 2 | done | main |
+| giving | 2 | done | main |
+| transactions | 3 | done | main |
+| dashboard (+ guilt-free card, home arranging) | 3 | done | main |
+| assistant (+ chat view, chat bubble) | 3 | done | main |
+| settings | 3 | done | main |
 | shell | 4 | todo | |
 | auth-screens | 4 | todo | |
 
 | Shared logic (vault-core) | Status | Branch |
 |---|---|---|
-| money (format/parse) | wip (parseAmountToCents, toFixed) | rust/page-goals, rust/page-cashflow |
+| money (format/parse) | done | main |
 | tax engine | todo (types, groups and the tax Sankey in vault-core/taxes.rs; the engine runs on the server) | rust/page-taxes |
-| budget sankey | review | rust/ui-sankey |
-| debt calculator | review | rust/page-cashflow |
-| dashboard layout | review | rust/core-types |
+| budget sankey | done | main |
+| debt calculator | done | main |
+| dashboard layout | done | main |
 
 Wave 4 retires React: the shell and sign-in move to Leptos, `RustPage` becomes the app root,
 and React, react-dom and zustand leave the bundle.

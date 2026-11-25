@@ -1,6 +1,7 @@
 import { formatCentsWhole, parseAmountToCents, type Account } from "@vault/shared";
 import { Button, Dialog, Panel, Spinner } from "@vault/ui";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { aprText, useNumberText } from "../../lib/numberText.js";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 
@@ -667,13 +668,7 @@ function DebtSettingsDialog({
                     </label>
                     <label style={{ width: 72 }}>
                       <span style={miniLabel}>APR %</span>
-                      <input
-                        className="input"
-                        value={String(d.apr)}
-                        onChange={(e) => onPatch(d, { apr: Number(e.target.value.replace(/[^0-9.]/g, "")) || 0 })}
-                        inputMode="decimal"
-                        style={{ width: "100%", textAlign: "right" }}
-                      />
+                      <AprInput apr={d.apr} onApr={(apr) => onPatch(d, { apr })} />
                     </label>
                     <label style={{ width: 92 }}>
                       <span style={miniLabel}>Min / mo</span>
@@ -737,5 +732,23 @@ function Confetti() {
         />
       ))}
     </div>
+  );
+}
+
+/** The APR field: keeps what's typed ("6.", "6.50") while it means the same number. */
+function AprInput({ apr, onApr }: { apr: number; onApr: (apr: number) => void }) {
+  const [text, setText] = useNumberText(apr, aprText.show, aprText.parse);
+  return (
+    <input
+      className="input"
+      value={text}
+      onChange={(e) => {
+        const t = aprText.clean(e.target.value);
+        setText(t);
+        onApr(aprText.parse(t));
+      }}
+      inputMode="decimal"
+      style={{ width: "100%", textAlign: "right" }}
+    />
   );
 }

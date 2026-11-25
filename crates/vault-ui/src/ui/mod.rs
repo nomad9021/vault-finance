@@ -28,7 +28,7 @@ pub use approve_dialog::{describe_request, ApproveDialog, ApproveOutcome};
 pub use basics::{ListRow, Money, SegmentedOf, Sheet, Skeleton};
 pub use confetti::Confetti;
 pub use dialog::Dialog;
-pub use form::{DateField, Field, Select, SelectOption};
+pub use form::{synced, DateField, Field, Select, SelectOption};
 pub use guilt_free_card::GuiltFreeCard;
 pub use home_arrange::HomeArrange;
 pub use icons_gen::NAMES as ICON_NAMES;

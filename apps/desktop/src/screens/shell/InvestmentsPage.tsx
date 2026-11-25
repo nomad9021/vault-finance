@@ -142,12 +142,14 @@ export function InvestmentsPage({ onNavigate }: { onNavigate: (page: PageId) => 
                       alignItems: "baseline",
                       gap: 12,
                       padding: "10px 0",
+                      // The button's own border off first, then only the faint
+                      // top divider (a later `border: none` + borderTopStyle
+                      // drew a 3px currentColor line).
+                      border: "none",
                       borderTop: "1px solid color-mix(in srgb, var(--color-text) 7%, transparent)",
                       fontSize: "var(--text-sm)",
                       width: "100%",
                       background: "none",
-                      border: "none",
-                      borderTopStyle: "solid",
                       cursor: "pointer",
                       textAlign: "left",
                       font: "inherit",
