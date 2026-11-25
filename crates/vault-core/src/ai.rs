@@ -540,9 +540,148 @@ pub enum ChatStreamLine {
     Error { error: StreamError },
 }
 
+// ── The open conversation (apps/desktop/src/state/chat.ts) ──
+
+/// One message of the conversation the Assistant page and the chat bubble
+/// share (`ChatMessage` in state/chat.ts, which stays in JS).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMessage {
+    pub role: MessageRole,
+    pub text: String,
+    #[serde(default)]
+    pub pending: bool,
+    /// The model is reasoning before it answers (AI level High).
+    #[serde(default)]
+    pub thinking: bool,
+    /// What it's looking up right now.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// Changes this reply proposed.
+    #[serde(default)]
+    pub actions: Vec<AiActionRecord>,
+    /// Notes it saved to the assistant's memory.
+    #[serde(default)]
+    pub remembered: Vec<String>,
+    /// The user pressed Stop on this reply.
+    #[serde(default)]
+    pub stopped: bool,
+    /// Spreadsheets attached to this (user) message, by name.
+    #[serde(default)]
+    pub files: Vec<String>,
+}
+
+impl ChatMessage {
+    /// The reply as shown: `stripAssistantBlocks(m.text)`.
+    pub fn shown_text(&self) -> String {
+        crate::ai_actions::strip_assistant_blocks(&self.text)
+    }
+
+    /// Still waiting for the first visible text (the "···" / status line).
+    pub fn waiting(&self) -> bool {
+        self.pending && self.shown_text().is_empty()
+    }
+
+    /// Changes still waiting for Approve / Decline.
+    pub fn pending_actions(&self) -> usize {
+        self.actions
+            .iter()
+            .filter(|a| a.status == crate::ai_actions::AiActionStatus::Pending)
+            .count()
+    }
+}
+
+impl crate::ai_actions::AiActionStatus {
+    /// ChatView's `STATUS_LABEL`.
+    pub fn label(self) -> &'static str {
+        use crate::ai_actions::AiActionStatus::*;
+        match self {
+            Pending => "Waiting for you",
+            Applied => "Done",
+            Rejected => "Declined",
+            Failed => "Didn't work",
+        }
+    }
+}
+
+impl AiStatus {
+    /// The assistant can't answer: off, not set up, or unreachable.
+    pub fn offline(&self) -> bool {
+        !self.enabled || !self.configured || !self.reachable
+    }
+}
+
+impl AiHostStatus {
+    /// AiHostBar's line of text.
+    pub fn bar_text(&self) -> String {
+        let queued = self.queue.map(|q| q.active + q.waiting).unwrap_or(0);
+        match self.power {
+            AiHostPower::On => match self.queue {
+                Some(q) if queued > 0 => {
+                    format!("AI server on · {} running, {} waiting", q.active, q.waiting)
+                }
+                _ => "AI server on".into(),
+            },
+            AiHostPower::Starting => "AI server starting — usually under a minute".into(),
+            AiHostPower::Off if self.can_start => "AI server is asleep".into(),
+            AiHostPower::Off => "AI server is off — switch it on, then come back".into(),
+            AiHostPower::Unknown => self
+                .message
+                .clone()
+                .unwrap_or_else(|| "Can't tell whether the AI server is on".into()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_chat_messages() {
+        let m: Vec<ChatMessage> = serde_json::from_str(
+            r#"[{"role":"user","text":"Import this","files":["budget.xlsx"]},
+                {"role":"assistant","text":"","pending":true,"status":"Checking budgets…"},
+                {"role":"assistant","text":"Here you go.<vault-action>{\"type\":\"set_budget\"","pending":true,
+                 "actions":[{"id":"3c4d5e6f-7a8b-4c9d-8e0f-2a3b4c5d6e7f","conversationId":"0f1e2d3c-4b5a-4968-8776-655443322110",
+                   "messageId":null,"action":{"type":"set_budget","category":"Dining","amount":250},
+                   "summary":"Set the monthly budget for \"Dining\" to $250","client":false,"status":"pending",
+                   "error":null,"createdAt":"2026-11-24T17:00:04.000Z"}],"remembered":["Paid biweekly"],"stopped":true}]"#,
+        )
+        .unwrap();
+        assert_eq!(m[0].files, ["budget.xlsx"]);
+        assert!(m[1].waiting());
+        assert_eq!(m[1].status.as_deref(), Some("Checking budgets…"));
+        assert_eq!(m[2].shown_text(), "Here you go.");
+        assert!(!m[2].waiting() && m[2].stopped);
+        assert_eq!(m[2].pending_actions(), 1);
+        assert_eq!(m[2].actions[0].status.label(), "Waiting for you");
+    }
+
+    #[test]
+    fn host_bar_text() {
+        let mut h: AiHostStatus = serde_json::from_str(
+            r#"{"applies":true,"power":"on","canStart":true,"queue":{"active":0,"waiting":0}}"#,
+        )
+        .unwrap();
+        assert_eq!(h.bar_text(), "AI server on");
+        h.queue = Some(AiQueue {
+            active: 1,
+            waiting: 2,
+        });
+        assert_eq!(h.bar_text(), "AI server on · 1 running, 2 waiting");
+        h.power = AiHostPower::Off;
+        assert_eq!(h.bar_text(), "AI server is asleep");
+        h.can_start = false;
+        assert_eq!(
+            h.bar_text(),
+            "AI server is off — switch it on, then come back"
+        );
+        h.power = AiHostPower::Unknown;
+        assert_eq!(h.bar_text(), "Can't tell whether the AI server is on");
+        h.message = Some("Wake-on-LAN isn't set up".into());
+        assert_eq!(h.bar_text(), "Wake-on-LAN isn't set up");
+    }
 
     #[test]
     fn parses_ai_status() {
