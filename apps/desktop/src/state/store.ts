@@ -67,7 +67,7 @@ export type AppUpdateState =
   | { phase: "installing"; version: string; progress: number }
   | { phase: "error"; message: string; version?: string };
 
-interface AppState {
+export interface AppState {
   platform: HostPlatform;
   client: ApiClient;
   screen: Screen;

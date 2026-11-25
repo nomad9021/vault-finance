@@ -7,7 +7,7 @@
 //! step, so the Rust shell can await each host call in between and show the
 //! rows after every step. A step returning `false` means stop.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::platform::{HostKind, PrivateNetworkId, ProbeResult, TailscaleStatus};
 use crate::serde_util::js_slice_to;
@@ -18,7 +18,7 @@ use crate::url::Url;
 
 pub const TAILSCALE_DOWNLOAD_URL: &str = "https://tailscale.com/download";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum CheckAction {
     TailscaleUp,
@@ -29,7 +29,7 @@ pub enum CheckAction {
 }
 
 /// A row's level: a server [`StatusLevel`], or still running.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UiLevel {
     Ok,
@@ -50,7 +50,7 @@ impl From<StatusLevel> for UiLevel {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiCheck {
     pub id: String,
     pub label: String,
