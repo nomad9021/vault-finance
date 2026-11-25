@@ -17,9 +17,11 @@ use crate::fmt;
 /// `<Field>`: labelled `.input`, two-way bound to `value`.
 #[component]
 pub fn Field(
-    #[prop(into)] label: String,
+    /// May change after mount (a dialog whose labels follow a type picker).
+    #[prop(into)]
+    label: Signal<String>,
     value: RwSignal<String>,
-    #[prop(optional)] placeholder: Option<&'static str>,
+    #[prop(optional, into)] placeholder: MaybeProp<&'static str>,
     #[prop(optional)] input_mode: Option<&'static str>,
     /// Focus on mount (React's `autoFocus`).
     #[prop(optional)]
@@ -37,6 +39,10 @@ pub fn Field(
     /// `onChange={(e) => set(e.target.value.replace(…))}`).
     #[prop(optional)]
     filter: Option<fn(&str) -> String>,
+    /// Called with what was typed, after `value` is set (React's
+    /// `onChange` doing more than storing the text).
+    #[prop(optional)]
+    on_input: Option<Callback<String>>,
 ) -> impl IntoView {
     let id = use_id();
     let input = NodeRef::<html::Input>::new();
@@ -50,8 +56,8 @@ pub fn Field(
     }
     view! {
         <div class="field">
-            <label for=id.clone()>{label}</label>
-            <input node_ref=input id=id class="input" placeholder=placeholder inputmode=input_mode
+            <label for=id.clone()>{move || label.get()}</label>
+            <input node_ref=input id=id class="input" placeholder=move || placeholder.get() inputmode=input_mode
                 maxlength=max_length aria-invalid=move || current_error().map(|_| "true")
                 prop:value=move || value.get()
                 on:input=move |e| {
@@ -69,6 +75,9 @@ pub fn Field(
                             value.set(clean);
                         }
                         None => value.set(raw),
+                    }
+                    if let Some(f) = on_input {
+                        f.run(value.get_untracked());
                     }
                 }
                 on:keydown=move |e| {
@@ -108,12 +117,21 @@ pub fn Select(
     #[prop(into)] label: String,
     value: RwSignal<String>,
     #[prop(into)] options: Signal<Vec<SelectOption>>,
+    /// Called with the picked value, after `value` is set.
+    #[prop(optional)]
+    on_change: Option<Callback<String>>,
 ) -> impl IntoView {
     let id = use_id();
     view! {
         <div class="field">
             <label for=id.clone()>{label}</label>
-            <select id=id class="input" on:change=move |e| value.set(event_target_value(&e))>
+            <select id=id class="input" on:change=move |e| {
+                let v = event_target_value(&e);
+                value.set(v.clone());
+                if let Some(f) = on_change {
+                    f.run(v);
+                }
+            }>
                 {move || options.get().into_iter().map(|o| {
                     let v = o.value.clone();
                     view! {
@@ -145,6 +163,7 @@ pub fn DateField(
     #[prop(default = true)] clearable: bool,
     #[prop(optional)] min: Option<&'static str>,
     #[prop(optional)] max: Option<&'static str>,
+    #[prop(optional)] hint: Option<&'static str>,
 ) -> impl IntoView {
     let id = use_id();
     let trigger = NodeRef::<html::Button>::new();
@@ -339,6 +358,7 @@ pub fn DateField(
                     </Portal>
                 }
             })}
+            {hint.map(|h| view! { <div class="field-hint">{h}</div> })}
         </div>
     }
 }
