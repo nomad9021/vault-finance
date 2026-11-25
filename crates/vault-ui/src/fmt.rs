@@ -166,6 +166,13 @@ pub fn month_short(month: &str) -> String {
     utc_date(y, m.max(0) as u32, 1, &[("month", "short")])
 }
 
+/// `"2026-11"` → `"November"`: `{ month: "long", timeZone: "UTC" }`.
+pub fn month_long(month: &str) -> String {
+    let mut parts = month.split('-').map(|p| p.parse::<i32>().unwrap_or(0));
+    let (y, m) = (parts.next().unwrap_or(0), parts.next().unwrap_or(1));
+    utc_date(y, m.max(0) as u32, 1, &[("month", "long")])
+}
+
 /// Today plus `months` (JS `setMonth` overflow rules), in local time, as
 /// "Mar 2028": the debt planner's `payoffDate`.
 pub fn month_year_from_now(months: u32) -> String {
@@ -183,6 +190,14 @@ pub fn weekday_date(iso: &str) -> String {
             d,
             &[("weekday", "short"), ("month", "short"), ("day", "numeric")],
         ),
+        None => iso.to_string(),
+    }
+}
+
+/// `{ weekday: "long" }`: "Tuesday".
+pub fn weekday_long(iso: &str) -> String {
+    match parse_iso(iso.get(..10).unwrap_or(iso)) {
+        Some((y, m, d)) => utc_date(y, m, d, &[("weekday", "long")]),
         None => iso.to_string(),
     }
 }

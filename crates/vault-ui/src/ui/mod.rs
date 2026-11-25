@@ -4,10 +4,13 @@
 use leptos::prelude::*;
 
 mod approve_dialog;
+mod basics;
 mod confetti;
 mod dialog;
 mod drag_sort;
 mod form;
+mod guilt_free_card;
+mod home_arrange;
 mod listen;
 mod pie_chart;
 mod pre_income_dialog;
@@ -22,9 +25,12 @@ mod swipe_row;
 #[rustfmt::skip]
 mod icons_gen;
 pub use approve_dialog::{describe_request, ApproveDialog, ApproveOutcome};
+pub use basics::{ListRow, Money, SegmentedOf, Sheet, Skeleton};
 pub use confetti::Confetti;
 pub use dialog::Dialog;
 pub use form::{DateField, Field, Select, SelectOption};
+pub use guilt_free_card::GuiltFreeCard;
+pub use home_arrange::HomeArrange;
 pub use icons_gen::NAMES as ICON_NAMES;
 pub use listen::{on_document, on_window, use_id, use_narrow};
 pub use pie_chart::{PieChart, PieSlice};

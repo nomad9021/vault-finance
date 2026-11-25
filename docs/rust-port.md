@@ -65,7 +65,7 @@ Status: `todo` · `wip` · `review` (PR open) · `done` (merged, Rust page on in
 | budgets (+ planner, vs-actual) | 2 | review | rust/page-budgets |
 | giving | 2 | review | rust/page-giving |
 | transactions | 3 | review | rust/page-transactions |
-| dashboard | 3 | todo | |
+| dashboard (+ guilt-free card, home arranging) | 3 | review | rust/page-dashboard |
 | assistant (+ chat view, chat bubble) | 3 | review | rust/page-assistant |
 | settings | 3 | review | rust/page-settings, rust/page-settings-b |
 | shell | 4 | todo | |

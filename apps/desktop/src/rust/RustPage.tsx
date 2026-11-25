@@ -31,6 +31,7 @@ export const RUST_PAGES: ReadonlySet<PageId> = new Set<PageId>([
   "settings",
   "assistant",
   "transactions",
+  "dashboard",
 ]);
 
 /**
@@ -113,6 +114,7 @@ function makeHost(client: ApiClient, onNavigate: Navigate, filter: NavFilter) {
         adminConsole: Boolean(s.platform.openAdminConsole),
         aiLevel: s.aiLevel,
         aiAutoApply: s.aiAutoApply,
+        showSankey: s.showSankey,
       };
     },
     setFullscreen(on: boolean): Promise<void> {
@@ -132,7 +134,8 @@ function makeHost(client: ApiClient, onNavigate: Navigate, filter: NavFilter) {
           s.appUpdate !== prev.appUpdate ||
           s.activeAddress !== prev.activeAddress ||
           s.aiLevel !== prev.aiLevel ||
-          s.aiAutoApply !== prev.aiAutoApply
+          s.aiAutoApply !== prev.aiAutoApply ||
+          s.showSankey !== prev.showSankey
         )
           cb();
       });

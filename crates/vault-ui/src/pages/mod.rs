@@ -10,6 +10,7 @@ pub mod bills;
 pub mod budgets;
 pub mod cashflow;
 pub mod chat_view;
+pub mod dashboard;
 pub mod debt_calculator;
 pub mod giving;
 pub mod goals;
@@ -43,6 +44,7 @@ pub const IDS: &[&str] = &[
     "transactions",
     // Not a page: the shell mounts it over every page but the Assistant.
     "assistant-bubble",
+    "dashboard",
 ];
 
 pub fn render(page: &str) -> AnyView {
@@ -64,6 +66,7 @@ pub fn render(page: &str) -> AnyView {
         "assistant" => view! { <assistant::AssistantPage /> }.into_any(),
         "assistant-bubble" => view! { <assistant_bubble::AssistantBubble /> }.into_any(),
         "transactions" => view! { <transactions::TransactionsPage /> }.into_any(),
+        "dashboard" => view! { <dashboard::DashboardPage /> }.into_any(),
         _ => ().into_any(),
     }
 }

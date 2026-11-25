@@ -31,6 +31,7 @@ pub mod downloads;
 pub mod giving;
 pub mod goals;
 pub mod guilt_free;
+pub mod home;
 pub mod income;
 pub mod insights;
 pub mod investments;

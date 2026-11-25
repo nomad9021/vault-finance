@@ -173,6 +173,9 @@ pub struct AppState {
     pub app_version: String,
     /// The platform has `openAdminConsole`.
     pub admin_console: bool,
+    /// Settings → Home screen: show the cash-flow diagram (`None`: an older
+    /// shell that doesn't say, so on).
+    pub show_sankey: Option<bool>,
 }
 
 impl AppState {
