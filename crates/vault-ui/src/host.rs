@@ -35,6 +35,38 @@ extern "C" {
 
     #[wasm_bindgen(method, js_name = onDataChange)]
     fn on_data_change(this: &Host, cb: &js_sys::Function) -> js_sys::Function;
+
+    /// `{ weekStartsOn, aiVisible }` from the app store.
+    #[wasm_bindgen(method, js_name = appState)]
+    fn app_state(this: &Host) -> JsValue;
+
+    /// Run `cb` when `appState()` changes; returns an unsubscribe function.
+    #[wasm_bindgen(method, js_name = onAppStateChange)]
+    fn on_app_state_change(this: &Host, cb: &js_sys::Function) -> js_sys::Function;
+
+    /// lib/spreadsheet.ts `readSpreadsheet(file)`: `{ name, content }`.
+    #[wasm_bindgen(method, catch, js_name = readSpreadsheet)]
+    async fn read_spreadsheet(this: &Host, file: &web_sys::File) -> Result<JsValue, JsValue>;
+
+    /// A new assistant chat with an attachment, opened and sent.
+    #[wasm_bindgen(method, js_name = askAssistant)]
+    fn ask_assistant(this: &Host, message: &str, attachment: JsValue);
+}
+
+/// What `host.appState()` returns.
+#[derive(Debug, Clone, PartialEq, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AppState {
+    /// "monday" | "sunday".
+    pub week_starts_on: String,
+    pub ai_visible: bool,
+}
+
+/// A spreadsheet read for the assistant (`ChatAttachment`).
+#[derive(Debug, Clone, PartialEq, serde::Deserialize, Serialize)]
+pub struct Sheet {
+    pub name: String,
+    pub content: String,
 }
 
 /// What pages get from context: the host plus a counter that ticks when the
@@ -118,6 +150,46 @@ impl HostCtx {
     /// `data_version`) refetch.
     pub fn refresh_data(&self) {
         self.host.refresh_data();
+    }
+
+    /// The app store's week start and AI visibility, kept current while the
+    /// page is mounted (React's `useApp((s) => …)`).
+    pub fn app_state(&self) -> ReadSignal<AppState> {
+        let read = |h: &Host| serde_wasm_bindgen::from_value(h.app_state()).unwrap_or_default();
+        let (state, set_state) = signal(read(&self.host));
+        let host = Rc::clone(&self.host);
+        let cb = Closure::<dyn Fn()>::new(move || set_state.set(read(&host)));
+        let unsubscribe =
+            SendWrapper::new(self.host.on_app_state_change(cb.as_ref().unchecked_ref()));
+        let cb = SendWrapper::new(cb);
+        on_cleanup(move || {
+            let _ = unsubscribe.call0(&JsValue::NULL);
+            drop(cb);
+        });
+        state
+    }
+
+    /// Read a picked spreadsheet in JS (lib/spreadsheet.ts). The error is the
+    /// message to show: the reader's own, or the generic one.
+    pub async fn read_spreadsheet(&self, file: &web_sys::File) -> Result<Sheet, String> {
+        const FALLBACK: &str = "Couldn't read that file. Save it as CSV and try again.";
+        match self.host.read_spreadsheet(file).await {
+            Ok(v) => serde_wasm_bindgen::from_value(v).map_err(|_| FALLBACK.to_string()),
+            Err(e) => {
+                let e = CallError::from_js(e);
+                Err(if e.name == "SpreadsheetError" {
+                    e.message
+                } else {
+                    FALLBACK.to_string()
+                })
+            }
+        }
+    }
+
+    /// Start a new assistant chat with `sheet` attached, open it and send
+    /// `message` (useChat newChat → attach → navigate → send).
+    pub fn ask_assistant(&self, message: &str, sheet: &Sheet) {
+        self.host.ask_assistant(message, Self::arg(sheet));
     }
 
     pub fn navigate(&self, page: &str, filter: &impl Serialize) {

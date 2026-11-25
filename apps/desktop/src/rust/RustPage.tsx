@@ -3,6 +3,7 @@ import { EmptyState, Spinner } from "@vault/ui";
 import type { ApiClient } from "@vault/shared";
 import { useApp } from "../state/store.js";
 import { useChat } from "../state/chat.js";
+import { readSpreadsheet, SpreadsheetError } from "../lib/spreadsheet.js";
 import type { NavFilter, Navigate, PageId } from "../screens/shell/nav.js";
 
 /**
@@ -18,6 +19,7 @@ export const RUST_PAGES: ReadonlySet<PageId> = new Set<PageId>([
   "income",
   "investments",
   "accounts",
+  "budgets",
 ]);
 
 const FLAG = "vault.rust-ui";
@@ -77,6 +79,40 @@ function makeHost(client: ApiClient, onNavigate: Navigate, filter: NavFilter) {
       return useChat.subscribe((s, prev) => {
         if (s.dataVersion !== prev.dataVersion) cb();
       });
+    },
+    /** The bits of app state pages read: where weeks start, whether AI is on. */
+    appState(): { weekStartsOn: string; aiVisible: boolean } {
+      const s = useApp.getState();
+      return { weekStartsOn: s.reviewPrefs.weekStartsOn, aiVisible: s.aiVisible };
+    },
+    onAppStateChange(cb: () => void): () => void {
+      return useApp.subscribe((s, prev) => {
+        if (s.aiVisible !== prev.aiVisible || s.reviewPrefs.weekStartsOn !== prev.reviewPrefs.weekStartsOn) cb();
+      });
+    },
+    /**
+     * A picked CSV/TSV/Excel file as `{ name, content }` (CSV text), parsed by
+     * lib/spreadsheet.ts. Its own messages reject with name "SpreadsheetError".
+     */
+    async readSpreadsheet(file: File): Promise<{ name: string; content: string }> {
+      try {
+        return await readSpreadsheet(file);
+      } catch (err) {
+        if (err instanceof SpreadsheetError) {
+          const e = new Error(err.message);
+          e.name = "SpreadsheetError";
+          throw e;
+        }
+        throw err;
+      }
+    },
+    /** A new assistant chat with `attachment`, opened, sending `message`. */
+    askAssistant(message: string, attachment: { name: string; content: string } | null) {
+      const chat = useChat.getState();
+      chat.newChat();
+      chat.attach(attachment);
+      onNavigate("assistant");
+      void chat.send(message);
     },
   };
 }

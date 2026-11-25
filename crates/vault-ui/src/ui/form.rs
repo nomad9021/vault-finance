@@ -17,9 +17,9 @@ use crate::fmt;
 /// `<Field>`: labelled `.input`, two-way bound to `value`.
 #[component]
 pub fn Field(
-    #[prop(into)] label: String,
+    #[prop(into)] label: TextProp,
     value: RwSignal<String>,
-    #[prop(optional)] placeholder: Option<&'static str>,
+    #[prop(optional, into)] placeholder: MaybeProp<String>,
     #[prop(optional)] input_mode: Option<&'static str>,
     /// Focus on mount (React's `autoFocus`).
     #[prop(optional)]
@@ -50,8 +50,8 @@ pub fn Field(
     }
     view! {
         <div class="field">
-            <label for=id.clone()>{label}</label>
-            <input node_ref=input id=id class="input" placeholder=placeholder inputmode=input_mode
+            <label for=id.clone()>{move || label.get()}</label>
+            <input node_ref=input id=id class="input" placeholder=move || placeholder.get() inputmode=input_mode
                 maxlength=max_length aria-invalid=move || current_error().map(|_| "true")
                 prop:value=move || value.get()
                 on:input=move |e| {

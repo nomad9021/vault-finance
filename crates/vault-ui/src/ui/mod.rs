@@ -52,7 +52,7 @@ pub fn Button(
     #[prop(optional)] block: bool,
     #[prop(optional, into)] style: Option<String>,
     #[prop(optional, into)] title: Option<String>,
-    #[prop(optional, into)] aria_label: Option<String>,
+    #[prop(optional, into)] aria_label: MaybeProp<String>,
     #[prop(optional, into)] disabled: MaybeProp<bool>,
     /// `e.stopPropagation()` before `on_click` (a button inside a clickable card).
     #[prop(optional)]
@@ -77,7 +77,7 @@ pub fn Button(
         class.push_str(" btn-block");
     }
     view! {
-        <button type="button" class=class style=style title=title aria-label=aria_label disabled=move || disabled.get().unwrap_or(false)
+        <button type="button" class=class style=style title=title aria-label=move || aria_label.get() disabled=move || disabled.get().unwrap_or(false)
             on:click=move |e| {
                 if stop_propagation {
                     e.stop_propagation();
@@ -317,6 +317,21 @@ pub fn EmptyState(
                 {body.map(|b| view! { <p class="empty-body" style="margin-top: var(--space-1)">{b}</p> })}
             </div>
             {action}
+        </div>
+    }
+}
+
+/// `<SkeletonList>`: shimmering rows standing in for a list while it loads.
+#[component]
+pub fn SkeletonList(
+    #[prop(default = 4)] rows: u32,
+    #[prop(default = 44)] height: u32,
+) -> impl IntoView {
+    view! {
+        <div class="stack-sm">
+            {(0..rows).map(|_| view! {
+                <div class="skeleton" style=format!("height: {height}px; width: 100%")></div>
+            }).collect_view()}
         </div>
     }
 }

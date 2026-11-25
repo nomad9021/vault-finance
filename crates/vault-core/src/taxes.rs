@@ -54,9 +54,53 @@ pub struct TaxEstimate {
     pub per_earner: Vec<EarnerEstimate>,
 }
 
-/// `client.taxProfile()`. The profile itself is left as untyped JSON for now.
+/// The one field of `TaxProfile` the budget planner reads.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaxProfileFlags {
+    /// The planner's income follows the estimated take-home.
+    #[serde(default = "yes")]
+    pub sync_planned_income: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// `client.taxProfile()`. Of the profile itself only the planner's flag is
+/// read for now.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct TaxProfileResponse {
     pub year: i32,
+    #[serde(default)]
+    pub profile: Option<TaxProfileFlags>,
     pub estimate: Option<TaxEstimate>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_the_profile_flag() {
+        let r: TaxProfileResponse = serde_json::from_str(
+            r#"{"year":2026,"profile":{"filingStatus":"single","state":"CO","dependents":0,
+                "earners":[{"name":"Alex","grossAnnualCents":10000000}],"syncPlannedIncome":false},
+                "estimate":null}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            r.profile,
+            Some(TaxProfileFlags {
+                sync_planned_income: false
+            })
+        );
+        let none: TaxProfileResponse =
+            serde_json::from_str(r#"{"year":2026,"profile":null,"estimate":null}"#).unwrap();
+        assert_eq!(none.profile, None);
+        let default: TaxProfileResponse =
+            serde_json::from_str(r#"{"year":2026,"profile":{"earners":[]},"estimate":null}"#)
+                .unwrap();
+        assert!(default.profile.unwrap().sync_planned_income);
+    }
 }

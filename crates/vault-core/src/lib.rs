@@ -11,6 +11,7 @@ pub mod accounts_page;
 pub mod balance_view;
 pub mod bills;
 pub mod buckets;
+pub mod budget_period;
 pub mod budget_sankey;
 pub mod budgets;
 pub mod cashflow;
