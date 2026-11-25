@@ -14,7 +14,40 @@ leptos = { version = "0.8", features = ["csr"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
-web-sys = { version = "0.3", features = ["HtmlElement"] }
+web-sys = { version = "0.3", features = [
+  "AddEventListenerOptions",
+  "Blob",
+  "BlobPropertyBag",
+  "console",
+  "CssStyleDeclaration",
+  "Document",
+  "DomRect",
+  "Element",
+  "Event",
+  "EventTarget",
+  "File",
+  "FileList",
+  "HtmlAnchorElement",
+  "HtmlButtonElement",
+  "HtmlDivElement",
+  "HtmlElement",
+  "HtmlInputElement",
+  "HtmlSelectElement",
+  "KeyboardEvent",
+  "MediaQueryList",
+  "MouseEvent",
+  "Node",
+  "NodeList",
+  "Performance",
+  "PointerEvent",
+  "SvgElement",
+  "SvgGraphicsElement",
+  "SvgMatrix",
+  "TouchEvent",
+  "Storage",
+  "Url",
+  "Window",
+] }
 serde.workspace = true
 serde-wasm-bindgen = "0.6"
 send_wrapper = "0.6"

@@ -174,15 +174,23 @@ fn Loaded(data: SubscriptionListResponse, actions: Actions) -> impl IntoView {
             }
             .into_any();
             view! {
-                <Panel title="Not subscriptions" subtitle=format!("{n} hidden · left out of the totals") actions=Some(toggle)>
+                <Panel title="Not subscriptions" subtitle=format!("{n} hidden · left out of the totals") actions=toggle>
                     {move || show_hidden.get().then(|| rows(hidden.clone(), true))}
                 </Panel>
             }
         });
+        let active_panel = match view_bills {
+            Some(v) => view! {
+                <Panel title="Active subscriptions" subtitle=data.active_subtitle() actions=v>{active_body}</Panel>
+            }
+            .into_any(),
+            None => view! {
+                <Panel title="Active subscriptions" subtitle=data.active_subtitle()>{active_body}</Panel>
+            }
+            .into_any(),
+        };
         view! {
-            <Panel title="Active subscriptions" subtitle=data.active_subtitle() actions=view_bills>
-                {active_body}
-            </Panel>
+            {active_panel}
             {stale_panel}
             {hidden_panel}
         }

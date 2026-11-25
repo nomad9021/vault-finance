@@ -3,13 +3,29 @@ import { EmptyState, Spinner } from "@vault/ui";
 import type { ApiClient } from "@vault/shared";
 import { useApp } from "../state/store.js";
 import { useChat } from "../state/chat.js";
+import { readSpreadsheet, SpreadsheetError } from "../lib/spreadsheet.js";
+import { keepUnlocked } from "../lib/autoLock.js";
 import type { NavFilter, Navigate, PageId } from "../screens/shell/nav.js";
 
 /**
  * Pages drawn by the Rust UI (crates/vault-ui, Leptos compiled to wasm).
  * Must match `pages::IDS` there. See docs/rust-port.md.
  */
-export const RUST_PAGES: ReadonlySet<PageId> = new Set<PageId>(["insights", "networth", "subscriptions"]);
+export const RUST_PAGES: ReadonlySet<PageId> = new Set<PageId>([
+  "insights",
+  "networth",
+  "subscriptions",
+  "goals",
+  "cashflow",
+  "bills",
+  "income",
+  "investments",
+  "accounts",
+  "budgets",
+  "taxes",
+  "giving",
+  "reports",
+]);
 
 const FLAG = "vault.rust-ui";
 
@@ -44,7 +60,7 @@ function loadWasm(): Promise<Wasm> {
 }
 
 /** The object `crates/vault-ui/src/host.rs` binds to. Keep the two in sync. */
-function makeHost(client: ApiClient, onNavigate: Navigate) {
+function makeHost(client: ApiClient, onNavigate: Navigate, filter: NavFilter) {
   return {
     call(method: string, args: unknown[]): Promise<unknown> {
       const fn = (client as unknown as Record<string, unknown>)[method];
@@ -53,23 +69,82 @@ function makeHost(client: ApiClient, onNavigate: Navigate) {
       }
       return Promise.resolve((fn as (...a: unknown[]) => unknown).apply(client, args));
     },
+    /** What the page was opened with (in-page tab, account…). */
+    filter(): NavFilter {
+      return filter;
+    },
     navigate(page: string, filter?: NavFilter) {
       onNavigate(page as PageId, filter && Object.keys(filter).length ? filter : undefined);
+    },
+    /** Every page refetches (what a React page's edit does via useChat). */
+    refreshData() {
+      useChat.getState().refreshData();
     },
     onDataChange(cb: () => void): () => void {
       return useChat.subscribe((s, prev) => {
         if (s.dataVersion !== prev.dataVersion) cb();
       });
     },
+    /** Store settings a page reads (the review presenter's prefs, AI on/off). */
+    app() {
+      const s = useApp.getState();
+      return { reviewPrefs: s.reviewPrefs, aiVisible: s.aiVisible, platform: s.platform.kind };
+    },
+    setFullscreen(on: boolean): Promise<void> {
+      return useApp.getState().platform.setFullscreen(on);
+    },
+    /** `useKeepUnlocked()` for Rust: call the result to release. */
+    keepUnlocked,
+    /** Run `cb` when what `app()` returns changes; returns an unsubscribe. */
+    onAppStateChange(cb: () => void): () => void {
+      return useApp.subscribe((s, prev) => {
+        if (s.reviewPrefs !== prev.reviewPrefs || s.aiVisible !== prev.aiVisible || s.platform !== prev.platform) cb();
+      });
+    },
+    /**
+     * A picked CSV/TSV/Excel file as `{ name, content }` (CSV text), parsed by
+     * lib/spreadsheet.ts. Its own messages reject with name "SpreadsheetError".
+     */
+    async readSpreadsheet(file: File): Promise<{ name: string; content: string }> {
+      try {
+        return await readSpreadsheet(file);
+      } catch (err) {
+        if (err instanceof SpreadsheetError) {
+          const e = new Error(err.message);
+          e.name = "SpreadsheetError";
+          throw e;
+        }
+        throw err;
+      }
+    },
+    /** A new assistant chat with `attachment`, opened, sending `message`. */
+    askAssistant(message: string, attachment: { name: string; content: string } | null) {
+      const chat = useChat.getState();
+      chat.newChat();
+      chat.attach(attachment);
+      onNavigate("assistant");
+      void chat.send(message);
+    },
   };
 }
 
 /** Mounts a Rust page into a div and tears it down on page change. */
-export function RustPage({ page, onNavigate }: { page: PageId; onNavigate: Navigate }) {
+export function RustPage({
+  page,
+  filter = {},
+  onNavigate,
+}: {
+  page: PageId;
+  filter?: NavFilter;
+  onNavigate: Navigate;
+}) {
   const client = useApp((s) => s.client);
   const ref = useRef<HTMLDivElement>(null);
   const nav = useRef(onNavigate);
   nav.current = onNavigate;
+  // Read at mount, like a React page's `useState(initialTab)`.
+  const initialFilter = useRef(filter);
+  initialFilter.current = filter;
   const [state, setState] = useState<"loading" | "ready" | Error>("loading");
 
   useEffect(() => {
@@ -81,7 +156,11 @@ export function RustPage({ page, onNavigate }: { page: PageId; onNavigate: Navig
     loadWasm()
       .then((m) => {
         if (cancelled) return;
-        mounted = m.mount(el, page, makeHost(client, (p, f) => nav.current(p, f)));
+        mounted = m.mount(
+          el,
+          page,
+          makeHost(client, (p, f) => nav.current(p, f), initialFilter.current),
+        );
         setState("ready");
       })
       .catch((err: unknown) => {

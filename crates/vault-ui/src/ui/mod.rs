@@ -3,9 +3,30 @@
 
 use leptos::prelude::*;
 
+mod confetti;
+mod dialog;
+mod drag_sort;
+mod form;
+mod listen;
+mod pie_chart;
+mod pre_income_dialog;
+mod sankey;
+mod sankey_arranger;
+mod sankey_card;
+mod sankey_order;
 #[rustfmt::skip]
 mod icons_gen;
+pub use confetti::Confetti;
+pub use dialog::Dialog;
+pub use form::{DateField, Field, Select, SelectOption};
 pub use icons_gen::NAMES as ICON_NAMES;
+pub use listen::{on_document, on_window};
+pub use pie_chart::{PieChart, PieSlice};
+pub use pre_income_dialog::PreIncomeDialog;
+pub use sankey::Sankey;
+pub use sankey_arranger::SankeyArranger;
+pub use sankey_card::SankeyCard;
+pub use sankey_order::use_sankey_order;
 
 /// `<Icon>`: inline SVG on a 24×24 grid, stroke scales at small sizes.
 #[component]
@@ -34,7 +55,12 @@ pub fn Button(
     #[prop(optional)] icon_end: Option<&'static str>,
     #[prop(optional)] block: bool,
     #[prop(optional, into)] style: Option<String>,
+    #[prop(optional, into)] title: Option<String>,
+    #[prop(optional, into)] aria_label: MaybeProp<String>,
     #[prop(optional, into)] disabled: MaybeProp<bool>,
+    /// `e.stopPropagation()` before `on_click` (a button inside a clickable card).
+    #[prop(optional)]
+    stop_propagation: bool,
     on_click: impl Fn() + 'static,
     #[prop(optional)] children: Option<Children>,
 ) -> impl IntoView {
@@ -55,8 +81,13 @@ pub fn Button(
         class.push_str(" btn-block");
     }
     view! {
-        <button type="button" class=class style=style
-            disabled=move || disabled.get().unwrap_or(false) on:click=move |_| on_click()>
+        <button type="button" class=class style=style title=title aria-label=move || aria_label.get() disabled=move || disabled.get().unwrap_or(false)
+            on:click=move |e| {
+                if stop_propagation {
+                    e.stop_propagation();
+                }
+                on_click()
+            }>
             {icon.map(|n| view! { <Icon name=n size=icon_size /> })}
             {children.map(|c| c())}
             {icon_end.map(|n| view! { <Icon name=n size=icon_size /> })}
@@ -131,23 +162,59 @@ pub fn MetricCard(
     }
 }
 
+/// `<Card>`: the older card container, with an optional kicker and title.
+#[component]
+pub fn Card(
+    #[prop(default = "sm")] elevation: &'static str,
+    #[prop(optional, into)] kicker: Option<String>,
+    /// May change after mount (an earner's card follows their name).
+    #[prop(optional, into)]
+    title: Option<Signal<String>>,
+    #[prop(optional, into)] style: Option<String>,
+    children: Children,
+) -> impl IntoView {
+    view! {
+        <div class=format!("card elev-{elevation}") style=style>
+            {kicker.filter(|k| !k.is_empty()).map(|k| view! { <div class="card-kicker">{k}</div> })}
+            {move || title.map(|t| t.get()).filter(|t| !t.is_empty()).map(|t| view! { <div class="card-title">{t}</div> })}
+            {children()}
+        </div>
+    }
+}
+
 /// `<Panel>`: the one card container. `subtitle` may change after mount.
 #[component]
 pub fn Panel(
+    /// Small uppercase eyebrow above the title.
+    #[prop(optional, into)]
+    kicker: Option<String>,
     #[prop(optional, into)] title: Option<String>,
+    /// A title that isn't plain text (React's `title={<button>…}`); used
+    /// instead of `title`.
+    #[prop(optional)]
+    title_view: Option<AnyView>,
     #[prop(optional, into)] subtitle: Option<Signal<String>>,
     #[prop(optional)] flush: bool,
     /// Right-aligned header content (buttons, a [`PanelLink`]).
-    #[prop(default = None)]
+    #[prop(optional)]
     actions: Option<AnyView>,
     children: Children,
 ) -> impl IntoView {
-    let has_head = title.is_some() || subtitle.is_some() || actions.is_some();
+    let has_head = kicker.is_some()
+        || title.is_some()
+        || title_view.is_some()
+        || subtitle.is_some()
+        || actions.is_some();
+    let title = match title_view {
+        Some(v) => Some(v),
+        None => title.map(IntoAny::into_any),
+    };
     view! {
         <div class=if flush { "panel panel-flush" } else { "panel" }>
             {has_head.then(|| view! {
                 <div class=if flush { "panel-head panel-head-pad" } else { "panel-head" }>
                     <div style="min-width: 0">
+                        {kicker.map(|k| view! { <div class="eyebrow">{k}</div> })}
                         {title.map(|t| view! { <div class="panel-title">{t}</div> })}
                         {subtitle.map(|s| view! { <div class="panel-sub">{s}</div> })}
                     </div>
@@ -254,16 +321,6 @@ pub fn PanelLink(
     }
 }
 
-/// `<Tag>`: a small pill. `variant` is accent, accent-2, neutral, positive,
-/// negative, warning or outline.
-#[component]
-pub fn Tag(
-    #[prop(default = "neutral")] variant: &'static str,
-    children: Children,
-) -> impl IntoView {
-    view! { <span class=format!("tag tag-{variant}")>{children()}</span> }
-}
-
 /// `<EmptyState>`.
 #[component]
 pub fn EmptyState(
@@ -271,7 +328,9 @@ pub fn EmptyState(
     #[prop(into)] title: String,
     #[prop(optional, into)] body: Option<String>,
     #[prop(optional)] compact: bool,
-    #[prop(optional)] action: Option<AnyView>,
+    /// Rendered after the text (usually a button).
+    #[prop(optional)]
+    action: Option<AnyView>,
 ) -> impl IntoView {
     view! {
         <div class=if compact { "empty empty-sm" } else { "empty" }>
@@ -281,6 +340,21 @@ pub fn EmptyState(
                 {body.map(|b| view! { <p class="empty-body" style="margin-top: var(--space-1)">{b}</p> })}
             </div>
             {action}
+        </div>
+    }
+}
+
+/// `<SkeletonList>`: shimmering rows standing in for a list while it loads.
+#[component]
+pub fn SkeletonList(
+    #[prop(default = 4)] rows: u32,
+    #[prop(default = 44)] height: u32,
+) -> impl IntoView {
+    view! {
+        <div class="stack-sm">
+            {(0..rows).map(|_| view! {
+                <div class="skeleton" style=format!("height: {height}px; width: 100%")></div>
+            }).collect_view()}
         </div>
     }
 }
@@ -299,5 +373,112 @@ pub fn Spinner(#[prop(default = "Loading")] label: &'static str) -> impl IntoVie
         <span role="status" aria-label=label style="display: inline-flex; gap: 4px; align-items: center">
             {dot(0)}{dot(1)}{dot(2)}
         </span>
+    }
+}
+
+/// `<Tag>`.
+#[component]
+pub fn Tag(
+    #[prop(default = "neutral")] variant: &'static str,
+    #[prop(optional, into)] style: Option<String>,
+    children: Children,
+) -> impl IntoView {
+    view! { <span class=format!("tag tag-{variant}") style=style>{children()}</span> }
+}
+
+/// `<ProgressBar>`: width and fill go through CSS custom properties.
+#[component]
+pub fn ProgressBar(
+    /// 0–1, clamped.
+    value: f64,
+    #[prop(optional, into)] color: Option<String>,
+    #[prop(optional)] over: bool,
+    #[prop(optional)] small: bool,
+    #[prop(optional, into)] label: Option<String>,
+) -> impl IntoView {
+    let pct = if value.is_finite() {
+        value.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let fill = if over {
+        "var(--color-negative)".to_string()
+    } else {
+        color.unwrap_or_else(|| "var(--color-accent)".into())
+    };
+    view! {
+        <div class=if small { "bar bar-sm" } else { "bar" } role="progressbar"
+            aria-valuenow=vault_core::money::js_round(pct * 100.0) aria-valuemin="0" aria-valuemax="100"
+            aria-label=label style=format!("--bar-pct: {}%; --bar-fill: {fill}", pct * 100.0)>
+            <i></i>
+        </div>
+    }
+}
+
+/// `<Banner>`: full-width status strip.
+#[component]
+pub fn Banner(tone: &'static str, children: Children) -> impl IntoView {
+    let icon = match tone {
+        "warning" | "danger" => "alert",
+        "positive" => "check",
+        _ => "info",
+    };
+    view! {
+        <div role="status" class=format!("banner banner-{tone}")>
+            <Icon name=icon size=17 style="flex: none" />
+            <span style="flex: 1">{children()}</span>
+        </div>
+    }
+}
+
+/// `<Tabs>`: in-page tabs; arrow keys move between them (WAI-ARIA tabs).
+#[component]
+pub fn Tabs(
+    items: &'static [(&'static str, &'static str)],
+    value: RwSignal<&'static str>,
+    #[prop(into)] aria_label: String,
+) -> impl IntoView {
+    let root = NodeRef::<leptos::html::Div>::new();
+    let on_key = move |e: web_sys::KeyboardEvent| {
+        let dir: isize = match e.key().as_str() {
+            "ArrowRight" => 1,
+            "ArrowLeft" => -1,
+            _ => return,
+        };
+        e.prevent_default();
+        let n = items.len() as isize;
+        let i = items
+            .iter()
+            .position(|(v, _)| *v == value.get_untracked())
+            .map_or(-1, |i| i as isize);
+        let next = (i + dir + n).rem_euclid(n) as usize;
+        value.set(items[next].0);
+        // Move focus with selection so the keyboard user sees where they are.
+        if let Some(tab) = root
+            .get_untracked()
+            .and_then(|r| r.query_selector_all(".tab").ok())
+            .and_then(|l| l.item(next as u32))
+        {
+            use wasm_bindgen::JsCast;
+            if let Ok(tab) = tab.dyn_into::<web_sys::HtmlElement>() {
+                let _ = tab.focus();
+            }
+        }
+    };
+    view! {
+        <div class="tabs" role="tablist" aria-label=aria_label node_ref=root on:keydown=on_key>
+            {items.iter().map(|&(v, label)| {
+                let active = move || value.get() == v;
+                view! {
+                    <button class="tab" role="tab" type="button"
+                        aria-selected=move || if active() { "true" } else { "false" }
+                        tabindex=move || if active() { "0" } else { "-1" }
+                        data-active=move || active().then_some("true")
+                        on:click=move |_| value.set(v)>
+                        {label}
+                    </button>
+                }
+            }).collect_view()}
+        </div>
     }
 }

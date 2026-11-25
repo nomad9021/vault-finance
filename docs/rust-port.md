@@ -52,18 +52,18 @@ Status: `todo` · `wip` · `review` (PR open) · `done` (merged, Rust page on in
 | Page | Wave | Status | Branch |
 |---|---|---|---|
 | insights | 0 | review | rust/foundation |
-| cashflow | 1 | todo | |
+| cashflow | 1 | review | rust/page-cashflow |
 | networth | 1 | review | rust/page-networth |
 | subscriptions | 1 | review | rust/page-subscriptions |
-| goals | 1 | todo | |
-| investments | 2 | todo | |
-| income | 2 | todo | |
-| reports | 2 | todo | |
-| taxes | 2 | todo | |
-| accounts | 2 | todo | |
-| bills | 2 | todo | |
-| budgets (+ planner, vs-actual) | 2 | todo | |
-| giving | 2 | todo | |
+| goals (+ buckets tab) | 1 | review | rust/page-goals |
+| investments | 2 | review | rust/page-investments |
+| income | 2 | review | rust/page-income |
+| reports (+ review presenter) | 2 | review | rust/page-reports |
+| taxes | 2 | review | rust/page-taxes |
+| accounts | 2 | review | rust/page-accounts |
+| bills | 2 | review | rust/page-bills |
+| budgets (+ planner, vs-actual) | 2 | review | rust/page-budgets |
+| giving | 2 | review | rust/page-giving |
 | transactions | 3 | todo | |
 | dashboard | 3 | todo | |
 | assistant | 3 | todo | |
@@ -73,11 +73,11 @@ Status: `todo` · `wip` · `review` (PR open) · `done` (merged, Rust page on in
 
 | Shared logic (vault-core) | Status | Branch |
 |---|---|---|
-| money (format/parse) | todo | |
-| tax engine | todo | |
-| budget sankey | todo | |
-| debt calculator | todo | |
-| dashboard layout | todo | |
+| money (format/parse) | wip (parseAmountToCents, toFixed) | rust/page-goals, rust/page-cashflow |
+| tax engine | todo (types, groups and the tax Sankey in vault-core/taxes.rs; the engine runs on the server) | rust/page-taxes |
+| budget sankey | review | rust/ui-sankey |
+| debt calculator | review | rust/page-cashflow |
+| dashboard layout | review | rust/core-types |
 
 Wave 4 retires React: the shell and sign-in move to Leptos, `RustPage` becomes the app root,
 and React, react-dom and zustand leave the bundle.
