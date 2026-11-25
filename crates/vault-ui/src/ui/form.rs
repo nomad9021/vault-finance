@@ -39,6 +39,10 @@ pub fn Field(
     /// `onChange={(e) => set(e.target.value.replace(…))}`).
     #[prop(optional)]
     filter: Option<fn(&str) -> String>,
+    /// Called with what was typed, after `value` is set (React's
+    /// `onChange` doing more than storing the text).
+    #[prop(optional)]
+    on_input: Option<Callback<String>>,
 ) -> impl IntoView {
     let id = use_id();
     let input = NodeRef::<html::Input>::new();
@@ -71,6 +75,9 @@ pub fn Field(
                             value.set(clean);
                         }
                         None => value.set(raw),
+                    }
+                    if let Some(f) = on_input {
+                        f.run(value.get_untracked());
                     }
                 }
                 on:keydown=move |e| {
@@ -110,12 +117,21 @@ pub fn Select(
     #[prop(into)] label: String,
     value: RwSignal<String>,
     #[prop(into)] options: Signal<Vec<SelectOption>>,
+    /// Called with the picked value, after `value` is set.
+    #[prop(optional)]
+    on_change: Option<Callback<String>>,
 ) -> impl IntoView {
     let id = use_id();
     view! {
         <div class="field">
             <label for=id.clone()>{label}</label>
-            <select id=id class="input" on:change=move |e| value.set(event_target_value(&e))>
+            <select id=id class="input" on:change=move |e| {
+                let v = event_target_value(&e);
+                value.set(v.clone());
+                if let Some(f) = on_change {
+                    f.run(v);
+                }
+            }>
                 {move || options.get().into_iter().map(|o| {
                     let v = o.value.clone();
                     view! {
