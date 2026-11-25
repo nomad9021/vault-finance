@@ -208,9 +208,12 @@ export function AppShell() {
         )}
       </main>
 
-      {aiVisible && page !== "assistant" && (
-        <AssistantBubble phone={narrow} onOpenPage={() => navigate("assistant")} />
-      )}
+      {aiVisible && page !== "assistant" &&
+        (usesRust("assistant") ? (
+          <RustPage page="assistant-bubble" quiet onNavigate={navigate} />
+        ) : (
+          <AssistantBubble phone={narrow} onOpenPage={() => navigate("assistant")} />
+        ))}
       <CommandPalette
         open={paletteOpen}
         commands={commands}

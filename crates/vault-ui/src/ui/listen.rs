@@ -68,3 +68,21 @@ pub fn window_listener(
         wasm_bindgen_futures::spawn_local(async move { drop(closure) });
     })
 }
+
+/// `useLayoutMode() === "narrow"` (window under 900px), kept current.
+pub fn use_narrow() -> ReadSignal<bool> {
+    let query = window().match_media("(max-width: 899.98px)").ok().flatten();
+    let read = || {
+        window()
+            .inner_width()
+            .ok()
+            .and_then(|w| w.as_f64())
+            .unwrap_or(1200.0)
+            < 900.0
+    };
+    let (narrow, set_narrow) = signal(read());
+    if let Some(q) = query {
+        listen(q.into(), "change", false, move |_| set_narrow.set(read()));
+    }
+    narrow
+}
