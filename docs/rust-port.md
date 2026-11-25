@@ -59,7 +59,7 @@ Status: `todo` · `wip` · `review` (PR open) · `done` (merged, Rust page on in
 | investments | 2 | review | rust/page-investments |
 | income | 2 | review | rust/page-income |
 | reports | 2 | todo | |
-| taxes | 2 | todo | |
+| taxes | 2 | review | rust/page-taxes |
 | accounts | 2 | review | rust/page-accounts |
 | bills | 2 | review | rust/page-bills |
 | budgets (+ planner, vs-actual) | 2 | todo | |
@@ -74,7 +74,7 @@ Status: `todo` · `wip` · `review` (PR open) · `done` (merged, Rust page on in
 | Shared logic (vault-core) | Status | Branch |
 |---|---|---|
 | money (format/parse) | wip (parseAmountToCents, toFixed) | rust/page-goals, rust/page-cashflow |
-| tax engine | todo | |
+| tax engine | todo (types, groups and the tax Sankey in vault-core/taxes.rs; the engine runs on the server) | rust/page-taxes |
 | budget sankey | review | rust/ui-sankey |
 | debt calculator | review | rust/page-cashflow |
 | dashboard layout | todo | |

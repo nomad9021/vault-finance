@@ -191,17 +191,6 @@ impl Tree<'_> {
     }
 }
 
-fn tax_branch(g: TaxGroup) -> (&'static str, &'static str) {
-    match g {
-        TaxGroup::Pretax => ("Pre-tax savings", "#43cfc0"),
-        TaxGroup::Federal => ("Federal tax", "#6f8ef2"),
-        TaxGroup::Fica => ("Social Security & Medicare", "#b47ef0"),
-        TaxGroup::State => ("State tax", "#ec6a9c"),
-        TaxGroup::Local => ("Local tax", "#d8b23c"),
-        TaxGroup::Payroll => ("State payroll programs", "#4db6d0"),
-    }
-}
-
 /// `PRE_INCOME_COLOR`: an item's colour when it has none of its own.
 pub fn pre_income_color(kind: PreIncomeKind) -> &'static str {
     match kind {
@@ -241,9 +230,9 @@ pub fn pre_income_branches(
         for (g, c) in groups {
             let monthly = js_round(c as f64 / 12.0);
             if monthly > 0 {
-                let (label, color) = tax_branch(g);
+                let (label, color) = (g.label(), g.color());
                 out.push(PreIncomeBranch {
-                    id: format!("tax:{}", group_id(g)),
+                    id: format!("tax:{}", g.id()),
                     label: label.into(),
                     value_cents: monthly,
                     color: color.into(),
@@ -265,17 +254,6 @@ pub fn pre_income_branches(
         }
     }
     out
-}
-
-fn group_id(g: TaxGroup) -> &'static str {
-    match g {
-        TaxGroup::Pretax => "pretax",
-        TaxGroup::Federal => "federal",
-        TaxGroup::Fica => "fica",
-        TaxGroup::State => "state",
-        TaxGroup::Local => "local",
-        TaxGroup::Payroll => "payroll",
-    }
 }
 
 fn branch_node(b: &PreIncomeBranch) -> SankeyNode {
@@ -690,6 +668,7 @@ mod tests {
                 })
                 .collect(),
             per_earner: Vec::new(),
+            notes: Vec::new(),
         }
     }
     use TaxGroup::*;
