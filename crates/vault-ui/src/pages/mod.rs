@@ -19,6 +19,7 @@ pub mod investments;
 pub mod networth;
 pub mod reports;
 pub mod review_presenter;
+pub mod settings;
 pub mod subscriptions;
 pub mod taxes;
 
@@ -36,6 +37,7 @@ pub const IDS: &[&str] = &[
     "taxes",
     "giving",
     "reports",
+    "settings",
     "assistant",
     // Not a page: the shell mounts it over every page but the Assistant.
     "assistant-bubble",
@@ -56,6 +58,7 @@ pub fn render(page: &str) -> AnyView {
         "taxes" => view! { <taxes::TaxesPage /> }.into_any(),
         "giving" => view! { <giving::GivingPage /> }.into_any(),
         "reports" => view! { <reports::ReportsPage /> }.into_any(),
+        "settings" => view! { <settings::SettingsPage /> }.into_any(),
         "assistant" => view! { <assistant::AssistantPage /> }.into_any(),
         "assistant-bubble" => view! { <assistant_bubble::AssistantBubble /> }.into_any(),
         _ => ().into_any(),
