@@ -249,6 +249,45 @@ pub fn short_date(iso: &str) -> String {
     day_short(iso)
 }
 
+/// `new Date(iso)[method](...args)` in the viewer's locale.
+fn date_call(date: &js_sys::Date, method: &str, args: &js_sys::Array) -> String {
+    use wasm_bindgen::JsCast;
+    js_sys::Reflect::get(date, &method.into())
+        .ok()
+        .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+        .and_then(|f| f.apply(date, args).ok())
+        .and_then(|v| v.as_string())
+        .unwrap_or_default()
+}
+
+/// `new Date(iso).toLocaleString()`.
+pub fn locale_string(iso: &str) -> String {
+    let d = js_sys::Date::new(&iso.into());
+    date_call(&d, "toLocaleString", &js_sys::Array::new())
+}
+
+/// `new Date(iso).toLocaleDateString()`.
+pub fn locale_date(iso: &str) -> String {
+    let d = js_sys::Date::new(&iso.into());
+    date_call(&d, "toLocaleDateString", &js_sys::Array::new())
+}
+
+/// `new Date().toLocaleTimeString()` for a timestamp in ms.
+pub fn locale_time_ms(ms: f64) -> String {
+    let d = js_sys::Date::new(&ms.into());
+    date_call(&d, "toLocaleTimeString", &js_sys::Array::new())
+}
+
+/// `toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })`.
+pub fn hour_minute(iso: &str) -> String {
+    let d = js_sys::Date::new(&iso.into());
+    let opts = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&opts, &"hour".into(), &"numeric".into());
+    let _ = js_sys::Reflect::set(&opts, &"minute".into(), &"2-digit".into());
+    let args = js_sys::Array::of2(&js_sys::Array::new(), &opts);
+    date_call(&d, "toLocaleTimeString", &args)
+}
+
 /// `n.toLocaleString()` for a whole number ("1,234").
 pub fn count(n: i64) -> String {
     let f = NumberFormat::new(&Array::new(), &Object::new());

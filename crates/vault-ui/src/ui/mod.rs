@@ -3,6 +3,7 @@
 
 use leptos::prelude::*;
 
+mod approve_dialog;
 mod basics;
 mod confetti;
 mod dialog;
@@ -17,9 +18,13 @@ mod sankey;
 mod sankey_arranger;
 mod sankey_card;
 mod sankey_order;
+mod status_list;
+mod tailscale_control;
+
 mod swipe_row;
 #[rustfmt::skip]
 mod icons_gen;
+pub use approve_dialog::{describe_request, ApproveDialog, ApproveOutcome};
 pub use basics::{ListRow, Money, SegmentedOf, Sheet, Skeleton};
 pub use confetti::Confetti;
 pub use dialog::Dialog;
@@ -27,13 +32,16 @@ pub use form::{DateField, Field, Select, SelectOption};
 pub use guilt_free_card::GuiltFreeCard;
 pub use home_arrange::HomeArrange;
 pub use icons_gen::NAMES as ICON_NAMES;
-pub use listen::{on_document, on_window, use_narrow};
+pub use listen::{on_document, on_window, use_id, use_narrow};
 pub use pie_chart::{PieChart, PieSlice};
 pub use pre_income_dialog::PreIncomeDialog;
 pub use sankey::Sankey;
 pub use sankey_arranger::SankeyArranger;
 pub use sankey_card::SankeyCard;
 pub use sankey_order::use_sankey_order;
+pub use status_list::StatusList;
+pub use tailscale_control::TailscaleControl;
+
 pub use swipe_row::{SwipeAction, SwipeRow};
 
 /// `<Icon>`: inline SVG on a 24×24 grid, stroke scales at small sizes.
@@ -405,7 +413,8 @@ pub fn SkeletonList(
 
 /// `<Spinner>`: three blinking dots.
 #[component]
-pub fn Spinner(#[prop(default = "Loading")] label: &'static str) -> impl IntoView {
+pub fn Spinner(#[prop(optional, into)] label: Option<String>) -> impl IntoView {
+    let label = label.unwrap_or_else(|| "Loading".into());
     let dot = |i: u32| {
         let style = format!(
             "width: 6px; height: 6px; border-radius: 50%; background: var(--color-accent); animation: blink 1.2s {}s infinite",

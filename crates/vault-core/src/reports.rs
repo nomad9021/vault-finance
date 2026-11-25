@@ -4,7 +4,7 @@
 //! maths). Money formatting goes through the browser, so the text builders
 //! take a `formatCentsWhole` closure.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::bills::Bill;
 use crate::budgets::{BudgetListResponse, BudgetWithSpend};
@@ -46,7 +46,7 @@ pub struct YearlyReport {
     pub savings_rate: Option<f64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ReviewPeriod {
     Week,
@@ -136,7 +136,7 @@ pub struct PeriodReview {
 
 // ── Review preferences (already parsed by parseReviewPrefs on the host) ──
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SlideId {
     Overview,
@@ -150,13 +150,13 @@ pub enum SlideId {
     Ai,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct SlidePref {
     pub id: SlideId,
     pub enabled: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewPrefs {
     pub default_period: ReviewPeriod,
