@@ -165,14 +165,16 @@ pub fn MetricCard(
 pub fn Card(
     #[prop(default = "sm")] elevation: &'static str,
     #[prop(optional, into)] kicker: Option<String>,
-    #[prop(optional, into)] title: Option<String>,
+    /// May change after mount (an earner's card follows their name).
+    #[prop(optional, into)]
+    title: Option<Signal<String>>,
     #[prop(optional, into)] style: Option<String>,
     children: Children,
 ) -> impl IntoView {
     view! {
         <div class=format!("card elev-{elevation}") style=style>
             {kicker.filter(|k| !k.is_empty()).map(|k| view! { <div class="card-kicker">{k}</div> })}
-            {title.filter(|t| !t.is_empty()).map(|t| view! { <div class="card-title">{t}</div> })}
+            {move || title.map(|t| t.get()).filter(|t| !t.is_empty()).map(|t| view! { <div class="card-title">{t}</div> })}
             {children()}
         </div>
     }

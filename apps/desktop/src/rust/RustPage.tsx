@@ -20,6 +20,7 @@ export const RUST_PAGES: ReadonlySet<PageId> = new Set<PageId>([
   "investments",
   "accounts",
   "budgets",
+  "taxes",
 ]);
 
 const FLAG = "vault.rust-ui";
