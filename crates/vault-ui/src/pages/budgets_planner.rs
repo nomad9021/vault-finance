@@ -84,6 +84,7 @@ pub fn BudgetPlannerPage() -> impl IntoView {
         });
     let pre_income = last_ok(pre_res);
     let editing_pre_income = RwSignal::new(false);
+    let has_pre_income = Memo::new(move |_| pre_income.with(Option::is_some));
     let from_gross = RwSignal::new(true);
 
     let expense_cats = Memo::new(move |_| {
@@ -99,6 +100,10 @@ pub fn BudgetPlannerPage() -> impl IntoView {
                 .unwrap_or_default()
         })
     });
+    // A memo, so the allocation rows (and the one being typed in) survive
+    // the refetch after another row saves.
+    let show_spinner =
+        Memo::new(move |_| budget_res.get().is_none() && budget_data.with(Option::is_none));
     let budgets = Memo::new(move |_| budget_data.get().map(|d| d.budgets).unwrap_or_default());
 
     // Planned income: hydrate once, persist debounced + on unmount.
@@ -358,7 +363,7 @@ pub fn BudgetPlannerPage() -> impl IntoView {
 
             {move || has_flow.get().then(|| view! {
                 <SankeyCard nodes=nodes links=links month=month precise=true
-                    title=if gross.get() { "Budget plan, from gross pay" } else { "Budget plan" }.to_string()
+                    title=Signal::derive(move || if gross.get() { "Budget plan, from gross pay" } else { "Budget plan" }.to_string())
                     hint="Click a category to see this month's actual spending" />
             })}
             {move || has_flow.get().then(|| view! {
@@ -379,10 +384,12 @@ pub fn BudgetPlannerPage() -> impl IntoView {
                 </div>
             })}
             {move || {
-                if !editing_pre_income.get() {
+                // Opened once per click: a background refetch mustn't reset
+                // what's being typed (React's useState keeps it).
+                if !editing_pre_income.get() || !has_pre_income.get() {
                     return None;
                 }
-                let value = pre_income.get()?;
+                let value = pre_income.get_untracked()?;
                 Some(view! {
                     <PreIncomeDialog value=value has_estimate=tax_estimate.with_untracked(Option::is_some)
                         on_close=move || editing_pre_income.set(false)
@@ -407,12 +414,12 @@ pub fn BudgetPlannerPage() -> impl IntoView {
 
             <Panel title="Allocations"
                 subtitle=Signal::stored("How much of your income each category gets this month".to_string())>
-                {move || if budget_res.get().is_none() && budget_data.with(Option::is_none) {
+                {move || if show_spinner.get() {
                     view! { <Spinner label="Loading budgets" /> }.into_any()
                 } else {
                     view! {
                         <div style="display: flex; flex-direction: column">
-                            <For each=move || expense_cats.get() key=|c| c.id.clone()
+                            <For each=move || expense_cats.get() key=|c| format!("{}|{}|{}", c.id, c.name, c.color)
                                 children=move |c: Category| {
                                     let id = c.id.clone();
                                     let budget = Signal::derive(move || {

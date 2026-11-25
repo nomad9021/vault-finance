@@ -158,12 +158,15 @@ fn BudgetsTab() -> impl IntoView {
 
     let add = move || editing.set(Some(None));
 
+    // Memos, so the list below is only rebuilt when it switches between
+    // skeleton, empty state and bars.
+    let show_skeleton = Memo::new(move |_| loading.get() && data.with(Option::is_none));
+    let is_empty = Memo::new(move |_| budgets.with(Vec::is_empty));
     let list = move || {
-        if loading.get() && data.with(Option::is_none) {
+        if show_skeleton.get() {
             return view! { <SkeletonList rows=4 height=52 /> }.into_any();
         }
-        let budgets = budgets.get();
-        if budgets.is_empty() {
+        if is_empty.get() {
             return view! {
                 <EmptyState compact=true icon="target"
                     title=format!("No budgets for {}", label.get())
@@ -172,15 +175,22 @@ fn BudgetsTab() -> impl IntoView {
             }
             .into_any();
         }
-        let cats = categories.get();
-        budgets
-            .into_iter()
-            .map(|b| {
-                let category = cats.iter().find(|c| c.id == b.category_id).cloned();
-                view! { <BudgetBar budget=b category=category editing=editing /> }
-            })
-            .collect_view()
-            .into_any()
+        // Keyed like React's `key={b.id}`, plus what the bar shows, so a
+        // refetch keeps unchanged bars (and their grow animation) in place.
+        view! {
+            <For each=move || {
+                    let cats = categories.get();
+                    budgets.get().into_iter().map(|b| {
+                        let category = cats.iter().find(|c| c.id == b.category_id).cloned();
+                        (b, category)
+                    }).collect::<Vec<_>>()
+                }
+                key=|(b, c)| format!("{}|{:?}|{}|{}|{:?}|{:?}|{:?}|{:?}",
+                    b.id, b.period, b.amount_cents, b.spent_cents, b.period_amount_cents,
+                    b.period_spent_cents, c.as_ref().map(|c| &c.name), c.as_ref().map(|c| &c.color))
+                children=move |(b, category)| view! { <BudgetBar budget=b category=category editing=editing /> } />
+        }
+        .into_any()
     };
 
     view! {

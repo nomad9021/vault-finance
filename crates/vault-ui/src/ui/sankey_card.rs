@@ -40,7 +40,9 @@ pub fn SankeyCard(
     /// Called after an inline edit so the page can refetch the diagram.
     #[prop(optional)]
     on_changed: Option<Callback<()>>,
-    #[prop(into, default = "Cash flow".to_string())] title: String,
+    /// May change after mount (the planner's "from gross pay" title).
+    #[prop(into, default = Signal::stored("Cash flow".to_string()))]
+    title: Signal<String>,
     #[prop(into, default = "Click a bar to drill in · drag it to rearrange".to_string())]
     hint: String,
     /// Side-by-side mode: drop the period toggle and hint so the card can halve.
@@ -85,10 +87,8 @@ pub fn SankeyCard(
         Memo::new(move |_| links.with(|ls| ls.iter().map(LinkDatum::from).collect::<Vec<_>>()));
     // Read inside the chart's render, so a period change redraws the captions.
     let format = Callback::new(move |v: f64| money(v * pf.get()));
-    let aria = {
-        let title = title.clone();
-        Signal::derive(move || format!("{title} Sankey diagram for {}", month.get()))
-    };
+    let aria =
+        { Signal::derive(move || format!("{} Sankey diagram for {}", title.get(), month.get())) };
     let order = Signal::derive(move || sankey_order.get().unwrap_or_default());
 
     let head_right = (!compact || editable).then(|| {
@@ -140,7 +140,7 @@ pub fn SankeyCard(
     view! {
         <div class="panel panel-flush elev-md" style="position: relative">
             <div class="row-between wrap" style="padding: var(--card-pad) var(--card-pad) var(--space-2)">
-                <div class="panel-title">{title.clone()}</div>
+                <div class="panel-title">{move || title.get()}</div>
                 {head_right}
             </div>
 

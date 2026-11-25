@@ -48,14 +48,18 @@ pub fn BudgetVsActualPage() -> impl IntoView {
     let links = Signal::derive(move || view_data.with(|v| v.graph.links.clone()));
     let label = Signal::derive(move || month_label(&month.get()));
 
+    // Memos, so the Sankey stays mounted (with its focus panel) while the
+    // month or data changes; only the table is redrawn.
+    let show_skeleton = Memo::new(move |_| res.get().is_none() && data.with(Option::is_none));
+    let is_empty = Memo::new(move |_| view_data.with(|v| v.rows.is_empty()));
     let body = move || {
-        if res.get().is_none() && data.with(Option::is_none) {
+        if show_skeleton.get() {
             return view! {
                 <Panel title="Budget vs actual"><SkeletonList rows=4 height=52 /></Panel>
             }
             .into_any();
         }
-        if view_data.with(|v| v.rows.is_empty()) {
+        if is_empty.get() {
             return view! {
                 <Panel title="Budget vs actual">
                     <EmptyState compact=true icon="target"
@@ -65,15 +69,10 @@ pub fn BudgetVsActualPage() -> impl IntoView {
             }
             .into_any();
         }
-        let v = view_data.get();
-        let difference = v.budgeted_cents - v.actual_cents;
-        view! {
-            <SankeyCard precise=true single_period=true title="Budget vs actual"
-                hint="Budget flows in on the left, spending out on the right"
-                nodes=nodes links=links month=month />
-            <Panel title="By category">
-                <div role="table" aria-label="Budget and actual by category"
-                    style="display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, auto); column-gap: var(--space-6); row-gap: var(--space-2)">
+        let table = move || {
+            let v = view_data.get();
+            let difference = v.budgeted_cents - v.actual_cents;
+            view! {
                     <Row cells=["Category".into(), "Budgeted".into(), "Actual".into(), "Left".into()] header=true />
                     {v.rows.into_iter().map(|r| {
                         let over = r.actual_cents > r.budgeted_cents;
@@ -87,6 +86,16 @@ pub fn BudgetVsActualPage() -> impl IntoView {
                     <Row header=true over={difference < 0}
                         cells=["Total".into(), fmt::cents(v.budgeted_cents), fmt::cents(v.actual_cents),
                             fmt::cents(difference)] />
+            }
+        };
+        view! {
+            <SankeyCard precise=true single_period=true title="Budget vs actual"
+                hint="Budget flows in on the left, spending out on the right"
+                nodes=nodes links=links month=month />
+            <Panel title="By category">
+                <div role="table" aria-label="Budget and actual by category"
+                    style="display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, auto); column-gap: var(--space-6); row-gap: var(--space-2)">
+                    {table}
                 </div>
             </Panel>
         }
