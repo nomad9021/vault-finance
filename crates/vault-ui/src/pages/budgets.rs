@@ -97,7 +97,7 @@ fn BudgetsTab() -> impl IntoView {
     let host = use_host();
     let app = host.app_state();
     let month = RwSignal::new(current_month());
-    let week_start = Memo::new(move |_| app.with(|a| a.week_starts_on.clone()));
+    let week_start = Memo::new(move |_| app.with(|a| a.review_prefs.week_starts_on.clone()));
     let data_version = host.data_version;
     // Bumped after a save or delete, like useData's reload().
     let version = RwSignal::new(0_u32);
@@ -374,7 +374,7 @@ fn BudgetDialog(
     let host = use_host();
     let app = host.app_state();
     let week_start_label = move || {
-        if app.with(|a| a.week_starts_on == "sunday") {
+        if app.with(|a| a.review_prefs.week_starts_on == "sunday") {
             "Sunday"
         } else {
             "Monday"

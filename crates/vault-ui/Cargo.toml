@@ -16,6 +16,9 @@ wasm-bindgen-futures = "0.4"
 js-sys = "0.3"
 web-sys = { version = "0.3", features = [
   "AddEventListenerOptions",
+  "Blob",
+  "BlobPropertyBag",
+  "console",
   "CssStyleDeclaration",
   "Document",
   "DomRect",
@@ -24,6 +27,7 @@ web-sys = { version = "0.3", features = [
   "EventTarget",
   "File",
   "FileList",
+  "HtmlAnchorElement",
   "HtmlButtonElement",
   "HtmlDivElement",
   "HtmlElement",
@@ -41,6 +45,7 @@ web-sys = { version = "0.3", features = [
   "SvgMatrix",
   "TouchEvent",
   "Storage",
+  "Url",
   "Window",
 ] }
 serde.workspace = true

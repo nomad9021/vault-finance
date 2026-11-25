@@ -4,6 +4,7 @@ import type { ApiClient } from "@vault/shared";
 import { useApp } from "../state/store.js";
 import { useChat } from "../state/chat.js";
 import { readSpreadsheet, SpreadsheetError } from "../lib/spreadsheet.js";
+import { keepUnlocked } from "../lib/autoLock.js";
 import type { NavFilter, Navigate, PageId } from "../screens/shell/nav.js";
 
 /**
@@ -22,6 +23,7 @@ export const RUST_PAGES: ReadonlySet<PageId> = new Set<PageId>([
   "budgets",
   "taxes",
   "giving",
+  "reports",
 ]);
 
 const FLAG = "vault.rust-ui";
@@ -82,14 +84,20 @@ function makeHost(client: ApiClient, onNavigate: Navigate, filter: NavFilter) {
         if (s.dataVersion !== prev.dataVersion) cb();
       });
     },
-    /** The bits of app state pages read: where weeks start, whether AI is on. */
-    appState(): { weekStartsOn: string; aiVisible: boolean } {
+    /** Store settings a page reads (the review presenter's prefs, AI on/off). */
+    app() {
       const s = useApp.getState();
-      return { weekStartsOn: s.reviewPrefs.weekStartsOn, aiVisible: s.aiVisible };
+      return { reviewPrefs: s.reviewPrefs, aiVisible: s.aiVisible, platform: s.platform.kind };
     },
+    setFullscreen(on: boolean): Promise<void> {
+      return useApp.getState().platform.setFullscreen(on);
+    },
+    /** `useKeepUnlocked()` for Rust: call the result to release. */
+    keepUnlocked,
+    /** Run `cb` when what `app()` returns changes; returns an unsubscribe. */
     onAppStateChange(cb: () => void): () => void {
       return useApp.subscribe((s, prev) => {
-        if (s.aiVisible !== prev.aiVisible || s.reviewPrefs.weekStartsOn !== prev.reviewPrefs.weekStartsOn) cb();
+        if (s.reviewPrefs !== prev.reviewPrefs || s.aiVisible !== prev.aiVisible || s.platform !== prev.platform) cb();
       });
     },
     /**

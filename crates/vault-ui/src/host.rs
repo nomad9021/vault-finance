@@ -36,11 +36,7 @@ extern "C" {
     #[wasm_bindgen(method, js_name = onDataChange)]
     fn on_data_change(this: &Host, cb: &js_sys::Function) -> js_sys::Function;
 
-    /// `{ weekStartsOn, aiVisible }` from the app store.
-    #[wasm_bindgen(method, js_name = appState)]
-    fn app_state(this: &Host) -> JsValue;
-
-    /// Run `cb` when `appState()` changes; returns an unsubscribe function.
+    /// Run `cb` when `app()` changes; returns an unsubscribe function.
     #[wasm_bindgen(method, js_name = onAppStateChange)]
     fn on_app_state_change(this: &Host, cb: &js_sys::Function) -> js_sys::Function;
 
@@ -51,15 +47,28 @@ extern "C" {
     /// A new assistant chat with an attachment, opened and sent.
     #[wasm_bindgen(method, js_name = askAssistant)]
     fn ask_assistant(this: &Host, message: &str, attachment: JsValue);
+
+    /// A snapshot of app-store settings pages read (`reviewPrefs`,
+    /// `aiVisible`, `platform`: "tauri" | "browser").
+    #[wasm_bindgen(method)]
+    fn app(this: &Host) -> JsValue;
+
+    /// `platform.setFullscreen(on)`.
+    #[wasm_bindgen(method, catch, js_name = setFullscreen)]
+    async fn set_fullscreen(this: &Host, on: bool) -> Result<JsValue, JsValue>;
+
+    /// `useKeepUnlocked()`: auto-lock waits until the returned function runs.
+    #[wasm_bindgen(method, js_name = keepUnlocked)]
+    fn keep_unlocked(this: &Host) -> js_sys::Function;
 }
 
-/// What `host.appState()` returns.
+/// `host.app()`, read when a page needs it.
 #[derive(Debug, Clone, PartialEq, Default, serde::Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AppState {
-    /// "monday" | "sunday".
-    pub week_starts_on: String,
+    pub review_prefs: vault_core::reports::ReviewPrefs,
     pub ai_visible: bool,
+    pub platform: String,
 }
 
 /// A spreadsheet read for the assistant (`ChatAttachment`).
@@ -152,10 +161,31 @@ impl HostCtx {
         self.host.refresh_data();
     }
 
-    /// The app store's week start and AI visibility, kept current while the
-    /// page is mounted (React's `useApp((s) => …)`).
+    pub fn app(&self) -> AppState {
+        serde_wasm_bindgen::from_value(self.host.app()).unwrap_or_default()
+    }
+
+    /// `platform.setFullscreen(on)`; the error's message on failure.
+    pub async fn set_fullscreen(&self, on: bool) -> Result<(), String> {
+        self.host
+            .set_fullscreen(on)
+            .await
+            .map(|_| ())
+            .map_err(|e| CallError::from_js(e).message)
+    }
+
+    /// `useKeepUnlocked()` for the current owner's lifetime.
+    pub fn keep_unlocked(&self) {
+        let release = SendWrapper::new(self.host.keep_unlocked());
+        on_cleanup(move || {
+            let _ = release.take().call0(&JsValue::NULL);
+        });
+    }
+
+    /// `app()`, kept current while the page is mounted (React's
+    /// `useApp((s) => …)`).
     pub fn app_state(&self) -> ReadSignal<AppState> {
-        let read = |h: &Host| serde_wasm_bindgen::from_value(h.app_state()).unwrap_or_default();
+        let read = |h: &Host| serde_wasm_bindgen::from_value(h.app()).unwrap_or_default();
         let (state, set_state) = signal(read(&self.host));
         let host = Rc::clone(&self.host);
         let cb = Closure::<dyn Fn()>::new(move || set_state.set(read(&host)));
