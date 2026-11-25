@@ -14,6 +14,7 @@ import type { NavFilter, Navigate, PageId } from "../screens/shell/nav.js";
 export const RUST_PAGES: ReadonlySet<PageId> = new Set<PageId>([
   "insights",
   "networth",
+  "subscriptions",
   "goals",
   "cashflow",
   "bills",

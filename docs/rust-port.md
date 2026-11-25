@@ -54,7 +54,7 @@ Status: `todo` · `wip` · `review` (PR open) · `done` (merged, Rust page on in
 | insights | 0 | review | rust/foundation |
 | cashflow | 1 | review | rust/page-cashflow |
 | networth | 1 | review | rust/page-networth |
-| subscriptions | 1 | todo | |
+| subscriptions | 1 | review | rust/page-subscriptions |
 | goals (+ buckets tab) | 1 | review | rust/page-goals |
 | investments | 2 | review | rust/page-investments |
 | income | 2 | review | rust/page-income |

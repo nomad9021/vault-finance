@@ -227,3 +227,9 @@ pub fn today_utc() -> String {
         d.get_utc_date(),
     )
 }
+
+/// `new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { month: "short",
+/// day: "numeric", timeZone: "UTC" })`, e.g. "Dec 3" (Subscriptions).
+pub fn short_date(iso: &str) -> String {
+    day_short(iso)
+}

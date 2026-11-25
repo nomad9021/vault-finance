@@ -194,10 +194,10 @@ pub fn Panel(
     #[prop(optional)]
     title_view: Option<AnyView>,
     #[prop(optional, into)] subtitle: Option<Signal<String>>,
-    /// Right-aligned header content (toggles, links).
+    #[prop(optional)] flush: bool,
+    /// Right-aligned header content (buttons, a [`PanelLink`]).
     #[prop(optional)]
     actions: Option<AnyView>,
-    #[prop(optional)] flush: bool,
     children: Children,
 ) -> impl IntoView {
     let has_head = kicker.is_some()
@@ -301,6 +301,23 @@ pub fn TrendChart(
             }
             .into_any()
         }
+    }
+}
+
+/// `<PanelLink>`: the "See all →" link in a panel header.
+#[component]
+pub fn PanelLink(
+    on_click: impl Fn() + 'static,
+    #[prop(optional)] children: Option<Children>,
+) -> impl IntoView {
+    view! {
+        <button type="button" class="panel-link" on:click=move |_| on_click()>
+            {match children {
+                Some(c) => c().into_any(),
+                None => "See all".into_any(),
+            }}
+            <Icon name="arrowRight" size=14 />
+        </button>
     }
 }
 

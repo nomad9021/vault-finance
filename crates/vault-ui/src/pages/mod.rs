@@ -16,11 +16,13 @@ pub mod investments;
 pub mod networth;
 pub mod reports;
 pub mod review_presenter;
+pub mod subscriptions;
 pub mod taxes;
 
 pub const IDS: &[&str] = &[
     "insights",
     "networth",
+    "subscriptions",
     "goals",
     "cashflow",
     "bills",
@@ -37,6 +39,7 @@ pub fn render(page: &str) -> AnyView {
     match page {
         "insights" => view! { <insights::InsightsPage /> }.into_any(),
         "networth" => view! { <networth::NetWorthPage /> }.into_any(),
+        "subscriptions" => view! { <subscriptions::SubscriptionsPage /> }.into_any(),
         "goals" => view! { <goals::GoalsPage /> }.into_any(),
         "cashflow" => view! { <cashflow::CashFlowPage /> }.into_any(),
         "bills" => view! { <bills::BillsPage /> }.into_any(),
