@@ -103,6 +103,7 @@ pub fn transaction_query(n: &SankeyNode, month: &str) -> Option<TransactionQuery
         from: Some(format!("{month}-01")),
         to: Some(format!("{month}-{last:02}")),
         limit: Some(8),
+        ..Default::default()
     })
 }
 
