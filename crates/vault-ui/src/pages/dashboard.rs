@@ -42,9 +42,9 @@ use crate::host::{use_host, HostCtx};
 use crate::pages::budgets::last_ok;
 use crate::storage;
 use crate::ui::{
-    on_window, Button, Card, Dialog, EmptyState, HomeArrange, Icon, ListRow, MetricCard, Money,
-    Panel, PanelLink, PreIncomeDialog, ProgressBar, SankeyCard, SegmentedOf, Sheet, Skeleton,
-    TrendChart,
+    on_window, Button, Card, Dialog, EmptyState, GuiltFreeCard, HomeArrange, Icon, ListRow,
+    MetricCard, Money, Panel, PanelLink, PreIncomeDialog, ProgressBar, SankeyCard, SegmentedOf,
+    Sheet, Skeleton, TrendChart,
 };
 
 const SANKEY_VIEW_KEY: &str = "dashboard-sankey-view";
@@ -787,8 +787,7 @@ fn widget(id: &str, d: Dash, ai_visible: Memo<bool>) -> AnyView {
         "investments" => view! { <InvestmentsCard d=d /> }.into_any(),
         "recent" => view! { <RecentActivity d=d /> }.into_any(),
         "goals" => view! { <TopGoals d=d /> }.into_any(),
-        // The guilt-free card comes in the next commit.
-        "guilt-free" => ().into_any(),
+        "guilt-free" => view! { <GuiltFreeCard /> }.into_any(),
         _ => ().into_any(),
     }
 }
