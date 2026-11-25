@@ -59,3 +59,20 @@ pub fn cents_whole(cents: i64) -> String {
         abs
     }
 }
+
+/// `new Date(`${iso}T00:00:00Z`).toLocaleDateString(undefined, { month: "short",
+/// day: "numeric", timeZone: "UTC" })`, e.g. "Dec 3".
+pub fn short_date(iso: &str) -> String {
+    use js_sys::{Date, Intl::DateTimeFormat};
+    let opts = Object::new();
+    for (k, v) in [("month", "short"), ("day", "numeric"), ("timeZone", "UTC")] {
+        let _ = Reflect::set(&opts, &k.into(), &v.into());
+    }
+    let date = Date::new(&JsValue::from_str(&format!("{iso}T00:00:00Z")));
+    DateTimeFormat::new(&Array::new(), &opts)
+        .format()
+        .call1(&JsValue::NULL, &date)
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_default()
+}

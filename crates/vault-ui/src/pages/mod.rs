@@ -4,12 +4,14 @@
 use leptos::prelude::*;
 
 pub mod insights;
+pub mod subscriptions;
 
-pub const IDS: &[&str] = &["insights"];
+pub const IDS: &[&str] = &["insights", "subscriptions"];
 
 pub fn render(page: &str) -> AnyView {
     match page {
         "insights" => view! { <insights::InsightsPage /> }.into_any(),
+        "subscriptions" => view! { <subscriptions::SubscriptionsPage /> }.into_any(),
         _ => ().into_any(),
     }
 }

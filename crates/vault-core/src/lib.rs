@@ -8,3 +8,4 @@
 
 pub mod insights;
 pub mod nav;
+pub mod subscriptions;
