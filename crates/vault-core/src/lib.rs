@@ -40,6 +40,7 @@ pub mod networth;
 pub mod password;
 pub mod platform;
 pub mod preferences;
+pub mod reports;
 pub mod sankey;
 pub mod sankey_card;
 pub mod serde_util;

@@ -35,6 +35,28 @@ extern "C" {
 
     #[wasm_bindgen(method, js_name = onDataChange)]
     fn on_data_change(this: &Host, cb: &js_sys::Function) -> js_sys::Function;
+
+    /// A snapshot of app-store settings pages read (`reviewPrefs`,
+    /// `aiVisible`, `platform`: "tauri" | "browser").
+    #[wasm_bindgen(method)]
+    fn app(this: &Host) -> JsValue;
+
+    /// `platform.setFullscreen(on)`.
+    #[wasm_bindgen(method, catch, js_name = setFullscreen)]
+    async fn set_fullscreen(this: &Host, on: bool) -> Result<JsValue, JsValue>;
+
+    /// `useKeepUnlocked()`: auto-lock waits until the returned function runs.
+    #[wasm_bindgen(method, js_name = keepUnlocked)]
+    fn keep_unlocked(this: &Host) -> js_sys::Function;
+}
+
+/// `host.app()`, read when a page needs it.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AppState {
+    pub review_prefs: vault_core::reports::ReviewPrefs,
+    pub ai_visible: bool,
+    pub platform: String,
 }
 
 /// What pages get from context: the host plus a counter that ticks when the
@@ -118,6 +140,27 @@ impl HostCtx {
     /// `data_version`) refetch.
     pub fn refresh_data(&self) {
         self.host.refresh_data();
+    }
+
+    pub fn app(&self) -> AppState {
+        serde_wasm_bindgen::from_value(self.host.app()).unwrap_or_default()
+    }
+
+    /// `platform.setFullscreen(on)`; the error's message on failure.
+    pub async fn set_fullscreen(&self, on: bool) -> Result<(), String> {
+        self.host
+            .set_fullscreen(on)
+            .await
+            .map(|_| ())
+            .map_err(|e| CallError::from_js(e).message)
+    }
+
+    /// `useKeepUnlocked()` for the current owner's lifetime.
+    pub fn keep_unlocked(&self) {
+        let release = SendWrapper::new(self.host.keep_unlocked());
+        on_cleanup(move || {
+            let _ = release.take().call0(&JsValue::NULL);
+        });
     }
 
     pub fn navigate(&self, page: &str, filter: &impl Serialize) {

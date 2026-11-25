@@ -3,6 +3,7 @@ import { EmptyState, Spinner } from "@vault/ui";
 import type { ApiClient } from "@vault/shared";
 import { useApp } from "../state/store.js";
 import { useChat } from "../state/chat.js";
+import { keepUnlocked } from "../lib/autoLock.js";
 import type { NavFilter, Navigate, PageId } from "../screens/shell/nav.js";
 
 /**
@@ -18,6 +19,9 @@ export const RUST_PAGES: ReadonlySet<PageId> = new Set<PageId>([
   "income",
   "investments",
   "accounts",
+  "taxes",
+  "giving",
+  "reports",
 ]);
 
 const FLAG = "vault.rust-ui";
@@ -78,6 +82,16 @@ function makeHost(client: ApiClient, onNavigate: Navigate, filter: NavFilter) {
         if (s.dataVersion !== prev.dataVersion) cb();
       });
     },
+    /** Store settings a page reads (the review presenter's prefs, AI on/off). */
+    app() {
+      const s = useApp.getState();
+      return { reviewPrefs: s.reviewPrefs, aiVisible: s.aiVisible, platform: s.platform.kind };
+    },
+    setFullscreen(on: boolean): Promise<void> {
+      return useApp.getState().platform.setFullscreen(on);
+    },
+    /** `useKeepUnlocked()` for Rust: call the result to release. */
+    keepUnlocked,
   };
 }
 

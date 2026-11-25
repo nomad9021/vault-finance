@@ -173,3 +173,57 @@ pub fn month_year_from_now(months: u32) -> String {
     d.set_month(d.get_month() + months);
     date_format(&d, &[("month", "short"), ("year", "numeric")])
 }
+
+/// `{ weekday: "short", month: "short", day: "numeric" }`: "Tue, Nov 24".
+pub fn weekday_date(iso: &str) -> String {
+    match parse_iso(iso.get(..10).unwrap_or(iso)) {
+        Some((y, m, d)) => utc_date(
+            y,
+            m,
+            d,
+            &[("weekday", "short"), ("month", "short"), ("day", "numeric")],
+        ),
+        None => iso.to_string(),
+    }
+}
+
+/// `{ weekday: "short" }`: "Tue".
+pub fn weekday_short(iso: &str) -> String {
+    match parse_iso(iso.get(..10).unwrap_or(iso)) {
+        Some((y, m, d)) => utc_date(y, m, d, &[("weekday", "short")]),
+        None => iso.to_string(),
+    }
+}
+
+/// `periodLabel(period, start)` (lib/reviewPrefs.ts): "November 2026" or
+/// "Week of Nov 16 – 22, 2026" (`end` is the week's last day).
+pub fn period_label(week: bool, start: &str, end: &str) -> String {
+    let (Some((y, m, d)), Some((ly, lm, ld))) = (parse_iso(start), parse_iso(end)) else {
+        return start.to_string();
+    };
+    if !week {
+        return month_long_year(Month { year: y, month: m });
+    }
+    let first = utc_date(y, m, d, &[("month", "short"), ("day", "numeric")]);
+    let last = if lm == m {
+        utc_date(ly, lm, ld, &[("day", "numeric"), ("year", "numeric")])
+    } else {
+        utc_date(
+            ly,
+            lm,
+            ld,
+            &[("month", "short"), ("day", "numeric"), ("year", "numeric")],
+        )
+    };
+    format!("Week of {first} – {last}")
+}
+
+/// Today in UTC, "YYYY-MM-DD" (`new Date().toISOString().slice(0, 10)`).
+pub fn today_utc() -> String {
+    let d = Date::new_0();
+    vault_core::dates::to_iso(
+        d.get_utc_full_year() as i32,
+        d.get_utc_month() + 1,
+        d.get_utc_date(),
+    )
+}
