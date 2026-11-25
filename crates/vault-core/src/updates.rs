@@ -41,6 +41,30 @@ pub struct UpdateStatusResponse {
     pub self_update: Option<SelfUpdateStatus>,
 }
 
+/// The desktop app's own update (`AppUpdateState` in
+/// apps/desktop/src/state/store.ts), shared by the header button and Settings.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "phase", rename_all = "lowercase")]
+pub enum AppUpdateState {
+    #[default]
+    Idle,
+    Checking,
+    None,
+    Available {
+        version: String,
+    },
+    Installing {
+        version: String,
+        /// 0–1.
+        progress: f64,
+    },
+    Error {
+        message: String,
+        #[serde(default)]
+        version: Option<String>,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VersionResponse {
@@ -98,6 +122,27 @@ mod tests {
         let v: VersionResponse =
             serde_json::from_str(r#"{"apiVersion":"0.2.2","minClientVersion":"0.2.0"}"#).unwrap();
         assert_eq!(v.min_client_version, "0.2.0");
+    }
+
+    #[test]
+    fn parses_app_update_state() {
+        let parse = |s: &str| serde_json::from_str::<AppUpdateState>(s).unwrap();
+        assert_eq!(parse(r#"{"phase":"idle"}"#), AppUpdateState::Idle);
+        assert_eq!(parse(r#"{"phase":"none"}"#), AppUpdateState::None);
+        assert_eq!(
+            parse(r#"{"phase":"installing","version":"0.2.3","progress":0.42}"#),
+            AppUpdateState::Installing {
+                version: "0.2.3".into(),
+                progress: 0.42
+            }
+        );
+        assert_eq!(
+            parse(r#"{"phase":"error","message":"Couldn't reach GitHub."}"#),
+            AppUpdateState::Error {
+                message: "Couldn't reach GitHub.".into(),
+                version: None
+            }
+        );
     }
 
     #[test]

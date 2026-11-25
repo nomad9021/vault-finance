@@ -60,6 +60,42 @@ extern "C" {
     /// `useKeepUnlocked()`: auto-lock waits until the returned function runs.
     #[wasm_bindgen(method, js_name = keepUnlocked)]
     fn keep_unlocked(this: &Host) -> js_sys::Function;
+
+    /// `useApp.setState({ user })` after the profile changes.
+    #[wasm_bindgen(method, js_name = setUser)]
+    fn set_user(this: &Host, user: JsValue);
+
+    /// `useApp.getState().setHouseholdName(name)`.
+    #[wasm_bindgen(method, js_name = setHouseholdName)]
+    fn set_household_name(this: &Host, name: &str);
+
+    /// `checkAppUpdate()`; progress shows up in `app().appUpdate`.
+    #[wasm_bindgen(method, js_name = checkAppUpdate)]
+    fn check_app_update(this: &Host);
+
+    /// `installAppUpdate()`.
+    #[wasm_bindgen(method, js_name = installAppUpdate)]
+    fn install_app_update(this: &Host);
+
+    /// `platform.loadValue(key)`: the saved string or null.
+    #[wasm_bindgen(method, catch, js_name = loadValue)]
+    async fn load_value(this: &Host, key: &str) -> Result<JsValue, JsValue>;
+
+    /// `platform.saveValue(key, value)`, not awaited.
+    #[wasm_bindgen(method, js_name = saveValue)]
+    fn save_value(this: &Host, key: &str, value: &str);
+
+    /// `platform.openExternal(url)`, or a new browser tab without it.
+    #[wasm_bindgen(method, js_name = openExternal)]
+    fn open_external(this: &Host, url: &str);
+
+    /// `platform.openAdminConsole()` (only when `app().adminConsole`).
+    #[wasm_bindgen(method, js_name = openAdminConsole)]
+    fn open_admin_console(this: &Host);
+
+    /// `navigator.clipboard.writeText(text)`.
+    #[wasm_bindgen(method, catch, js_name = copyText)]
+    async fn copy_text(this: &Host, text: &str) -> Result<JsValue, JsValue>;
 }
 
 /// `host.app()`, read when a page needs it.
@@ -69,6 +105,26 @@ pub struct AppState {
     pub review_prefs: vault_core::reports::ReviewPrefs,
     pub ai_visible: bool,
     pub platform: String,
+    /// The signed-in user.
+    pub user: Option<vault_core::user::User>,
+    pub household_name: Option<String>,
+    pub app_update: vault_core::updates::AppUpdateState,
+    /// The address the app reached the server at (`activeAddress`).
+    pub active_address: Option<String>,
+    /// `client.baseUrl`.
+    pub base_url: String,
+    /// `APP_VERSION`.
+    pub app_version: String,
+    /// The platform has `openAdminConsole`.
+    pub admin_console: bool,
+}
+
+impl AppState {
+    pub fn is_owner(&self) -> bool {
+        self.user
+            .as_ref()
+            .is_some_and(|u| u.role == vault_core::common::UserRole::Owner)
+    }
 }
 
 /// A spreadsheet read for the assistant (`ChatAttachment`).
@@ -132,6 +188,7 @@ impl HostCtx {
             name: "Error".into(),
             message: format!("{method}: unexpected response ({e})"),
             is_error: true,
+            status: None,
         })
     }
 
@@ -222,6 +279,49 @@ impl HostCtx {
         self.host.ask_assistant(message, Self::arg(sheet));
     }
 
+    /// Put the user the server sent back into the app store.
+    pub fn set_user(&self, user: &vault_core::user::User) {
+        self.host.set_user(Self::arg(user));
+    }
+
+    pub fn set_household_name(&self, name: &str) {
+        self.host.set_household_name(name);
+    }
+
+    pub fn check_app_update(&self) {
+        self.host.check_app_update();
+    }
+
+    pub fn install_app_update(&self) {
+        self.host.install_app_update();
+    }
+
+    /// `platform.loadValue(key)`; `None` when unset or unreadable.
+    pub async fn load_value(&self, key: &str) -> Option<String> {
+        self.host
+            .load_value(key)
+            .await
+            .ok()
+            .and_then(|v| v.as_string())
+    }
+
+    pub fn save_value(&self, key: &str, value: &str) {
+        self.host.save_value(key, value);
+    }
+
+    pub fn open_external(&self, url: &str) {
+        self.host.open_external(url);
+    }
+
+    pub fn open_admin_console(&self) {
+        self.host.open_admin_console();
+    }
+
+    /// Copy to the clipboard; false when the browser refused.
+    pub async fn copy_text(&self, text: &str) -> bool {
+        self.host.copy_text(text).await.is_ok()
+    }
+
     pub fn navigate(&self, page: &str, filter: &impl Serialize) {
         let filter = serde_wasm_bindgen::to_value(filter).unwrap_or(JsValue::UNDEFINED);
         self.host.navigate(page, filter);
@@ -240,6 +340,8 @@ pub struct CallError {
     pub message: String,
     /// Whether it was an `Error` at all (`err instanceof Error`).
     pub is_error: bool,
+    /// The HTTP status an `ApiRequestError` carries.
+    pub status: Option<u16>,
 }
 
 impl CallError {
@@ -249,11 +351,16 @@ impl CallError {
                 name: e.name().into(),
                 message: e.message().into(),
                 is_error: true,
+                status: js_sys::Reflect::get(e, &"status".into())
+                    .ok()
+                    .and_then(|s| s.as_f64())
+                    .map(|s| s as u16),
             },
             None => CallError {
                 name: String::new(),
                 message: err.as_string().unwrap_or_else(|| "Request failed".into()),
                 is_error: false,
+                status: None,
             },
         }
     }

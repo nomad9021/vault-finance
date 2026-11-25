@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { EmptyState, Spinner } from "@vault/ui";
-import type { ApiClient } from "@vault/shared";
-import { useApp } from "../state/store.js";
+import type { ApiClient, User } from "@vault/shared";
+import { APP_VERSION, useApp } from "../state/store.js";
 import { useChat } from "../state/chat.js";
 import { readSpreadsheet, SpreadsheetError } from "../lib/spreadsheet.js";
 import { keepUnlocked } from "../lib/autoLock.js";
@@ -25,6 +25,7 @@ export const RUST_PAGES: ReadonlySet<PageId> = new Set<PageId>([
   "taxes",
   "giving",
   "reports",
+  "settings",
 ]);
 
 const FLAG = "vault.rust-ui";
@@ -88,7 +89,18 @@ function makeHost(client: ApiClient, onNavigate: Navigate, filter: NavFilter) {
     /** Store settings a page reads (the review presenter's prefs, AI on/off). */
     app() {
       const s = useApp.getState();
-      return { reviewPrefs: s.reviewPrefs, aiVisible: s.aiVisible, platform: s.platform.kind };
+      return {
+        reviewPrefs: s.reviewPrefs,
+        aiVisible: s.aiVisible,
+        platform: s.platform.kind,
+        user: s.user,
+        householdName: s.householdName,
+        appUpdate: s.appUpdate,
+        activeAddress: s.activeAddress,
+        baseUrl: client.baseUrl,
+        appVersion: APP_VERSION,
+        adminConsole: Boolean(s.platform.openAdminConsole),
+      };
     },
     setFullscreen(on: boolean): Promise<void> {
       return useApp.getState().platform.setFullscreen(on);
@@ -98,8 +110,48 @@ function makeHost(client: ApiClient, onNavigate: Navigate, filter: NavFilter) {
     /** Run `cb` when what `app()` returns changes; returns an unsubscribe. */
     onAppStateChange(cb: () => void): () => void {
       return useApp.subscribe((s, prev) => {
-        if (s.reviewPrefs !== prev.reviewPrefs || s.aiVisible !== prev.aiVisible || s.platform !== prev.platform) cb();
+        if (
+          s.reviewPrefs !== prev.reviewPrefs ||
+          s.aiVisible !== prev.aiVisible ||
+          s.platform !== prev.platform ||
+          s.user !== prev.user ||
+          s.householdName !== prev.householdName ||
+          s.appUpdate !== prev.appUpdate ||
+          s.activeAddress !== prev.activeAddress
+        )
+          cb();
       });
+    },
+    /** Settings: the profile the server sent back after an edit. */
+    setUser(user: User) {
+      useApp.setState({ user });
+    },
+    setHouseholdName(name: string) {
+      useApp.getState().setHouseholdName(name);
+    },
+    /** The header's app-update state machine; Settings reads `app().appUpdate`. */
+    checkAppUpdate() {
+      void useApp.getState().checkAppUpdate();
+    },
+    installAppUpdate() {
+      void useApp.getState().installAppUpdate();
+    },
+    loadValue(key: string): Promise<string | null> {
+      return useApp.getState().platform.loadValue(key);
+    },
+    saveValue(key: string, value: string) {
+      void useApp.getState().platform.saveValue(key, value);
+    },
+    openExternal(url: string) {
+      const platform = useApp.getState().platform;
+      if (platform.openExternal) void platform.openExternal(url);
+      else window.open(url, "_blank", "noopener");
+    },
+    openAdminConsole() {
+      void useApp.getState().platform.openAdminConsole?.();
+    },
+    copyText(text: string): Promise<void> {
+      return navigator.clipboard.writeText(text);
     },
     /**
      * A picked CSV/TSV/Excel file as `{ name, content }` (CSV text), parsed by

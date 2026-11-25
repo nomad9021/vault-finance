@@ -162,6 +162,36 @@ pub fn MetricCard(
     }
 }
 
+/// `<Avatar>`: the initial on a colour disc, or the profile picture.
+#[component]
+pub fn Avatar(
+    #[prop(into)] name: String,
+    #[prop(into)] color: String,
+    #[prop(optional, into)] image: Option<String>,
+    #[prop(default = 40)] size: u32,
+) -> impl IntoView {
+    let font = vault_core::money::js_round(size as f64 * 0.4);
+    let mut style =
+        format!("width: {size}px; height: {size}px; background: {color}; font-size: {font}px");
+    let inner = match image.filter(|s| !s.is_empty()) {
+        Some(src) => {
+            style.push_str("; overflow: hidden; padding: 0px");
+            view! {
+                <img src=src alt="" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block" />
+            }
+            .into_any()
+        }
+        None => name
+            .trim()
+            .chars()
+            .next()
+            .map(|c| c.to_uppercase().collect::<String>())
+            .unwrap_or_else(|| "?".into())
+            .into_any(),
+    };
+    view! { <span class="avatar" style=style aria-hidden="true">{inner}</span> }
+}
+
 /// `<Card>`: the older card container, with an optional kicker and title.
 #[component]
 pub fn Card(
