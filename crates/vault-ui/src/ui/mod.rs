@@ -24,7 +24,7 @@ pub use confetti::Confetti;
 pub use dialog::Dialog;
 pub use form::{DateField, Field, Select, SelectOption};
 pub use icons_gen::NAMES as ICON_NAMES;
-pub use listen::{on_document, on_window, use_id};
+pub use listen::{on_document, on_window, use_id, use_narrow};
 pub use pie_chart::{PieChart, PieSlice};
 pub use pre_income_dialog::PreIncomeDialog;
 pub use sankey::Sankey;
@@ -67,6 +67,9 @@ pub fn Button(
     /// `e.stopPropagation()` before `on_click` (a button inside a clickable card).
     #[prop(optional)]
     stop_propagation: bool,
+    /// `type="submit"`: submits its form (`on_click` still runs first).
+    #[prop(optional)]
+    submit: bool,
     on_click: impl Fn() + 'static,
     #[prop(optional)] children: Option<Children>,
 ) -> impl IntoView {
@@ -87,7 +90,7 @@ pub fn Button(
         class.push_str(" btn-block");
     }
     view! {
-        <button type="button" class=class style=style title=title aria-label=move || aria_label.get() disabled=move || disabled.get().unwrap_or(false)
+        <button type=if submit { "submit" } else { "button" } class=class style=style title=title aria-label=move || aria_label.get() disabled=move || disabled.get().unwrap_or(false)
             on:click=move |e| {
                 if stop_propagation {
                     e.stop_propagation();
@@ -166,6 +169,36 @@ pub fn MetricCard(
             {hint.map(|h| view! { <div class="stat-hint">{h}</div> })}
         </div>
     }
+}
+
+/// `<Avatar>`: the initial on a colour disc, or the profile picture.
+#[component]
+pub fn Avatar(
+    #[prop(into)] name: String,
+    #[prop(into)] color: String,
+    #[prop(optional, into)] image: Option<String>,
+    #[prop(default = 40)] size: u32,
+) -> impl IntoView {
+    let font = vault_core::money::js_round(size as f64 * 0.4);
+    let mut style =
+        format!("width: {size}px; height: {size}px; background: {color}; font-size: {font}px");
+    let inner = match image.filter(|s| !s.is_empty()) {
+        Some(src) => {
+            style.push_str("; overflow: hidden; padding: 0px");
+            view! {
+                <img src=src alt="" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block" />
+            }
+            .into_any()
+        }
+        None => name
+            .trim()
+            .chars()
+            .next()
+            .map(|c| c.to_uppercase().collect::<String>())
+            .unwrap_or_else(|| "?".into())
+            .into_any(),
+    };
+    view! { <span class="avatar" style=style aria-hidden="true">{inner}</span> }
 }
 
 /// `<Card>`: the older card container, with an optional kicker and title.
@@ -424,7 +457,13 @@ pub fn ProgressBar(
 
 /// `<Banner>`: full-width status strip.
 #[component]
-pub fn Banner(tone: &'static str, children: Children) -> impl IntoView {
+pub fn Banner(
+    tone: &'static str,
+    /// Action button(s) on the right.
+    #[prop(optional)]
+    action: Option<Children>,
+    children: Children,
+) -> impl IntoView {
     let icon = match tone {
         "warning" | "danger" => "alert",
         "positive" => "check",
@@ -434,6 +473,7 @@ pub fn Banner(tone: &'static str, children: Children) -> impl IntoView {
         <div role="status" class=format!("banner banner-{tone}")>
             <Icon name=icon size=17 style="flex: none" />
             <span style="flex: 1">{children()}</span>
+            {action.map(|a| a())}
         </div>
     }
 }

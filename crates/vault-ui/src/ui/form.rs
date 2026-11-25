@@ -23,6 +23,10 @@ pub fn Field(
     value: RwSignal<String>,
     #[prop(optional, into)] placeholder: MaybeProp<&'static str>,
     #[prop(optional)] input_mode: Option<&'static str>,
+    /// The input's `type` ("email", "password", …); text when unset.
+    #[prop(optional)]
+    input_type: Option<&'static str>,
+    #[prop(optional)] autocomplete: Option<&'static str>,
     /// Focus on mount (React's `autoFocus`).
     #[prop(optional)]
     autofocus: bool,
@@ -43,10 +47,6 @@ pub fn Field(
     /// `onChange` doing more than storing the text).
     #[prop(optional)]
     on_input: Option<Callback<String>>,
-    /// The input's `type` ("password"…); text when unset.
-    #[prop(optional)]
-    input_type: Option<&'static str>,
-    #[prop(optional)] autocomplete: Option<&'static str>,
     /// `spellCheck={false}` / `autoCapitalize="off"` for addresses.
     #[prop(optional)]
     no_spellcheck: bool,
