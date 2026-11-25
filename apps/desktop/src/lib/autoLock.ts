@@ -16,12 +16,18 @@ const TICK_MS = 5_000;
 /** Screens that count as activity while open (the review presenter auto-advances). */
 let keepAwake = 0;
 export function useKeepUnlocked() {
-  useEffect(() => {
-    keepAwake++;
-    return () => {
-      keepAwake--;
-    };
-  }, []);
+  useEffect(keepUnlocked, []);
+}
+
+/** `useKeepUnlocked` outside React (Rust pages); call the result to release. */
+export function keepUnlocked(): () => void {
+  keepAwake++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    keepAwake--;
+  };
 }
 
 /** Pure decision for one tick, so it can be unit tested. */

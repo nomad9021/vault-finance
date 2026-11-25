@@ -26,6 +26,7 @@ pub mod money;
 pub mod nav;
 pub mod networth;
 pub mod preferences;
+pub mod reports;
 pub mod sankey;
 pub mod sankey_card;
 pub mod taxes;
