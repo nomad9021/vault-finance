@@ -42,7 +42,7 @@ use crate::host::{use_host, HostCtx};
 use crate::pages::budgets::last_ok;
 use crate::storage;
 use crate::ui::{
-    on_window, Button, Card, Dialog, EmptyState, GuiltFreeCard, HomeArrange, Icon, ListRow,
+    use_narrow, Button, Card, Dialog, EmptyState, GuiltFreeCard, HomeArrange, Icon, ListRow,
     MetricCard, Money, Panel, PanelLink, PreIncomeDialog, ProgressBar, SankeyCard, SegmentedOf,
     Sheet, Skeleton, TrendChart,
 };
@@ -63,25 +63,6 @@ fn days_left() -> u32 {
         d.get_utc_month() + 1,
         d.get_utc_date(),
     )
-}
-
-/// `useLayoutMode() === "narrow"`: under 900px wide.
-fn use_phone() -> ReadSignal<bool> {
-    let read = || {
-        window()
-            .inner_width()
-            .ok()
-            .and_then(|w| w.as_f64())
-            .is_some_and(|w| w < 900.0)
-    };
-    let (phone, set_phone) = signal(read());
-    on_window("resize", false, move |_| {
-        let now = read();
-        if phone.get_untracked() != now {
-            set_phone.set(now);
-        }
-    });
-    phone
 }
 
 /// `useCountUp`: glides to a new value in 300ms (at once with Reduced Motion).
@@ -222,7 +203,7 @@ impl Dash {
 pub fn DashboardPage() -> impl IntoView {
     let host = use_host();
     let app = host.app_state();
-    let phone = use_phone();
+    let phone = use_narrow();
     let week_start = Memo::new(move |_| app.with(|a| a.review_prefs.week_starts_on.clone()));
     // Settings → General → Home screen can hide the cash-flow diagram (per device).
     let hide_sankey = Memo::new(move |_| app.with(|a| !a.show_sankey.unwrap_or(true)));

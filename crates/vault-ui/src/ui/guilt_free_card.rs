@@ -269,7 +269,7 @@ fn PersonTileView(
         <div class="gf-person">
             <div class="row" style="gap: var(--space-3)">
                 <Avatar name=person.display_name.clone() color=person.avatar_color.clone()
-                    image=person.avatar_image.clone() size=34 />
+                    image=person.avatar_image.clone().unwrap_or_default() size=34 />
                 <div style="min-width: 0px; flex: 1">
                     <div class="t-sm t-medium truncate">
                         {person.display_name.clone()}

@@ -1,4 +1,4 @@
-//! `<ListRow>`, `<Money>`, `<Avatar>`, `<Skeleton>`, `<Sheet>` from
+//! `<ListRow>`, `<Money>`, `<Skeleton>`, `<Sheet>` from
 //! packages/ui/src/primitives, and a `<Segmented>` whose options change.
 
 use leptos::portal::Portal;
@@ -71,38 +71,6 @@ pub fn Money(
         _ => "",
     };
     view! { <span class=format!("money{tone_class}")>{text}</span> }
-}
-
-/// `<Avatar>`: the initial on the person's colour, or their picture.
-#[component]
-pub fn Avatar(
-    #[prop(into)] name: String,
-    #[prop(into)] color: String,
-    /// A data: URL; empty or `None` shows the initial.
-    #[prop(default = None)]
-    image: Option<String>,
-    #[prop(default = 40)] size: u32,
-) -> impl IntoView {
-    let image = image.filter(|i| !i.is_empty());
-    let font = (size as f64 * 0.4).round();
-    let mut style =
-        format!("width: {size}px; height: {size}px; background: {color}; font-size: {font}px");
-    if image.is_some() {
-        style.push_str("; overflow: hidden; padding: 0px");
-    }
-    let initial = match image {
-        Some(src) => view! {
-            <img src=src alt="" style="width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block" />
-        }
-        .into_any(),
-        None => name
-            .trim()
-            .chars()
-            .next()
-            .map_or("?".to_string(), |c| c.to_uppercase().collect())
-            .into_any(),
-    };
-    view! { <span class="avatar" style=style aria-hidden="true">{initial}</span> }
 }
 
 /// `<Skeleton>`: a shimmering block, `height` px tall.

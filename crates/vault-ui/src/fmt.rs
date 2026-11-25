@@ -248,3 +248,30 @@ pub fn today_utc() -> String {
 pub fn short_date(iso: &str) -> String {
     day_short(iso)
 }
+
+/// `n.toLocaleString()` for a whole number ("1,234").
+pub fn count(n: i64) -> String {
+    let f = NumberFormat::new(&Array::new(), &Object::new());
+    run(&f, n as f64)
+}
+
+/// Today's local date, as `new Date()`'s getters read it.
+pub fn today_local() -> (i32, u32, u32) {
+    let d = Date::new_0();
+    (d.get_full_year() as i32, d.get_month() + 1, d.get_date())
+}
+
+/// `new Date(`${ymd}T12:00:00`).toLocaleDateString(undefined, { weekday:
+/// "short", month: "short", day: "numeric", year? })` (local time), e.g.
+/// "Mon, Nov 2".
+pub fn weekday_month_day(ymd: &str, with_year: bool) -> String {
+    let Some((y, m, d)) = parse_iso(ymd) else {
+        return "Invalid Date".into();
+    };
+    let date = Date::new_with_year_month_day_hr(y as u32, m as i32 - 1, d as i32, 12);
+    let mut opts = vec![("weekday", "short"), ("month", "short"), ("day", "numeric")];
+    if with_year {
+        opts.push(("year", "numeric"));
+    }
+    date_format(&date, &opts)
+}

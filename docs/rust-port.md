@@ -64,10 +64,10 @@ Status: `todo` · `wip` · `review` (PR open) · `done` (merged, Rust page on in
 | bills | 2 | review | rust/page-bills |
 | budgets (+ planner, vs-actual) | 2 | review | rust/page-budgets |
 | giving | 2 | review | rust/page-giving |
-| transactions | 3 | todo | |
+| transactions | 3 | review | rust/page-transactions |
 | dashboard (+ guilt-free card, home arranging) | 3 | review | rust/page-dashboard |
-| assistant | 3 | todo | |
-| settings | 3 | todo | |
+| assistant (+ chat view, chat bubble) | 3 | review | rust/page-assistant |
+| settings | 3 | wip (part A in review) | rust/page-settings |
 | shell | 4 | todo | |
 | auth-screens | 4 | todo | |
 

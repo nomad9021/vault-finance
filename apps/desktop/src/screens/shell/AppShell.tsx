@@ -208,9 +208,12 @@ export function AppShell() {
         )}
       </main>
 
-      {aiVisible && page !== "assistant" && (
-        <AssistantBubble phone={narrow} onOpenPage={() => navigate("assistant")} />
-      )}
+      {aiVisible && page !== "assistant" &&
+        (usesRust("assistant") ? (
+          <RustPage page="assistant-bubble" quiet onNavigate={navigate} />
+        ) : (
+          <AssistantBubble phone={narrow} onOpenPage={() => navigate("assistant")} />
+        ))}
       <CommandPalette
         open={paletteOpen}
         commands={commands}
@@ -235,7 +238,16 @@ function PageBody({
   onNavigate: Navigate;
 }) {
   // Pages already moved to the Rust UI (docs/rust-port.md).
-  if (usesRust(page)) return <RustPage page={page} filter={filter} onNavigate={onNavigate} />;
+  // Transactions re-mounts when the incoming filter changes (as its React page is keyed below).
+  if (usesRust(page))
+    return (
+      <RustPage
+        key={page === "transactions" ? (filter.categoryId ?? filter.accountId ?? "all") : undefined}
+        page={page}
+        filter={filter}
+        onNavigate={onNavigate}
+      />
+    );
 
   switch (page) {
     case "dashboard":
