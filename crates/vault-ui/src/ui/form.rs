@@ -17,9 +17,11 @@ use crate::fmt;
 /// `<Field>`: labelled `.input`, two-way bound to `value`.
 #[component]
 pub fn Field(
-    #[prop(into)] label: TextProp,
+    /// May change after mount (a dialog whose labels follow a type picker).
+    #[prop(into)]
+    label: Signal<String>,
     value: RwSignal<String>,
-    #[prop(optional, into)] placeholder: MaybeProp<String>,
+    #[prop(optional, into)] placeholder: MaybeProp<&'static str>,
     #[prop(optional)] input_mode: Option<&'static str>,
     /// Focus on mount (React's `autoFocus`).
     #[prop(optional)]
@@ -161,6 +163,7 @@ pub fn DateField(
     #[prop(default = true)] clearable: bool,
     #[prop(optional)] min: Option<&'static str>,
     #[prop(optional)] max: Option<&'static str>,
+    #[prop(optional)] hint: Option<&'static str>,
 ) -> impl IntoView {
     let id = use_id();
     let trigger = NodeRef::<html::Button>::new();
@@ -355,6 +358,7 @@ pub fn DateField(
                     </Portal>
                 }
             })}
+            {hint.map(|h| view! { <div class="field-hint">{h}</div> })}
         </div>
     }
 }

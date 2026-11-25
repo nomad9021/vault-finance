@@ -63,7 +63,7 @@ Status: `todo` · `wip` · `review` (PR open) · `done` (merged, Rust page on in
 | accounts | 2 | review | rust/page-accounts |
 | bills | 2 | review | rust/page-bills |
 | budgets (+ planner, vs-actual) | 2 | review | rust/page-budgets |
-| giving | 2 | todo | |
+| giving | 2 | review | rust/page-giving |
 | transactions | 3 | todo | |
 | dashboard | 3 | todo | |
 | assistant | 3 | todo | |

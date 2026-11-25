@@ -554,8 +554,8 @@ fn BudgetDialog(
                     <Select label="Category" value=category_id options=options />
                 })}
                 <Segmented aria_label="Resets" options=PERIODS value=period />
-                <Field label=move || field_label.get() value=amount input_mode="decimal" autofocus=true
-                    placeholder=Signal::derive(move || if weekly() { "150.00" } else { "600.00" }.to_string())
+                <Field label=Signal::derive(move || field_label.get().to_string()) value=amount input_mode="decimal" autofocus=true
+                    placeholder=Signal::derive(move || if weekly() { "150.00" } else { "600.00" })
                     error=field_error hint=hint />
                 {move || error.get().map(|e| view! {
                     <div role="alert" style="font-size: var(--text-sm); color: var(--color-negative)">{e}</div>
