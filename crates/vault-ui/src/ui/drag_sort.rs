@@ -302,7 +302,7 @@ impl DragSort {
     }
 }
 
-fn set_user_select(v: &str) {
+pub(super) fn set_user_select(v: &str) {
     if let Some(body) = document().body() {
         let _ = body.style().set_property("user-select", v);
     }
