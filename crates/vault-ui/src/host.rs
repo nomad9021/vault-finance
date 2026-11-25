@@ -96,6 +96,26 @@ extern "C" {
     /// `navigator.clipboard.writeText(text)`.
     #[wasm_bindgen(method, catch, js_name = copyText)]
     async fn copy_text(this: &Host, text: &str) -> Result<JsValue, JsValue>;
+
+    /// `useApp().setAiLevel(level)`.
+    #[wasm_bindgen(method, js_name = setAiLevel)]
+    fn set_ai_level(this: &Host, level: &str);
+
+    /// `useApp().setAiAutoApply(on)`.
+    #[wasm_bindgen(method, js_name = setAiAutoApply)]
+    fn set_ai_auto_apply(this: &Host, on: bool);
+
+    /// A snapshot of the shared assistant conversation (state/chat.ts).
+    #[wasm_bindgen(method, js_name = chatState)]
+    fn chat_state(this: &Host) -> JsValue;
+
+    /// Run `cb` when `chatState()` changes; returns an unsubscribe function.
+    #[wasm_bindgen(method, js_name = onChatChange)]
+    fn on_chat_change(this: &Host, cb: &js_sys::Function) -> js_sys::Function;
+
+    /// Run a `useChat` action by name; resolves when it has finished.
+    #[wasm_bindgen(method, js_name = chatDo)]
+    fn chat_do(this: &Host, action: &str, args: js_sys::Array) -> js_sys::Promise;
 }
 
 /// `host.app()`, read when a page needs it.
@@ -105,6 +125,8 @@ pub struct AppState {
     pub review_prefs: vault_core::reports::ReviewPrefs,
     pub ai_visible: bool,
     pub platform: String,
+    pub ai_level: vault_core::ai::AiLevel,
+    pub ai_auto_apply: bool,
     /// The signed-in user.
     pub user: Option<vault_core::user::User>,
     pub household_name: Option<String>,
@@ -125,6 +147,21 @@ impl AppState {
             .as_ref()
             .is_some_and(|u| u.role == vault_core::common::UserRole::Owner)
     }
+}
+
+/// `host.chatState()`: the conversation the Assistant page and the bubble
+/// share. The messages stay in JS (useChat); this is a read-only copy.
+#[derive(Debug, Clone, PartialEq, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ChatState {
+    pub messages: Vec<vault_core::ai::ChatMessage>,
+    pub conversation_id: Option<String>,
+    pub busy: bool,
+    pub error: Option<String>,
+    /// Bumped whenever the saved chat list changes.
+    pub list_version: u32,
+    /// The name of the spreadsheet waiting to go with the next message.
+    pub attachment: Option<String>,
 }
 
 /// A spreadsheet read for the assistant (`ChatAttachment`).
@@ -254,6 +291,48 @@ impl HostCtx {
             drop(cb);
         });
         state
+    }
+
+    /// `useApp().setAiLevel(level)` (saved by the platform).
+    pub fn set_ai_level(&self, level: vault_core::ai::AiLevel) {
+        self.host.set_ai_level(level.as_str());
+    }
+
+    /// `useApp().setAiAutoApply(on)`.
+    pub fn set_ai_auto_apply(&self, on: bool) {
+        self.host.set_ai_auto_apply(on);
+    }
+
+    /// `useChat((s) => …)`: the shared conversation, kept current while the
+    /// owner lives. A snapshot that doesn't parse keeps the last good one.
+    pub fn chat(&self) -> ReadSignal<ChatState> {
+        let read = |h: &Host| serde_wasm_bindgen::from_value::<ChatState>(h.chat_state());
+        let (state, set_state) = signal(read(&self.host).unwrap_or_default());
+        let host = Rc::clone(&self.host);
+        let cb = Closure::<dyn Fn()>::new(move || match read(&host) {
+            Ok(s) => set_state.set(s),
+            Err(e) => web_sys::console::error_1(&format!("chatState: {e}").into()),
+        });
+        let unsubscribe = SendWrapper::new(self.host.on_chat_change(cb.as_ref().unchecked_ref()));
+        let cb = SendWrapper::new(cb);
+        on_cleanup(move || {
+            let _ = unsubscribe.call0(&JsValue::NULL);
+            drop(cb);
+        });
+        state
+    }
+
+    /// Run a `useChat` action (`send`, `stop`, `newChat`, `open`, `decide`,
+    /// `approveAll`, `attach`, `forget`, `setError`) and wait for it.
+    pub async fn chat_do(&self, action: &str, args: &[JsValue]) {
+        let array: js_sys::Array = args.iter().collect();
+        let _ = wasm_bindgen_futures::JsFuture::from(self.host.chat_do(action, array)).await;
+    }
+
+    /// `void useChat.getState().<action>(…)`: start it without waiting.
+    pub fn chat_fire(&self, action: &'static str, args: Vec<JsValue>) {
+        let ctx = self.clone();
+        wasm_bindgen_futures::spawn_local(async move { ctx.chat_do(action, &args).await });
     }
 
     /// Read a picked spreadsheet in JS (lib/spreadsheet.ts). The error is the
