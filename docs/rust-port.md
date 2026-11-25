@@ -77,7 +77,7 @@ Status: `todo` · `wip` · `review` (PR open) · `done` (merged, Rust page on in
 | tax engine | todo | |
 | budget sankey | review | rust/ui-sankey |
 | debt calculator | review | rust/page-cashflow |
-| dashboard layout | todo | |
+| dashboard layout | review | rust/core-types |
 
 Wave 4 retires React: the shell and sign-in move to Leptos, `RustPage` becomes the app root,
 and React, react-dom and zustand leave the bundle.
