@@ -9,9 +9,9 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::bills::BillCadence;
+use crate::budgets::WeekStart;
 use crate::dashboard::{SankeyView, WidgetWidth};
 use crate::debt::Strategy;
-use crate::guilt_free::WeekStart;
 use crate::money::to_fixed;
 use crate::serde_util::{double_option, js_len, js_slice_to, js_trim, OrderedMap};
 use crate::user::is_hex_color;

@@ -18,7 +18,7 @@ mod sankey_order;
 mod icons_gen;
 pub use confetti::Confetti;
 pub use dialog::Dialog;
-pub use form::{DateField, Field, Select, SelectOption};
+pub use form::{synced, DateField, Field, Select, SelectOption};
 pub use icons_gen::NAMES as ICON_NAMES;
 pub use listen::{on_document, on_window};
 pub use pie_chart::{PieChart, PieSlice};

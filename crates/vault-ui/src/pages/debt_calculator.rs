@@ -19,7 +19,7 @@ use wasm_bindgen::JsValue;
 
 use crate::fmt;
 use crate::host::{use_host, HostCtx};
-use crate::ui::{Button, Confetti, Dialog, Panel, Spinner};
+use crate::ui::{synced, Button, Confetti, Dialog, Panel, Spinner};
 
 /// `deleteAccount`'s response.
 #[derive(Deserialize)]
@@ -620,7 +620,12 @@ fn DebtRow(
     let field = move |f: fn(&Debt) -> String| move || current().map(|d| f(&d)).unwrap_or_default();
     let name = field(|d| d.name.clone());
     let balance = field(|d| cents_to_fixed0(d.balance_cents));
-    let apr = field(|d| debt::apr_text(d.apr));
+    // Kept as typed while it means the same number, so "6." survives typing 6.5.
+    let apr = synced(
+        move || current().map(|d| d.apr).unwrap_or(0.0),
+        |a| debt::apr_text(*a),
+        debt::same_apr,
+    );
     let min = field(|d| cents_to_fixed0(d.min_cents));
     let linked = move || id.with_value(|id| account_ids.with(|s| s.contains(id)));
     let patch = move |p: DebtPatch| on_patch.run((id.get_value(), p));
@@ -658,8 +663,10 @@ fn DebtRow(
                     <input class="input" inputmode="decimal" style="width: 100%; text-align: right"
                         prop:value=apr
                         on:input=move |ev| {
-                            patch(DebtPatch { apr: Some(debt::parse_apr(&event_target_value(&ev))), ..Default::default() });
-                            show(&ev, &apr());
+                            let text = debt::clean_apr(&event_target_value(&ev));
+                            apr.set(text.clone());
+                            patch(DebtPatch { apr: Some(debt::parse_apr(&text)), ..Default::default() });
+                            show(&ev, &text);
                         } />
                 </label>
                 <label style="width: 92px">

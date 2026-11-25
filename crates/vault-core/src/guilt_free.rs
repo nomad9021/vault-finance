@@ -3,14 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// `WeekStart` (budgets.ts).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum WeekStart {
-    #[default]
-    Monday,
-    Sunday,
-}
+use crate::budgets::WeekStart;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

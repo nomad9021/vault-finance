@@ -21,7 +21,7 @@ use vault_core::taxes::{
 use crate::fmt;
 use crate::host::{use_host, HostCtx};
 use crate::ui::{
-    Banner, Button, Card, Field, Sankey, Segmented, Select, SelectOption, Spinner, Tag,
+    synced, Banner, Button, Card, Field, Sankey, Segmented, Select, SelectOption, Spinner, Tag,
 };
 
 const PERIODS: &[(&str, &str)] = &[("year", "Yearly"), ("month", "Monthly")];
@@ -100,28 +100,6 @@ fn use_estimate(
     });
     on_cleanup(cancel);
     (estimate, error)
-}
-
-/// A field's text that follows `value` (from the draft) when it changes,
-/// unless what's already typed means the same thing (`same`), so "1." stays
-/// "1." while the draft holds 1.
-fn synced<T>(
-    value: impl Fn() -> T + Send + Sync + 'static,
-    show: fn(&T) -> String,
-    same: fn(&str, &T) -> bool,
-) -> RwSignal<String>
-where
-    T: PartialEq + Clone + Send + Sync + 'static,
-{
-    let value = Memo::new(move |_| value());
-    let text = RwSignal::new(show(&value.get_untracked()));
-    Effect::new(move |_| {
-        let v = value.get();
-        if !text.with_untracked(|t| same(t, &v)) {
-            text.set(show(&v));
-        }
-    });
-    text
 }
 
 fn show_pct(v: &Option<f64>) -> String {

@@ -186,12 +186,11 @@ fn HoldingRow(
     let detail = format!("{} units · as of {}", holding.quantity, holding.as_of_date);
     let symbol = holding.symbol.clone();
     let value = fmt::cents(holding.market_value_cents);
-    // Declarations in the React style object's order: `border: none` lands
-    // after `borderTop`, then `borderTopStyle` brings the top edge back.
-    let style = "display: flex; align-items: baseline; gap: 12px; padding: 10px 0; \
+    // The button's own border off first, then only the faint top divider.
+    let style = "display: flex; align-items: baseline; gap: 12px; padding: 10px 0; border: none; \
         border-top: 1px solid color-mix(in srgb, var(--color-text) 7%, transparent); \
-        font-size: var(--text-sm); width: 100%; background: none; border: none; \
-        border-top-style: solid; cursor: pointer; text-align: left; font: inherit; color: inherit";
+        font-size: var(--text-sm); width: 100%; background: none; \
+        cursor: pointer; text-align: left; font: inherit; color: inherit";
     view! {
         <button style=style on:click=move |_| editing.set(Some((account.clone(), Some(holding.clone()))))>
             <div style="flex: 1; min-width: 0">

@@ -398,3 +398,25 @@ fn swallow_next_click() {
         timer.set(h);
     }
 }
+
+/// A field's text that follows `value` (from the draft) when it changes,
+/// unless what's already typed means the same thing (`same`), so "1." stays
+/// "1." while the draft holds 1.
+pub fn synced<T>(
+    value: impl Fn() -> T + Send + Sync + 'static,
+    show: fn(&T) -> String,
+    same: fn(&str, &T) -> bool,
+) -> RwSignal<String>
+where
+    T: PartialEq + Clone + Send + Sync + 'static,
+{
+    let value = Memo::new(move |_| value());
+    let text = RwSignal::new(show(&value.get_untracked()));
+    Effect::new(move |_| {
+        let v = value.get();
+        if !text.with_untracked(|t| same(t, &v)) {
+            text.set(show(&v));
+        }
+    });
+    text
+}

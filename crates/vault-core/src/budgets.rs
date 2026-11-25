@@ -4,6 +4,15 @@
 
 use serde::{Deserialize, Serialize};
 
+/// `WeekStart` (budgets.ts): the day a weekly budget's week begins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WeekStart {
+    #[default]
+    Monday,
+    Sunday,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BudgetPeriod {

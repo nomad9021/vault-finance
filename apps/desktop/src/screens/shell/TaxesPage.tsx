@@ -12,6 +12,7 @@ import {
 } from "@vault/shared";
 import { Banner, Button, Card, Field, Sankey, Segmented, Select, Spinner, Tag } from "@vault/ui";
 import { useEffect, useMemo, useState } from "react";
+import { optionalPctText, useNumberText } from "../../lib/numberText.js";
 import { useData } from "../../lib/useData.js";
 import { useApp } from "../../state/store.js";
 
@@ -212,22 +213,18 @@ export function TaxesPage() {
             </Select>
           )}
           {!draft.locality && (
-            <Field
+            <PctField
               label="Other local income tax %"
-              inputMode="decimal"
-              value={draft.customLocalRatePct ?? ""}
-              placeholder="0"
+              pct={draft.customLocalRatePct ?? null}
               hint="For a city or county not listed above."
-              onChange={(e) => edit({ customLocalRatePct: e.target.value ? Number(e.target.value) : null })}
+              onPct={(customLocalRatePct) => edit({ customLocalRatePct })}
             />
           )}
-          <Field
+          <PctField
             label="State payroll deductions %"
-            inputMode="decimal"
-            value={draft.otherPayrollPct ?? ""}
-            placeholder="0"
+            pct={draft.otherPayrollPct ?? null}
             hint="Paid leave or disability % from a pay stub, if your state has one we don't know."
-            onChange={(e) => edit({ otherPayrollPct: e.target.value ? Number(e.target.value) : null })}
+            onPct={(otherPayrollPct) => edit({ otherPayrollPct })}
           />
           <Field
             label="Children under 17"
@@ -255,12 +252,10 @@ export function TaxesPage() {
                     <option key={v} value={v}>{l}</option>
                   ))}
                 </Select>
-                <Field
+                <PctField
                   label="401(k) / 403(b) % of pay"
-                  inputMode="decimal"
-                  value={e.retirementPct ?? ""}
-                  placeholder="0"
-                  onChange={(ev) => editEarner(i, { retirementPct: ev.target.value ? Number(ev.target.value) : null, retirementCents: null })}
+                  pct={e.retirementPct ?? null}
+                  onPct={(retirementPct) => editEarner(i, { retirementPct, retirementCents: null })}
                 />
                 <MoneyField label="HSA through payroll (per year)" cents={e.hsaCents} onCents={(c) => editEarner(i, { hsaCents: c })} />
                 <MoneyField label="Health premiums (per year)" cents={e.healthPremiumCents} onCents={(c) => editEarner(i, { healthPremiumCents: c })} />
@@ -417,5 +412,23 @@ function CompareMove({ profile, current, places }: { profile: TaxProfileInput; c
         </p>
       )}
     </Card>
+  );
+}
+
+/** A % field that keeps what's typed ("1.", "1.0") while it means the same number. */
+function PctField({ label, pct, hint, onPct }: { label: string; pct: number | null; hint?: string; onPct: (pct: number | null) => void }) {
+  const [text, setText] = useNumberText(pct, optionalPctText.show, optionalPctText.parse);
+  return (
+    <Field
+      label={label}
+      inputMode="decimal"
+      value={text}
+      placeholder="0"
+      hint={hint}
+      onChange={(e) => {
+        setText(e.target.value);
+        onPct(optionalPctText.parse(e.target.value));
+      }}
+    />
   );
 }
