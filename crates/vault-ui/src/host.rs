@@ -60,6 +60,96 @@ extern "C" {
     /// `useKeepUnlocked()`: auto-lock waits until the returned function runs.
     #[wasm_bindgen(method, js_name = keepUnlocked)]
     fn keep_unlocked(this: &Host) -> js_sys::Function;
+
+    // ── Settings (part B) ──
+
+    /// vault-core `SettingsState`: the store fields Settings draws.
+    #[wasm_bindgen(method, js_name = settingsState)]
+    fn settings_state(this: &Host) -> JsValue;
+
+    #[wasm_bindgen(method, js_name = onSettingsStateChange)]
+    fn on_settings_state_change(this: &Host, cb: &js_sys::Function) -> js_sys::Function;
+
+    /// Run a whitelisted `useApp` action by name.
+    #[wasm_bindgen(method, catch)]
+    async fn store(this: &Host, action: &str, args: js_sys::Array) -> Result<JsValue, JsValue>;
+
+    #[wasm_bindgen(method, catch, js_name = thisDeviceKeyId)]
+    async fn this_device_key_id(this: &Host) -> Result<JsValue, JsValue>;
+
+    #[wasm_bindgen(method, catch, js_name = forgetPin)]
+    async fn forget_pin(this: &Host, address: &str) -> Result<JsValue, JsValue>;
+
+    #[wasm_bindgen(method, catch, js_name = biometricCancel)]
+    async fn biometric_cancel(this: &Host) -> Result<JsValue, JsValue>;
+
+    #[wasm_bindgen(method, catch, js_name = runChecks)]
+    async fn run_checks(this: &Host, on_update: &js_sys::Function) -> Result<JsValue, JsValue>;
+
+    #[wasm_bindgen(method, catch, js_name = runCheckAction)]
+    async fn run_check_action(
+        this: &Host,
+        action: &str,
+        set_message: &js_sys::Function,
+        on_recovered: &js_sys::Function,
+        cancelled: &js_sys::Function,
+    ) -> Result<JsValue, JsValue>;
+
+    /// `useApp.setState({ user })` after the profile changes.
+    #[wasm_bindgen(method, js_name = setUser)]
+    fn set_user(this: &Host, user: JsValue);
+
+    /// `useApp.getState().setHouseholdName(name)`.
+    #[wasm_bindgen(method, js_name = setHouseholdName)]
+    fn set_household_name(this: &Host, name: &str);
+
+    /// `checkAppUpdate()`; progress shows up in `app().appUpdate`.
+    #[wasm_bindgen(method, js_name = checkAppUpdate)]
+    fn check_app_update(this: &Host);
+
+    /// `installAppUpdate()`.
+    #[wasm_bindgen(method, js_name = installAppUpdate)]
+    fn install_app_update(this: &Host);
+
+    /// `platform.loadValue(key)`: the saved string or null.
+    #[wasm_bindgen(method, catch, js_name = loadValue)]
+    async fn load_value(this: &Host, key: &str) -> Result<JsValue, JsValue>;
+
+    /// `platform.saveValue(key, value)`, not awaited.
+    #[wasm_bindgen(method, js_name = saveValue)]
+    fn save_value(this: &Host, key: &str, value: &str);
+
+    /// `platform.openExternal(url)`, or a new browser tab without it.
+    #[wasm_bindgen(method, js_name = openExternal)]
+    fn open_external(this: &Host, url: &str);
+
+    /// `platform.openAdminConsole()` (only when `app().adminConsole`).
+    #[wasm_bindgen(method, js_name = openAdminConsole)]
+    fn open_admin_console(this: &Host);
+
+    /// `navigator.clipboard.writeText(text)`.
+    #[wasm_bindgen(method, catch, js_name = copyText)]
+    async fn copy_text(this: &Host, text: &str) -> Result<JsValue, JsValue>;
+
+    /// `useApp().setAiLevel(level)`.
+    #[wasm_bindgen(method, js_name = setAiLevel)]
+    fn set_ai_level(this: &Host, level: &str);
+
+    /// `useApp().setAiAutoApply(on)`.
+    #[wasm_bindgen(method, js_name = setAiAutoApply)]
+    fn set_ai_auto_apply(this: &Host, on: bool);
+
+    /// A snapshot of the shared assistant conversation (state/chat.ts).
+    #[wasm_bindgen(method, js_name = chatState)]
+    fn chat_state(this: &Host) -> JsValue;
+
+    /// Run `cb` when `chatState()` changes; returns an unsubscribe function.
+    #[wasm_bindgen(method, js_name = onChatChange)]
+    fn on_chat_change(this: &Host, cb: &js_sys::Function) -> js_sys::Function;
+
+    /// Run a `useChat` action by name; resolves when it has finished.
+    #[wasm_bindgen(method, js_name = chatDo)]
+    fn chat_do(this: &Host, action: &str, args: js_sys::Array) -> js_sys::Promise;
 }
 
 /// `host.app()`, read when a page needs it.
@@ -69,6 +159,46 @@ pub struct AppState {
     pub review_prefs: vault_core::reports::ReviewPrefs,
     pub ai_visible: bool,
     pub platform: String,
+    pub ai_level: vault_core::ai::AiLevel,
+    pub ai_auto_apply: bool,
+    /// The signed-in user.
+    pub user: Option<vault_core::user::User>,
+    pub household_name: Option<String>,
+    pub app_update: vault_core::updates::AppUpdateState,
+    /// The address the app reached the server at (`activeAddress`).
+    pub active_address: Option<String>,
+    /// `client.baseUrl`.
+    pub base_url: String,
+    /// `APP_VERSION`.
+    pub app_version: String,
+    /// The platform has `openAdminConsole`.
+    pub admin_console: bool,
+    /// Settings → Home screen: show the cash-flow diagram (`None`: an older
+    /// shell that doesn't say, so on).
+    pub show_sankey: Option<bool>,
+}
+
+impl AppState {
+    pub fn is_owner(&self) -> bool {
+        self.user
+            .as_ref()
+            .is_some_and(|u| u.role == vault_core::common::UserRole::Owner)
+    }
+}
+
+/// `host.chatState()`: the conversation the Assistant page and the bubble
+/// share. The messages stay in JS (useChat); this is a read-only copy.
+#[derive(Debug, Clone, PartialEq, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ChatState {
+    pub messages: Vec<vault_core::ai::ChatMessage>,
+    pub conversation_id: Option<String>,
+    pub busy: bool,
+    pub error: Option<String>,
+    /// Bumped whenever the saved chat list changes.
+    pub list_version: u32,
+    /// The name of the spreadsheet waiting to go with the next message.
+    pub attachment: Option<String>,
 }
 
 /// A spreadsheet read for the assistant (`ChatAttachment`).
@@ -132,6 +262,7 @@ impl HostCtx {
             name: "Error".into(),
             message: format!("{method}: unexpected response ({e})"),
             is_error: true,
+            ..CallError::default()
         })
     }
 
@@ -199,6 +330,48 @@ impl HostCtx {
         state
     }
 
+    /// `useApp().setAiLevel(level)` (saved by the platform).
+    pub fn set_ai_level(&self, level: vault_core::ai::AiLevel) {
+        self.host.set_ai_level(level.as_str());
+    }
+
+    /// `useApp().setAiAutoApply(on)`.
+    pub fn set_ai_auto_apply(&self, on: bool) {
+        self.host.set_ai_auto_apply(on);
+    }
+
+    /// `useChat((s) => …)`: the shared conversation, kept current while the
+    /// owner lives. A snapshot that doesn't parse keeps the last good one.
+    pub fn chat(&self) -> ReadSignal<ChatState> {
+        let read = |h: &Host| serde_wasm_bindgen::from_value::<ChatState>(h.chat_state());
+        let (state, set_state) = signal(read(&self.host).unwrap_or_default());
+        let host = Rc::clone(&self.host);
+        let cb = Closure::<dyn Fn()>::new(move || match read(&host) {
+            Ok(s) => set_state.set(s),
+            Err(e) => web_sys::console::error_1(&format!("chatState: {e}").into()),
+        });
+        let unsubscribe = SendWrapper::new(self.host.on_chat_change(cb.as_ref().unchecked_ref()));
+        let cb = SendWrapper::new(cb);
+        on_cleanup(move || {
+            let _ = unsubscribe.call0(&JsValue::NULL);
+            drop(cb);
+        });
+        state
+    }
+
+    /// Run a `useChat` action (`send`, `stop`, `newChat`, `open`, `decide`,
+    /// `approveAll`, `attach`, `forget`, `setError`) and wait for it.
+    pub async fn chat_do(&self, action: &str, args: &[JsValue]) {
+        let array: js_sys::Array = args.iter().collect();
+        let _ = wasm_bindgen_futures::JsFuture::from(self.host.chat_do(action, array)).await;
+    }
+
+    /// `void useChat.getState().<action>(…)`: start it without waiting.
+    pub fn chat_fire(&self, action: &'static str, args: Vec<JsValue>) {
+        let ctx = self.clone();
+        wasm_bindgen_futures::spawn_local(async move { ctx.chat_do(action, &args).await });
+    }
+
     /// Read a picked spreadsheet in JS (lib/spreadsheet.ts). The error is the
     /// message to show: the reader's own, or the generic one.
     pub async fn read_spreadsheet(&self, file: &web_sys::File) -> Result<Sheet, String> {
@@ -222,6 +395,166 @@ impl HostCtx {
         self.host.ask_assistant(message, Self::arg(sheet));
     }
 
+    /// `settingsState()` once, without subscribing (safe after an await).
+    pub fn settings_now(&self) -> vault_core::settings::SettingsState {
+        serde_wasm_bindgen::from_value(self.host.settings_state()).unwrap_or_default()
+    }
+
+    /// `useApp((s) => …)` for the Settings fields, kept current while the
+    /// owner is alive.
+    pub fn settings_state(&self) -> ReadSignal<vault_core::settings::SettingsState> {
+        let read =
+            |h: &Host| serde_wasm_bindgen::from_value(h.settings_state()).unwrap_or_default();
+        let (state, set_state) = signal(read(&self.host));
+        let host = Rc::clone(&self.host);
+        let cb = Closure::<dyn Fn()>::new(move || set_state.set(read(&host)));
+        let unsubscribe = SendWrapper::new(
+            self.host
+                .on_settings_state_change(cb.as_ref().unchecked_ref()),
+        );
+        let cb = SendWrapper::new(cb);
+        on_cleanup(move || {
+            let _ = unsubscribe.call0(&JsValue::NULL);
+            drop(cb);
+        });
+        state
+    }
+
+    /// `useApp.getState().<action>(...args)`, its result deserialized.
+    pub async fn store<T: DeserializeOwned>(
+        &self,
+        action: &str,
+        args: &[JsValue],
+    ) -> Result<T, CallError> {
+        let array: js_sys::Array = args.iter().collect();
+        let value = self
+            .host
+            .store(action, array)
+            .await
+            .map_err(CallError::from_js)?;
+        serde_wasm_bindgen::from_value(value).map_err(|e| CallError {
+            name: "Error".into(),
+            message: format!("{action}: unexpected result ({e})"),
+            is_error: true,
+            ..CallError::default()
+        })
+    }
+
+    /// A store action whose result isn't needed (`void setTheme(t)`).
+    pub fn store_fire(&self, action: &str, args: &[JsValue]) {
+        let host = Rc::clone(&self.host);
+        let action = action.to_string();
+        let array: js_sys::Array = args.iter().collect();
+        wasm_bindgen_futures::spawn_local(async move {
+            let _ = host.store(&action, array).await;
+        });
+    }
+
+    /// Put the user the server sent back into the app store.
+    pub fn set_user(&self, user: &vault_core::user::User) {
+        self.host.set_user(Self::arg(user));
+    }
+
+    pub fn set_household_name(&self, name: &str) {
+        self.host.set_household_name(name);
+    }
+
+    pub fn check_app_update(&self) {
+        self.host.check_app_update();
+    }
+
+    pub fn install_app_update(&self) {
+        self.host.install_app_update();
+    }
+
+    /// `platform.loadValue(key)`; `None` when unset or unreadable.
+    pub async fn load_value(&self, key: &str) -> Option<String> {
+        self.host
+            .load_value(key)
+            .await
+            .ok()
+            .and_then(|v| v.as_string())
+    }
+
+    pub fn save_value(&self, key: &str, value: &str) {
+        self.host.save_value(key, value);
+    }
+
+    pub fn open_external(&self, url: &str) {
+        self.host.open_external(url);
+    }
+
+    pub async fn this_device_key_id(&self) -> Option<String> {
+        self.host
+            .this_device_key_id()
+            .await
+            .ok()
+            .and_then(|v| v.as_string())
+    }
+
+    pub async fn forget_pin(&self, address: &str) {
+        let _ = self.host.forget_pin(address).await;
+    }
+
+    pub fn biometric_cancel(&self) {
+        let host = Rc::clone(&self.host);
+        wasm_bindgen_futures::spawn_local(async move {
+            let _ = host.biometric_cancel().await;
+        });
+    }
+
+    /// The startup checks; `on_update` sees each partial list. `None` when
+    /// there's no server address.
+    pub async fn run_checks(
+        &self,
+        on_update: impl Fn(Vec<vault_core::startup_checks::UiCheck>) + 'static,
+    ) -> Option<Vec<vault_core::startup_checks::UiCheck>> {
+        let cb = Closure::<dyn Fn(JsValue)>::new(move |v: JsValue| {
+            if let Ok(list) = serde_wasm_bindgen::from_value(v) {
+                on_update(list);
+            }
+        });
+        let result = self.host.run_checks(cb.as_ref().unchecked_ref()).await;
+        drop(cb);
+        result
+            .ok()
+            .and_then(|v| serde_wasm_bindgen::from_value(v).ok())
+            .flatten()
+    }
+
+    /// A failed check's button (`runCheckAction`). The callbacks live until
+    /// the action settles.
+    pub async fn run_check_action(
+        &self,
+        action: &str,
+        set_message: impl Fn(Option<String>) + 'static,
+        on_recovered: impl Fn() + 'static,
+        cancelled: impl Fn() -> bool + 'static,
+    ) {
+        let msg = Closure::<dyn Fn(JsValue)>::new(move |v: JsValue| set_message(v.as_string()));
+        let rec = Closure::<dyn Fn()>::new(on_recovered);
+        let can = Closure::<dyn Fn() -> bool>::new(cancelled);
+        let _ = self
+            .host
+            .run_check_action(
+                action,
+                msg.as_ref().unchecked_ref(),
+                rec.as_ref().unchecked_ref(),
+                can.as_ref().unchecked_ref(),
+            )
+            .await;
+        drop((msg, rec, can));
+    }
+
+    pub fn open_admin_console(&self) {
+        self.host.open_admin_console();
+    }
+
+    /// Copy to the clipboard; false when the browser refused.
+    pub async fn copy_text(&self, text: &str) -> bool {
+        self.host.copy_text(text).await.is_ok()
+    }
+
     pub fn navigate(&self, page: &str, filter: &impl Serialize) {
         let filter = serde_wasm_bindgen::to_value(filter).unwrap_or(JsValue::UNDEFINED);
         self.host.navigate(page, filter);
@@ -233,27 +566,36 @@ pub fn use_host() -> HostCtx {
 }
 
 /// A rejected `call`.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct CallError {
     /// The JS error's `name` ("ApiRequestError", "ApiConnectionError", …).
     pub name: String,
     pub message: String,
     /// Whether it was an `Error` at all (`err instanceof Error`).
     pub is_error: bool,
+    /// An `ApiRequestError`'s HTTP status and error code.
+    pub status: Option<u16>,
+    pub code: Option<String>,
 }
 
 impl CallError {
     fn from_js(err: JsValue) -> Self {
         match err.dyn_ref::<js_sys::Error>() {
-            Some(e) => CallError {
-                name: e.name().into(),
-                message: e.message().into(),
-                is_error: true,
-            },
+            Some(e) => {
+                let prop = |k: &str| js_sys::Reflect::get(e, &k.into()).ok();
+                CallError {
+                    name: e.name().into(),
+                    message: e.message().into(),
+                    is_error: true,
+                    status: prop("status").and_then(|v| v.as_f64()).map(|n| n as u16),
+                    code: prop("code").and_then(|v| v.as_string()),
+                }
+            }
             None => CallError {
                 name: String::new(),
                 message: err.as_string().unwrap_or_else(|| "Request failed".into()),
                 is_error: false,
+                ..CallError::default()
             },
         }
     }

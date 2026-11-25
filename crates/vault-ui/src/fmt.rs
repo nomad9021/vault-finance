@@ -166,6 +166,13 @@ pub fn month_short(month: &str) -> String {
     utc_date(y, m.max(0) as u32, 1, &[("month", "short")])
 }
 
+/// `"2026-11"` → `"November"`: `{ month: "long", timeZone: "UTC" }`.
+pub fn month_long(month: &str) -> String {
+    let mut parts = month.split('-').map(|p| p.parse::<i32>().unwrap_or(0));
+    let (y, m) = (parts.next().unwrap_or(0), parts.next().unwrap_or(1));
+    utc_date(y, m.max(0) as u32, 1, &[("month", "long")])
+}
+
 /// Today plus `months` (JS `setMonth` overflow rules), in local time, as
 /// "Mar 2028": the debt planner's `payoffDate`.
 pub fn month_year_from_now(months: u32) -> String {
@@ -183,6 +190,14 @@ pub fn weekday_date(iso: &str) -> String {
             d,
             &[("weekday", "short"), ("month", "short"), ("day", "numeric")],
         ),
+        None => iso.to_string(),
+    }
+}
+
+/// `{ weekday: "long" }`: "Tuesday".
+pub fn weekday_long(iso: &str) -> String {
+    match parse_iso(iso.get(..10).unwrap_or(iso)) {
+        Some((y, m, d)) => utc_date(y, m, d, &[("weekday", "long")]),
         None => iso.to_string(),
     }
 }
@@ -232,4 +247,70 @@ pub fn today_utc() -> String {
 /// day: "numeric", timeZone: "UTC" })`, e.g. "Dec 3" (Subscriptions).
 pub fn short_date(iso: &str) -> String {
     day_short(iso)
+}
+
+/// `new Date(iso)[method](...args)` in the viewer's locale.
+fn date_call(date: &js_sys::Date, method: &str, args: &js_sys::Array) -> String {
+    use wasm_bindgen::JsCast;
+    js_sys::Reflect::get(date, &method.into())
+        .ok()
+        .and_then(|f| f.dyn_into::<js_sys::Function>().ok())
+        .and_then(|f| f.apply(date, args).ok())
+        .and_then(|v| v.as_string())
+        .unwrap_or_default()
+}
+
+/// `new Date(iso).toLocaleString()`.
+pub fn locale_string(iso: &str) -> String {
+    let d = js_sys::Date::new(&iso.into());
+    date_call(&d, "toLocaleString", &js_sys::Array::new())
+}
+
+/// `new Date(iso).toLocaleDateString()`.
+pub fn locale_date(iso: &str) -> String {
+    let d = js_sys::Date::new(&iso.into());
+    date_call(&d, "toLocaleDateString", &js_sys::Array::new())
+}
+
+/// `new Date().toLocaleTimeString()` for a timestamp in ms.
+pub fn locale_time_ms(ms: f64) -> String {
+    let d = js_sys::Date::new(&ms.into());
+    date_call(&d, "toLocaleTimeString", &js_sys::Array::new())
+}
+
+/// `toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })`.
+pub fn hour_minute(iso: &str) -> String {
+    let d = js_sys::Date::new(&iso.into());
+    let opts = js_sys::Object::new();
+    let _ = js_sys::Reflect::set(&opts, &"hour".into(), &"numeric".into());
+    let _ = js_sys::Reflect::set(&opts, &"minute".into(), &"2-digit".into());
+    let args = js_sys::Array::of2(&js_sys::Array::new(), &opts);
+    date_call(&d, "toLocaleTimeString", &args)
+}
+
+/// `n.toLocaleString()` for a whole number ("1,234").
+pub fn count(n: i64) -> String {
+    let f = NumberFormat::new(&Array::new(), &Object::new());
+    run(&f, n as f64)
+}
+
+/// Today's local date, as `new Date()`'s getters read it.
+pub fn today_local() -> (i32, u32, u32) {
+    let d = Date::new_0();
+    (d.get_full_year() as i32, d.get_month() + 1, d.get_date())
+}
+
+/// `new Date(`${ymd}T12:00:00`).toLocaleDateString(undefined, { weekday:
+/// "short", month: "short", day: "numeric", year? })` (local time), e.g.
+/// "Mon, Nov 2".
+pub fn weekday_month_day(ymd: &str, with_year: bool) -> String {
+    let Some((y, m, d)) = parse_iso(ymd) else {
+        return "Invalid Date".into();
+    };
+    let date = Date::new_with_year_month_day_hr(y as u32, m as i32 - 1, d as i32, 12);
+    let mut opts = vec![("weekday", "short"), ("month", "short"), ("day", "numeric")];
+    if with_year {
+        opts.push(("year", "numeric"));
+    }
+    date_format(&date, &opts)
 }

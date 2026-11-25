@@ -42,7 +42,7 @@ const TABS: &[(&str, &str)] = &[
 ];
 
 /// lib/spreadsheet.ts `SPREADSHEET_ACCEPT`.
-const SPREADSHEET_ACCEPT: &str = ".csv,.tsv,.txt,.xlsx,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+pub const SPREADSHEET_ACCEPT: &str = ".csv,.tsv,.txt,.xlsx,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 #[component]
 pub fn BudgetsPage() -> impl IntoView {

@@ -23,6 +23,10 @@ pub fn Field(
     value: RwSignal<String>,
     #[prop(optional, into)] placeholder: MaybeProp<&'static str>,
     #[prop(optional)] input_mode: Option<&'static str>,
+    /// The input's `type` ("email", "password", …); text when unset.
+    #[prop(optional)]
+    input_type: Option<&'static str>,
+    #[prop(optional)] autocomplete: Option<&'static str>,
     /// Focus on mount (React's `autoFocus`).
     #[prop(optional)]
     autofocus: bool,
@@ -43,6 +47,13 @@ pub fn Field(
     /// `onChange` doing more than storing the text).
     #[prop(optional)]
     on_input: Option<Callback<String>>,
+    /// `spellCheck={false}` / `autoCapitalize="off"` for addresses.
+    #[prop(optional)]
+    no_spellcheck: bool,
+    #[prop(optional)] autocapitalize: Option<&'static str>,
+    /// A `<datalist>` id for suggestions.
+    #[prop(optional)]
+    list: Option<&'static str>,
 ) -> impl IntoView {
     let id = use_id();
     let input = NodeRef::<html::Input>::new();
@@ -58,6 +69,8 @@ pub fn Field(
         <div class="field">
             <label for=id.clone()>{move || label.get()}</label>
             <input node_ref=input id=id class="input" placeholder=move || placeholder.get() inputmode=input_mode
+                type=input_type autocomplete=autocomplete spellcheck=no_spellcheck.then_some("false")
+                autocapitalize=autocapitalize list=list
                 maxlength=max_length aria-invalid=move || current_error().map(|_| "true")
                 prop:value=move || value.get()
                 on:input=move |e| {
@@ -114,7 +127,9 @@ impl SelectOption {
 /// `<Select>`: a native select styled with `.input`, under a label.
 #[component]
 pub fn Select(
-    #[prop(into)] label: String,
+    /// May change after mount (a tier label naming its model).
+    #[prop(into)]
+    label: Signal<String>,
     value: RwSignal<String>,
     #[prop(into)] options: Signal<Vec<SelectOption>>,
     /// Called with the picked value, after `value` is set.
@@ -124,7 +139,7 @@ pub fn Select(
     let id = use_id();
     view! {
         <div class="field">
-            <label for=id.clone()>{label}</label>
+            <label for=id.clone()>{move || label.get()}</label>
             <select id=id class="input" on:change=move |e| {
                 let v = event_target_value(&e);
                 value.set(v.clone());
