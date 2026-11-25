@@ -25,6 +25,7 @@ export const RUST_PAGES: ReadonlySet<PageId> = new Set<PageId>([
   "taxes",
   "giving",
   "reports",
+  "dashboard",
 ]);
 
 const FLAG = "vault.rust-ui";
@@ -88,7 +89,7 @@ function makeHost(client: ApiClient, onNavigate: Navigate, filter: NavFilter) {
     /** Store settings a page reads (the review presenter's prefs, AI on/off). */
     app() {
       const s = useApp.getState();
-      return { reviewPrefs: s.reviewPrefs, aiVisible: s.aiVisible, platform: s.platform.kind };
+      return { reviewPrefs: s.reviewPrefs, aiVisible: s.aiVisible, platform: s.platform.kind, showSankey: s.showSankey };
     },
     setFullscreen(on: boolean): Promise<void> {
       return useApp.getState().platform.setFullscreen(on);
@@ -98,7 +99,7 @@ function makeHost(client: ApiClient, onNavigate: Navigate, filter: NavFilter) {
     /** Run `cb` when what `app()` returns changes; returns an unsubscribe. */
     onAppStateChange(cb: () => void): () => void {
       return useApp.subscribe((s, prev) => {
-        if (s.reviewPrefs !== prev.reviewPrefs || s.aiVisible !== prev.aiVisible || s.platform !== prev.platform) cb();
+        if (s.reviewPrefs !== prev.reviewPrefs || s.aiVisible !== prev.aiVisible || s.platform !== prev.platform || s.showSankey !== prev.showSankey) cb();
       });
     },
     /**

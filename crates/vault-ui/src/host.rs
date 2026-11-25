@@ -69,6 +69,9 @@ pub struct AppState {
     pub review_prefs: vault_core::reports::ReviewPrefs,
     pub ai_visible: bool,
     pub platform: String,
+    /// Settings → Home screen: show the cash-flow diagram (`None`: an older
+    /// shell that doesn't say, so on).
+    pub show_sankey: Option<bool>,
 }
 
 /// A spreadsheet read for the assistant (`ChatAttachment`).

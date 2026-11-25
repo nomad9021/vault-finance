@@ -3,10 +3,12 @@
 
 use leptos::prelude::*;
 
+mod basics;
 mod confetti;
 mod dialog;
 mod drag_sort;
 mod form;
+mod home_arrange;
 mod listen;
 mod pie_chart;
 mod pre_income_dialog;
@@ -16,9 +18,11 @@ mod sankey_card;
 mod sankey_order;
 #[rustfmt::skip]
 mod icons_gen;
+pub use basics::{Avatar, ListRow, Money, SegmentedOf, Sheet, Skeleton};
 pub use confetti::Confetti;
 pub use dialog::Dialog;
 pub use form::{DateField, Field, Select, SelectOption};
+pub use home_arrange::HomeArrange;
 pub use icons_gen::NAMES as ICON_NAMES;
 pub use listen::{on_document, on_window};
 pub use pie_chart::{PieChart, PieSlice};
